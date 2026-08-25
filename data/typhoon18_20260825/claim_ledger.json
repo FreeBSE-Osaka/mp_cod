@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "topic": "2026年8月25日15時50分cutoffで台風18号SAUDELの25日夜から29日の行方と防災上の優先事項を評価する",
+  "data": [
+    {"id": "D01", "text": "JMA 25日15時: 26.7N 130.1E、沖永良部島ESE160km、WNW20km/h、950hPa、最大40m/s、gust60m/s、暴風半径130km。"},
+    {"id": "D02", "text": "JMA: 25日夜から26日朝、強い勢力で奄美・沖縄本島へかなり接近。"},
+    {"id": "D03", "text": "JMA: 26日15時久米島N230km 965hPa 35m/s、27日東シナ海WSW10km/h 970hPa 35m/s、28日990hPa 23m/s、29日華南。"},
+    {"id": "D04", "text": "JMA防災: 奄美・沖縄は暴風高波、波11〜10m、24h雨量目安は奄美250mm・沖縄150mm、奄美は土砂災害に厳重警戒。"},
+    {"id": "D05", "text": "北大東空港の速報値: 最大瞬間42.2m/s、最大風速29.9m/s。"},
+    {"id": "D06", "text": "JTWC衛星解析: 眼は雲で埋まり西側が開く。西から乾燥空気、VWS15〜20kt、SST29〜30C、環境はmarginally favorable。"},
+    {"id": "D07", "text": "JTWC操舵: 日本から南東へ張り出す亜熱帯高気圧の南西縁。24〜48hは操舵場の弱まりで減速、その後中国側の高気圧で南西進。"},
+    {"id": "D08", "text": "JTWC: 進路・強度は72hまでHigh confidence、72h以後は陸地相互作用でMedium。"},
+    {"id": "D09", "text": "UCARガイダンス: 決定論主群とEPS主群は琉球から東シナ海を西〜南西進して中国東岸方向。少数の北東転向外れがあるが線数は公式確率ではない。"},
+    {"id": "D10", "text": "JTWC強度: 乾燥空気と今後20〜30ktのシアで上陸前は緩やかに弱化、上陸後は急速に弱化。"},
+    {"id": "D11", "text": "比較制約: JMA最大風速は10分平均、JTWCは1分平均で直接比較しない。有効時刻の異なる位置を直接比較しない。"}
+  ],
+  "claim_catalog": [
+    {"code": "TRACK_MAIN_WSW", "label": "主経路は琉球から東シナ海を西〜南西進し中国東岸方向", "supported_by": ["D02", "D03", "D07", "D08", "D09"], "contradicts": [], "priority": 5},
+    {"code": "TRACK_SLOW_ECS", "label": "24〜48時間は東シナ海で減速が焦点", "supported_by": ["D03", "D07", "D09"], "contradicts": [], "priority": 4},
+    {"code": "NORTH_OUTLIER_MATERIAL", "label": "北東転向外れを意思決定上の独立シナリオとして残す", "supported_by": ["D09"], "contradicts": ["NORTH_OUTLIER_LOW_PRIORITY"], "priority": 3},
+    {"code": "NORTH_OUTLIER_LOW_PRIORITY", "label": "72時間の主判断では北東転向外れを低位に扱う", "supported_by": ["D08", "D09"], "contradicts": ["NORTH_OUTLIER_MATERIAL"], "priority": 4},
+    {"code": "INTENSITY_GRADUAL_WEAKEN", "label": "上陸前は乾燥空気とシアで緩やかに弱化する", "supported_by": ["D03", "D06", "D10"], "contradicts": [], "priority": 4},
+    {"code": "INTENSITY_STILL_DANGEROUS_27", "label": "弱化しても27日頃までは強い影響を与え得る", "supported_by": ["D03", "D04", "D10"], "contradicts": [], "priority": 5},
+    {"code": "SHORT_TERM_IMPACT_CRITICAL", "label": "25日夜から26日朝の奄美・沖縄の暴風高波を最優先する", "supported_by": ["D02", "D04", "D05"], "contradicts": [], "priority": 5},
+    {"code": "ACTION_BEFORE_WIND", "label": "暴風が強まる前の安全確保を優先する", "supported_by": ["D04"], "contradicts": [], "priority": 5},
+    {"code": "UPDATE_STEERING_FIRST", "label": "更新では実進路と亜熱帯高気圧の操舵変化を最優先する", "supported_by": ["D07", "D08", "D09"], "contradicts": [], "priority": 3},
+    {"code": "UPDATE_STRUCTURE_FIRST", "label": "更新では眼・対流・乾燥空気・シアの変化を最優先する", "supported_by": ["D05", "D06", "D10"], "contradicts": [], "priority": 3},
+    {"code": "LONG_RANGE_MEDIUM_CONF", "label": "72時間以後の位置と弱化速度は中程度の信頼に留める", "supported_by": ["D08", "D09", "D10"], "contradicts": [], "priority": 3},
+    {"code": "AGENCY_COMPARE_WITH_CONSTRAINTS", "label": "JMAとJTWCは平均時間と有効時刻を揃えて比較する", "supported_by": ["D11"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "dynamical_modeler": ["TRACK_MAIN_WSW", "NORTH_OUTLIER_LOW_PRIORITY", "UPDATE_STEERING_FIRST"],
+    "ensemble_probabilist": ["NORTH_OUTLIER_MATERIAL", "LONG_RANGE_MEDIUM_CONF", "TRACK_MAIN_WSW"],
+    "observation_nowcaster": ["INTENSITY_GRADUAL_WEAKEN", "UPDATE_STRUCTURE_FIRST", "AGENCY_COMPARE_WITH_CONSTRAINTS"],
+    "impact_risk_forecaster": ["SHORT_TERM_IMPACT_CRITICAL", "ACTION_BEFORE_WIND", "INTENSITY_STILL_DANGEROUS_27"]
+  },
+  "sources": [
+    "https://typhoon.yahoo.co.jp/weather/jp/typhoon/2618.html",
+    "https://next.jorudan.co.jp/weather/?mode=typh&ti=2618",
+    "https://www.metoc.navy.mil/jtwc/products/wp1726prog.txt",
+    "https://hurricanes.ral.ucar.edu/realtime/plots/northwestpacific/2026/wp172026/"
+  ]
+}

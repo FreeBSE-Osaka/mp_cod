@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "status": "conditional_tool_evidence_only",
+  "promoted_at": "2026-08-25",
+  "persona_id": "empirical_auditor",
+  "base_model": "mlx-community/Qwen3-1.7B-4bit",
+  "adapter": "not bundled; planned as a separate Hugging Face artifact",
+  "adapter_sha256": "500e8fa45002a23660743b254edba70128a31c927a0c0cad5a7c5337319ff905",
+  "curriculum_manifest_sha256": "a23c08f02d5523001b30618374df7f2c50a7aa32fefa22cbf0309b265dc70bf7",
+  "required_input": "deterministic_tool_evidence",
+  "runtime_guard": "strict field validation and array truncation to schema maximum",
+  "forbidden_input": "raw_unverified_problem",
+  "evidence_holdout_24": {
+    "base_all_correct_accuracy": 0.4167,
+    "adapter_all_correct_accuracy": 0.5417,
+    "base_semantic_accuracy": 0.5,
+    "adapter_semantic_accuracy": 0.6667
+  },
+  "raw_holdout_24": {
+    "base_fraction_accuracy": 0.2917,
+    "adapter_fraction_accuracy": 0.1667,
+    "base_semantic_accuracy": 0.0,
+    "adapter_semantic_accuracy": 0.0
+  },
+  "operational_smoke": {
+    "case": "upper=100 condition=2 target=3 hypothesis=1/3",
+    "effective_final_answer": "8/25 = 0.32",
+    "json_valid": true,
+    "contract_valid": true,
+    "semantic_correct": true,
+    "all_correct": true,
+    "evaluation": "docs/weight_experiment_20260825.md"
+  },
+  "decision": "Promoted only behind deterministic evidence injection. Never use as a raw arithmetic reasoner."
+}

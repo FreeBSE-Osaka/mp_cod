@@ -1,0 +1,19 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+
+# Generated debate and training outputs
+runs/
+data/sft/
+evaluations/
+
+# Model artifacts stay outside Git
+models/
+adapters/
+*.safetensors
+*.gguf
+
+# Third-party plots are not redistributed
+data/typhoon18_20260825/*.png
+*.partial.json

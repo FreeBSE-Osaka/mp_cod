@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "generator": "finite_conditional_multiples_with_tool_evidence_v2",
+  "seed": 20260825,
+  "counts": {
+    "train": 192,
+    "valid": 24,
+    "test": 24
+  },
+  "sha256": {
+    "train.jsonl": "8a4ac85e6fc2e2c4de768e1dbcf19d7e04ab959f5f18778fbb0b779ac3da5f24",
+    "valid.jsonl": "30f591e39ebdaab7266a2906a7b70a2711607b29eb421212e54518bbfb20c5db",
+    "test.jsonl": "82936aecaf51a86691f3d5a7951740804e3ef7abd0e3a2a6508caa76929f08d4",
+    "benchmark.jsonl": "791650ffe2520646c847920fb2aafff56c099aa541b4bac8954ef234297c8070",
+    "evidence_benchmark.jsonl": "dbe36c269c40a399592f189d72d3d6f6d090d092ac52673eb56dfd04048adcc9"
+  },
+  "scope": "実証監査者の証拠解釈Weight用。raw benchmarkで算術保持も測定。"
+}
