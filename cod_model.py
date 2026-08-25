@@ -23,6 +23,7 @@ DEFAULT_MODEL = "qwen3.5:4b"
 DEFAULT_API_URL = "http://127.0.0.1:11434/api/chat"
 PROFILE_PATH = Path(__file__).with_name("personas.json")
 STANCES = ["主案", "対案", "条件付き", "保留"]
+EVENT_PROMPT_PROFILES = ("baseline", "orthogonal", "orthogonal_fewshot")
 
 
 def short_string(limit: int = 160) -> dict:
@@ -97,6 +98,10 @@ def review_schema(other_ids: list[str]) -> dict:
         "additionalProperties": False,
         "properties": {
             "target_persona": {"type": "string", "enum": other_ids},
+            "rebuttal_type": {
+                "type": "string",
+                "enum": ["前提の否定", "反例の提示", "トレードオフの指摘"],
+            },
             "challenge": short_string(),
             "response": short_string(),
             "revised_stance": {"type": "string", "enum": STANCES},
@@ -107,6 +112,7 @@ def review_schema(other_ids: list[str]) -> dict:
         },
         "required": [
             "target_persona",
+            "rebuttal_type",
             "challenge",
             "response",
             "revised_stance",
@@ -131,7 +137,7 @@ def load_domains(path: Path = PROFILE_PATH) -> dict:
         if any(not value for value in ids) or len(ids) != len(set(ids)):
             raise ValueError(f"{domain}: persona ids must be non-empty and unique")
         for persona in personas:
-            required = ("name", "worldview", "objective", "tests", "avoid")
+            required = ("name", "worldview", "objective", "utility", "loss", "tests", "avoid")
             if any(not persona.get(key) for key in required):
                 raise ValueError(f"{domain}/{persona['id']}: missing persona field")
     return domains
@@ -141,6 +147,8 @@ def persona_system(persona: dict, phase: str) -> str:
     return f"""あなたは同一基盤モデル内の独立した専門家人格「{persona['name']}」です。
 世界観: {persona['worldview']}
 目的: {persona['objective']}
+最大化する効用: {persona['utility']}
+最小化する損失: {persona['loss']}
 検査: {' / '.join(persona['tests'])}
 禁止: {' / '.join(persona['avoid'])} / 迎合 / 多数決 / 未知の固有名の創作
 フェーズ: {phase}
@@ -403,6 +411,9 @@ def run_debate(args: argparse.Namespace) -> int:
 {blind_context}
 
 他人格から最も強く反対すべき一人を選び、具体的に反証してください。
+反論型は「前提の否定」「反例の提示」「トレードオフの指摘」の一つを選びます。
+短い例: 前提の否定なら「対象案は常時接続を前提にしているが、要件にはオフライン利用がある」のように、
+相手の文章の言い換えではなく、壊れる前提・反例・代償を一つ特定してください。
 その反証を踏まえ、自分の初期見解を維持するか修正するかも明示してください。
 全員が同意していても、共通の隠れた前提を一つ攻撃してください。"""
         try:
@@ -919,6 +930,59 @@ def load_claim_ledger(path: Path) -> dict:
     return ledger
 
 
+def load_adapter_map(path: str | None, persona_ids: set[str]) -> dict[str, str]:
+    if not path:
+        return {}
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    adapters = payload.get("adapters") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1 or not isinstance(adapters, dict):
+        raise ValueError("adapter map requires schema_version=1 and an adapters object")
+    unknown = set(adapters) - persona_ids
+    if unknown:
+        raise ValueError(f"adapter map has unknown personas: {sorted(unknown)}")
+    result = {}
+    for persona_id, adapter_path in adapters.items():
+        if not isinstance(adapter_path, str) or not Path(adapter_path).is_dir():
+            raise ValueError(f"{persona_id}: adapter directory does not exist: {adapter_path}")
+        for required in ("adapter_config.json", "adapters.safetensors"):
+            if not (Path(adapter_path) / required).is_file():
+                raise ValueError(f"{persona_id}: missing {required}")
+        result[persona_id] = adapter_path
+    return result
+
+
+def label_statement(code: str, data_ids: list[str], ledger: dict) -> str:
+    catalog = {item["code"]: item for item in ledger["claim_catalog"]}
+    return f"{catalog[code]['label']}。根拠は[{','.join(data_ids)}]。"
+
+
+def validate_public_statement(statement: object, data_ids: list[str]) -> tuple[str | None, str | None]:
+    if not isinstance(statement, str):
+        return None, "statement must be a string"
+    normalized = re.sub(r"\s+", " ", statement).strip()
+    if not 8 <= len(normalized) <= 240:
+        return None, "statement must be 8 to 240 characters"
+    references = set(re.findall(r"D\d{2,}", normalized))
+    if not references:
+        return None, "statement must cite at least one D id"
+    if not references.issubset(set(data_ids)):
+        return None, f"statement cites unselected D ids: {sorted(references - set(data_ids))}"
+    return normalized, None
+
+
+def sanitize_model_statement(statement: object, data_ids: list[str]) -> str | None:
+    if not isinstance(statement, str) or not data_ids:
+        return None
+    normalized = re.sub(r"\s+", " ", statement).strip()
+    if "根拠" in normalized:
+        normalized = normalized.split("根拠", 1)[0]
+    normalized = re.sub(r"\[?D\d{2,}\]?", "", normalized)
+    normalized = normalized.strip(" 、,。.[]")
+    if not 8 <= len(normalized) <= 200 or not re.search(r"[ぁ-んァ-ヶ一-龠]", normalized):
+        return None
+    return f"{normalized}。根拠は[{','.join(data_ids)}]。"
+
+
 def validate_coded_claim(claim: dict, ledger: dict) -> tuple[dict | None, str | None]:
     if not isinstance(claim, dict):
         return None, "claim is not an object"
@@ -927,7 +991,11 @@ def validate_coded_claim(claim: dict, ledger: dict) -> tuple[dict | None, str | 
     if code not in catalog:
         return None, f"unknown claim code: {code}"
     data_ids = claim.get("data_ids")
-    if not isinstance(data_ids, list) or not data_ids or not all(isinstance(value, str) for value in data_ids):
+    if (
+        not isinstance(data_ids, list)
+        or not data_ids
+        or not all(isinstance(value, str) for value in data_ids)
+    ):
         return None, "data_ids must be a non-empty string list"
     allowed = set(catalog[code]["supported_by"])
     if not set(data_ids).issubset(allowed):
@@ -989,6 +1057,9 @@ def schedule_claim_events(persona_claims: dict[str, list[dict]], ledger: dict, m
             "label": catalog[claim["code"]]["label"],
             "data_ids": claim["data_ids"],
             "confidence": claim["confidence"],
+            "origin": claim.get("origin", "unknown"),
+            "statement": claim.get("statement") or label_statement(claim["code"], claim["data_ids"], ledger),
+            "statement_origin": claim.get("statement_origin", "label_fallback"),
         }
         events.append(event)
         last_speaker = persona_id
@@ -1020,7 +1091,10 @@ def synthesize_event_summary(
         for pair in pairs:
             key = "|".join(pair)
             choices = final_votes.get(key, {})
-            counts = {code: sum(choice == code for choice in choices.values()) for code in pair}
+            normalized_choices = [
+                choice.get("choice") if isinstance(choice, dict) else choice for choice in choices.values()
+            ]
+            counts = {code: sum(choice == code for choice in normalized_choices) for code in pair}
             winner = max(counts, key=counts.get)
             if counts[winner] >= threshold:
                 resolved[key] = winner
@@ -1043,15 +1117,219 @@ def synthesize_event_summary(
     }
 
 
+def event_run_metrics(run: dict) -> dict:
+    events = run.get("events") or []
+    independent = run.get("independent") or {}
+    model_claims = sum(event.get("origin") == "model" for event in events)
+    fallbacks = sum(event.get("origin") == "validated_fallback" for event in events)
+    model_statement_origins = {"model", "model_repair", "model_sanitized"}
+    model_statements = sum(event.get("statement_origin") in model_statement_origins for event in events)
+    rejected = sum(len(value.get("rejected") or []) for value in independent.values())
+    model_attempts = model_claims + rejected
+    raw_records = [value.get("raw") for value in independent.values()]
+    vote_records = []
+    for round_data in run.get("reconciliation") or []:
+        for pair_votes in (round_data.get("votes") or {}).values():
+            for vote in pair_votes.values():
+                if isinstance(vote, dict):
+                    vote_records.append(vote)
+                    raw_records.append(vote.get("raw"))
+                    if vote.get("repair_raw") is not None:
+                        raw_records.append(vote.get("repair_raw"))
+    raw_record_rate = sum(isinstance(value, str) and bool(value.strip()) for value in raw_records) / len(raw_records) if raw_records else 0.0
+    statement_pairs = [
+        similarity(str(left.get("statement", "")), str(right.get("statement", "")))
+        for left, right in itertools.combinations(events, 2)
+        if left.get("code") != right.get("code")
+    ]
+    near_duplicates = sum(value >= 0.8 for value in statement_pairs)
+    total = len(events)
+    model_claim_rate = model_claims / total if total else 0.0
+    fallback_rate = fallbacks / total if total else 0.0
+    vote_model_statements = sum(
+        vote.get("statement_origin") in model_statement_origins for vote in vote_records
+    )
+    public_statement_total = total + len(vote_records)
+    model_statement_rate = (
+        (model_statements + vote_model_statements) / public_statement_total if public_statement_total else 0.0
+    )
+    vote_parse_fallbacks = sum(vote.get("choice_origin") == "parse_fallback" for vote in vote_records)
+    changed_votes = [vote for vote in vote_records if vote.get("changed_from_previous")]
+    model_change_reasons = sum(
+        vote.get("change_reason_origin") in model_statement_origins for vote in changed_votes
+    )
+    change_reason_rate = model_change_reasons / len(changed_votes) if changed_votes else 1.0
+    distinct_code_rate = len({event.get("code") for event in events}) / total if total else 0.0
+    action_diversity = len({event.get("action") for event in events}) / len(ACTION_PRIORITY) if events else 0.0
+    near_duplicate_rate = near_duplicates / len(statement_pairs) if statement_pairs else 0.0
+    evidence_validity_rate = model_claims / model_attempts if model_attempts else 0.0
+    score = 100 * (
+        0.2 * model_claim_rate
+        + 0.2 * model_statement_rate
+        + 0.15 * raw_record_rate
+        + 0.15 * distinct_code_rate
+        + 0.1 * action_diversity
+        + 0.2 * (1.0 - near_duplicate_rate)
+    )
+    return {
+        "event_count": total,
+        "model_claims": model_claims,
+        "validated_fallbacks": fallbacks,
+        "rejected_claims": rejected,
+        "model_claim_rate": round(model_claim_rate, 4),
+        "fallback_rate": round(fallback_rate, 4),
+        "evidence_validity_rate": round(evidence_validity_rate, 4),
+        "model_statement_rate": round(model_statement_rate, 4),
+        "event_model_statements": model_statements,
+        "reconciliation_model_statements": vote_model_statements,
+        "reconciliation_parse_fallbacks": vote_parse_fallbacks,
+        "changed_votes": len(changed_votes),
+        "model_change_reason_rate": round(change_reason_rate, 4),
+        "raw_record_rate": round(raw_record_rate, 4),
+        "distinct_code_rate": round(distinct_code_rate, 4),
+        "action_diversity": round(action_diversity, 4),
+        "near_duplicate_pairs": near_duplicates,
+        "near_duplicate_rate": round(near_duplicate_rate, 4),
+        "shadow_score": round(score, 2),
+        "hard_gate_pass": (
+            rejected == 0
+            and evidence_validity_rate == 1.0
+            and raw_record_rate == 1.0
+            and vote_parse_fallbacks == 0
+            and change_reason_rate == 1.0
+        ),
+    }
+
+
+def decide_rsi_shadow(
+    parent_dev: dict,
+    candidate_dev: dict,
+    parent_holdout: dict,
+    candidate_holdout: dict,
+    *,
+    round_no: int,
+    max_rounds: int,
+    holdout_distinct: bool,
+) -> dict:
+    dev_gain = candidate_dev["shadow_score"] - parent_dev["shadow_score"]
+    holdout_gain = candidate_holdout["shadow_score"] - parent_holdout["shadow_score"]
+    non_regression = all(
+        (
+            candidate_dev["fallback_rate"] <= parent_dev["fallback_rate"],
+            candidate_holdout["fallback_rate"] <= parent_holdout["fallback_rate"],
+            candidate_dev["model_statement_rate"] >= parent_dev["model_statement_rate"],
+            candidate_holdout["model_statement_rate"] >= parent_holdout["model_statement_rate"],
+            candidate_dev["near_duplicate_rate"] <= parent_dev["near_duplicate_rate"],
+            candidate_holdout["near_duplicate_rate"] <= parent_holdout["near_duplicate_rate"],
+        )
+    )
+    eligible = (
+        holdout_distinct
+        and parent_dev["hard_gate_pass"]
+        and candidate_dev["hard_gate_pass"]
+        and parent_holdout["hard_gate_pass"]
+        and candidate_holdout["hard_gate_pass"]
+        and non_regression
+        and dev_gain >= 1.0
+        and holdout_gain >= 1.0
+    )
+    if not holdout_distinct:
+        stop_reason = "holdout must use a different frozen ledger"
+    elif not eligible:
+        stop_reason = "candidate gain did not pass every dev and holdout gate"
+    elif round_no >= max_rounds:
+        stop_reason = "maximum RSI rounds reached"
+    else:
+        stop_reason = "human review required before another shadow round"
+    return {
+        "schema_version": 1,
+        "status": "research_shadow_candidate" if eligible else "parent_retained",
+        "round": round_no,
+        "max_rounds": max_rounds,
+        "dev_gain": round(dev_gain, 2),
+        "holdout_gain": round(holdout_gain, 2),
+        "non_regression": non_regression,
+        "holdout_distinct": holdout_distinct,
+        "parent_replacement_allowed": False,
+        "promotion_allowed": False,
+        "requires_human_approval": True,
+        "continue_allowed": eligible and round_no < max_rounds,
+        "stop_reason": stop_reason,
+        "metrics": {
+            "parent_dev": parent_dev,
+            "candidate_dev": candidate_dev,
+            "parent_holdout": parent_holdout,
+            "candidate_holdout": candidate_holdout,
+        },
+    }
+
+
+def run_rsi_shadow(args: argparse.Namespace) -> int:
+    if args.round < 1 or args.max_rounds < 1 or args.round > args.max_rounds:
+        raise ValueError("RSI round must be between 1 and max_rounds")
+    paths = {
+        "parent_dev": Path(args.parent_dev),
+        "candidate_dev": Path(args.candidate_dev),
+        "parent_holdout": Path(args.parent_holdout),
+        "candidate_holdout": Path(args.candidate_holdout),
+    }
+    runs = {name: json.loads(path.read_text(encoding="utf-8")) for name, path in paths.items()}
+    if any(run.get("schema_version", 0) < 2 for run in runs.values()):
+        raise ValueError("RSI requires event-debate schema_version 2 runs with complete raw logs")
+
+    def ledger_sha(run: dict) -> str:
+        recorded = run.get("ledger_sha256")
+        if isinstance(recorded, str) and re.fullmatch(r"[0-9a-f]{64}", recorded):
+            return recorded
+        ledger_path = Path(str(run.get("ledger", "")))
+        if not ledger_path.is_file():
+            raise ValueError("RSI inputs must reference readable ledger files or include ledger_sha256")
+        return hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+
+    ledger_hashes = {name: ledger_sha(run) for name, run in runs.items()}
+    for parent_name, candidate_name in (("parent_dev", "candidate_dev"), ("parent_holdout", "candidate_holdout")):
+        parent, candidate = runs[parent_name], runs[candidate_name]
+        for field in ("model", "domain"):
+            if parent.get(field) != candidate.get(field):
+                raise ValueError(f"{parent_name}/{candidate_name}: {field} must match")
+        if ledger_hashes[parent_name] != ledger_hashes[candidate_name]:
+            raise ValueError(f"{parent_name}/{candidate_name}: ledger content must match")
+    holdout_distinct = ledger_hashes["parent_dev"] != ledger_hashes["parent_holdout"]
+    metrics = {name: event_run_metrics(run) for name, run in runs.items()}
+    decision = decide_rsi_shadow(
+        metrics["parent_dev"],
+        metrics["candidate_dev"],
+        metrics["parent_holdout"],
+        metrics["candidate_holdout"],
+        round_no=args.round,
+        max_rounds=args.max_rounds,
+        holdout_distinct=holdout_distinct,
+    )
+    decision["inputs"] = {
+        name: {
+            "path": str(path),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "prompt_profile": runs[name].get("prompt_profile", "unknown"),
+        }
+        for name, path in paths.items()
+    }
+    write_json(Path(args.out), decision)
+    print(json.dumps(decision, ensure_ascii=False, indent=2))
+    return 0
+
+
 def run_event_debate(args: argparse.Namespace) -> int:
     try:
+        import mlx.core as mx
         from mlx_lm import generate, load
         from mlx_lm.sample_utils import make_sampler
+        from mlx_lm.tuner.utils import load_adapters, remove_lora_layers
     except ImportError as exc:
         raise ValueError("event-debateはMLX-LM環境のPythonで実行してください") from exc
     ledger = load_claim_ledger(Path(args.ledger))
     domains = load_domains()
     personas = domains[args.domain]["personas"]
+    adapter_map = load_adapter_map(args.adapter_map, {persona["id"] for persona in personas})
     catalog = {item["code"]: item for item in ledger["claim_catalog"]}
     data_view = [{"id": item["id"], "text": item["text"]} for item in ledger["data"]]
     catalog_view = [
@@ -1061,7 +1339,26 @@ def run_event_debate(args: argparse.Namespace) -> int:
     preferences = ledger.get("role_preferences", {})
     print(f"[MLX] {args.model_path} をロード", flush=True)
     model, tokenizer = load(args.model_path)
+    model.eval()
+    mx.random.seed(args.seed)
     sampler = make_sampler(temp=args.temperature, top_p=0.85)
+    active_adapter: str | None = None
+    adapter_layers_active = False
+
+    def activate_persona_adapter(persona_id: str) -> str | None:
+        nonlocal model, active_adapter, adapter_layers_active
+        target = adapter_map.get(persona_id)
+        if target == active_adapter and (target is not None or not adapter_layers_active):
+            return target
+        if adapter_layers_active:
+            model = remove_lora_layers(model)
+            adapter_layers_active = False
+        if target is not None:
+            model = load_adapters(model, target)
+            model.eval()
+            adapter_layers_active = True
+        active_adapter = target
+        return target
 
     def ask_json(system: str, user: str, max_tokens: int) -> tuple[str, dict | None]:
         prompt = tokenizer.apply_chat_template(
@@ -1073,47 +1370,100 @@ def run_event_debate(args: argparse.Namespace) -> int:
         raw = generate(model, tokenizer, prompt=prompt, max_tokens=max_tokens, sampler=sampler, verbose=False).strip()
         return raw, parse_json_object(raw)
 
+    created_at = dt.datetime.now().astimezone()
+    outdir = Path(args.out)
+    outdir.mkdir(parents=True, exist_ok=True)
+    run_stem = f"event_debate_{created_at.strftime('%Y%m%d_%H%M%S_%f')}"
+    partial_path = outdir / f"{run_stem}.partial.json"
+    final_path = outdir / f"{run_stem}.json"
     run = {
-        "schema_version": 1,
-        "created_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "schema_version": 2,
+        "created_at": created_at.isoformat(timespec="seconds"),
         "model": args.model_path,
         "ledger": args.ledger,
+        "ledger_sha256": hashlib.sha256(Path(args.ledger).read_bytes()).hexdigest(),
+        "domain": args.domain,
+        "prompt_profile": args.prompt_profile,
+        "seed": args.seed,
+        "adapter_map": adapter_map,
+        "adapter_fingerprints": {
+            persona_id: {
+                "config_sha256": hashlib.sha256((Path(path) / "adapter_config.json").read_bytes()).hexdigest(),
+                "weights_sha256": hashlib.sha256((Path(path) / "adapters.safetensors").read_bytes()).hexdigest(),
+            }
+            for persona_id, path in adapter_map.items()
+        },
         "independent": {},
         "events": [],
         "reconciliation": [],
     }
+    write_json(partial_path, run)
     persona_claims: dict[str, list[dict]] = {}
     print("\n######## 独立再計算 / 他者の文章は非公開 ########", flush=True)
     for persona in personas:
+        adapter_path = activate_persona_adapter(persona["id"])
         available_codes = [code for code in preferences.get(persona["id"], []) if code in catalog]
         available_catalog = [
             {"code": code, "label": catalog[code]["label"], "supported_by": catalog[code]["supported_by"]}
             for code in available_codes
         ]
-        system = (
-            f"あなたは{persona['name']}。他人格の文章は一切見ていない。"
-            "dataとclaim_catalogだけを独立確認し、自由文主張は禁止。指定JSONだけを返す。"
+        objective = (
+            f"最大化する効用: {persona['utility']} 最小化する損失: {persona['loss']}"
+            if args.prompt_profile != "baseline"
+            else persona["objective"]
         )
+        system = (
+            f"あなたは{persona['name']}。他人格の文章は一切見ていない。{objective}。"
+            "dataとclaim_catalogだけを独立確認する。台帳外の主張は禁止。"
+            "statementは内部思考ではなく、選んだlabelとdataを根拠にした公開用の自然文1文とする。"
+            "指定JSONだけを返す。"
+        )
+        prompt_payload = {
+            "topic": ledger["topic"],
+            "data": data_view,
+            "claim_catalog": available_catalog,
+            "persona_focus": persona["objective"],
+            "rule": (
+                "claim_catalogの3候補を重要順に3件返す。JSONはclaims配列のみ。"
+                "各要素はcode, data_ids, confidence, statement。ダミー語CODEは禁止。"
+                "data_idsは選んだcodeのsupported_byから必要なものを選ぶ。"
+                "statementは240字以内の自然な日本語1文で、選んだD番号を[D01]の形で必ず引用し、"
+                "labelの意味やdataにない事実を追加しない。"
+            ),
+        }
+        if args.prompt_profile == "orthogonal_fewshot" and available_catalog:
+            prompt_payload["format_example"] = {
+                "claims": [
+                    {
+                        "code": example["code"],
+                        "data_ids": [example["supported_by"][0]],
+                        "confidence": "MEDIUM",
+                        "statement": (
+                            f"{example['label']}と判断します。"
+                            f"根拠は[{example['supported_by'][0]}]です。"
+                        ),
+                    }
+                    for example in available_catalog
+                ]
+            }
         user = json.dumps(
-            {
-                "topic": ledger["topic"],
-                "data": data_view,
-                "claim_catalog": available_catalog,
-                "persona_focus": persona["objective"],
-                "rule": (
-                    "claim_catalogの3候補から重要な2件だけ選ぶ。JSONはclaims配列のみ。"
-                    "各要素はcode, data_ids, confidence。ダミー語CODEは禁止。"
-                    "data_idsは選んだcodeのsupported_byから1〜2件。"
-                ),
-            },
+            prompt_payload,
             ensure_ascii=False,
         )
         raw, parsed = ask_json(system, user, args.max_tokens)
-        valid, rejected, seen_codes = [], [], set()
+        valid, rejected, warnings, seen_codes = [], [], [], set()
         for claim in (parsed or {}).get("claims", []):
             normalized, reason = validate_coded_claim(claim, ledger)
             if normalized and normalized["code"] not in seen_codes:
                 normalized["origin"] = "model"
+                statement, statement_reason = validate_public_statement(claim.get("statement"), normalized["data_ids"])
+                if statement is None:
+                    statement = label_statement(normalized["code"], normalized["data_ids"], ledger)
+                    normalized["statement_origin"] = "label_fallback"
+                    warnings.append({"code": normalized["code"], "reason": statement_reason})
+                else:
+                    normalized["statement_origin"] = "model"
+                normalized["statement"] = statement
                 valid.append(normalized)
                 seen_codes.add(normalized["code"])
             else:
@@ -1128,26 +1478,41 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         "data_ids": catalog[code]["supported_by"][:2],
                         "confidence": 60,
                         "origin": "validated_fallback",
+                        "statement": label_statement(code, catalog[code]["supported_by"][:2], ledger),
+                        "statement_origin": "label_fallback",
                     }
                 )
                 seen_codes.add(code)
         persona_claims[persona["id"]] = valid
-        run["independent"][persona["id"]] = {"raw": raw, "valid": valid, "rejected": rejected}
+        run["independent"][persona["id"]] = {
+            "raw": raw,
+            "valid": valid,
+            "rejected": rejected,
+            "warnings": warnings,
+            "adapter": adapter_path,
+        }
         print(f"\n[{persona['name']}] 採用={len(valid)} 失格={len(rejected)}", flush=True)
         for claim in valid:
-            print(f"  {claim['code']} <- {','.join(claim['data_ids'])} ({claim['origin']})", flush=True)
+            origin = "モデル自然文" if claim["statement_origin"] == "model" else "ラベル補完"
+            print(f"  [{origin}/{claim['origin']}] {claim['statement']}", flush=True)
+            print(f"    {claim['code']} <- {','.join(claim['data_ids'])}", flush=True)
         for item in rejected:
             print(f"  [失格] {item['reason']}", flush=True)
+        for item in warnings:
+            print(f"  [自然文補完] {item['code']}: {item['reason']}", flush=True)
+        write_json(partial_path, run)
 
     events = schedule_claim_events(persona_claims, ledger, args.max_turns)
     run["events"] = events
+    write_json(partial_path, run)
     print("\n######## イベント駆動討論 / 異議・賛同を優先 ########", flush=True)
     persona_names = {persona["id"]: persona["name"] for persona in personas}
     for event in events:
         target = f" -> {event['target_claim_id']}" if event["target_claim_id"] else ""
+        origin = "モデル自然文" if event["statement_origin"] == "model" else "ラベル補完"
         print(
             f"{event['claim_id']} [{event['action_label']}]{target} {persona_names[event['persona_id']]}: "
-            f"{event['label']} [{','.join(event['data_ids'])}]",
+            f"{event['statement']} ({origin}/{event['origin']})",
             flush=True,
         )
 
@@ -1161,6 +1526,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
         }
     )
     previous_tally = {}
+    previous_votes = {}
     for round_no in range(1, args.reconcile_rounds + 1):
         print(f"\n######## すり合わせ {round_no} / 対立ごとの一問一答 ########", flush=True)
         votes = {}
@@ -1169,48 +1535,227 @@ def run_event_debate(args: argparse.Namespace) -> int:
             pair_votes = {}
             print(f"論点: {pair[0]} vs {pair[1]}", flush=True)
             for persona in personas:
+                adapter_path = activate_persona_adapter(persona["id"])
                 system = (
-                    f"あなたは{persona['name']}。自由文は禁止。検証済み2コードの扱いを1語で選ぶ。"
+                    f"あなたは{persona['name']}。最大化する効用は「{persona['utility']}」、"
+                    f"最小化する損失は「{persona['loss']}」。"
+                    "検証済み2コードを比較し、選択と公開用の短い自然文を指定JSONで返す。"
                 )
+                pair_data_ids = sorted(set(catalog[pair[0]]["supported_by"]) | set(catalog[pair[1]]["supported_by"]))
+                prior_vote = previous_votes.get(key, {}).get(persona["id"], {})
                 user = json.dumps(
                     {
-                        "left": {"code": pair[0], "label": catalog[pair[0]]["label"]},
-                        "right": {"code": pair[1], "label": catalog[pair[1]]["label"]},
+                        "left": {
+                            "code": pair[0],
+                            "label": catalog[pair[0]]["label"],
+                            "supported_by": catalog[pair[0]]["supported_by"],
+                        },
+                        "right": {
+                            "code": pair[1],
+                            "label": catalog[pair[1]]["label"],
+                            "supported_by": catalog[pair[1]]["supported_by"],
+                        },
+                        "data": [item for item in data_view if item["id"] in pair_data_ids],
                         "own_initial_codes": [claim["code"] for claim in persona_claims[persona["id"]]],
+                        "own_previous_choice": prior_vote.get("choice"),
                         "previous_tally": previous_tally.get(key, {}),
-                        "rule": f"出力は {pair[0]} または {pair[1]} または BOTH または ABSTAIN の1語だけ。",
+                        "rule": (
+                            f"choiceは {pair[0]} または {pair[1]} または BOTH または ABSTAIN。"
+                            "data_idsは表示したdataから1〜2件。statementは240字以内の自然な日本語1文で、"
+                            "選択したcodeのsupported_byにあるD番号だけを[D01]形式で引用する。"
+                            "change_reasonは前ラウンドから選択を変えた時だけ、その理由とD番号を書く。"
+                            "変えていない時は空文字。JSONキーはchoice,data_ids,statement,change_reasonだけ。"
+                        ),
+                        "format_example": {
+                            "choice": pair[0],
+                            "data_ids": [catalog[pair[0]]["supported_by"][0]],
+                            "statement": (
+                                f"{catalog[pair[0]]['label']}を採ります。"
+                                f"根拠は[{catalog[pair[0]]['supported_by'][0]}]です。"
+                            ),
+                            "change_reason": (
+                                f"前回の選択より[{catalog[pair[0]]['supported_by'][0]}]を重視して変更しました。"
+                                if prior_vote and prior_vote.get("choice") != pair[0]
+                                else ""
+                            ),
+                        }
+                        if args.prompt_profile == "orthogonal_fewshot"
+                        else None,
                     },
                     ensure_ascii=False,
                 )
-                raw, _ = ask_json(system, user, 48)
-                matches = [code for code in pair if code in raw]
-                if len(matches) == 1:
-                    choice = matches[0]
-                elif "BOTH" in raw or len(matches) == 2:
-                    choice = "BOTH"
+                raw, parsed = ask_json(system, user, min(args.max_tokens, 240))
+                allowed_choices = {*pair, "BOTH", "ABSTAIN"}
+                choice = parsed.get("choice") if isinstance(parsed, dict) else None
+                choice_origin = "model_json"
+                if choice not in allowed_choices:
+                    matches = [code for code in pair if code in raw]
+                    if len(matches) == 1:
+                        choice = matches[0]
+                    elif "BOTH" in raw or len(matches) == 2:
+                        choice = "BOTH"
+                    else:
+                        choice = "ABSTAIN"
+                    choice_origin = "parse_fallback"
+                allowed_data = (
+                    set(catalog[choice]["supported_by"])
+                    if choice in catalog
+                    else set(pair_data_ids)
+                )
+                proposed_data = parsed.get("data_ids") if isinstance(parsed, dict) else None
+                if (
+                    not isinstance(proposed_data, list)
+                    or not proposed_data
+                    or not all(isinstance(value, str) for value in proposed_data)
+                    or not set(proposed_data).issubset(allowed_data)
+                ):
+                    data_ids = sorted(allowed_data)[:1]
                 else:
-                    choice = "ABSTAIN"
-                pair_votes[persona["id"]] = choice
-                print(f"  {persona['name']}: {choice}", flush=True)
+                    data_ids = list(dict.fromkeys(proposed_data))[:2]
+                statement, statement_reason = validate_public_statement(
+                    parsed.get("statement") if isinstance(parsed, dict) else None,
+                    data_ids,
+                )
+                if statement is None:
+                    if choice in catalog:
+                        statement = label_statement(choice, data_ids, ledger)
+                    elif choice == "BOTH":
+                        statement = f"両方を独立シナリオとして残します。根拠は[{','.join(data_ids)}]。"
+                    else:
+                        statement = f"証拠だけでは選べないため保留します。参照は[{','.join(data_ids)}]。"
+                    statement_origin = "label_fallback"
+                else:
+                    statement_origin = "model"
+                changed = bool(prior_vote) and prior_vote.get("choice") != choice
+                change_reason = ""
+                change_reason_origin = "not_required"
+                change_reason_warning = None
+                if changed:
+                    change_reason, change_reason_warning = validate_public_statement(
+                        parsed.get("change_reason") if isinstance(parsed, dict) else None,
+                        data_ids,
+                    )
+                    if change_reason is None:
+                        change_reason = (
+                            f"前回の{prior_vote.get('choice')}から{choice}へ変更しました。"
+                            f"新しい根拠は[{','.join(data_ids)}]です。"
+                        )
+                        change_reason_origin = "label_fallback"
+                    else:
+                        change_reason_origin = "model"
+                repair_raw = None
+                repair_statement_warning = None
+                repair_change_reason_warning = None
+                if statement_reason is not None or (changed and change_reason_warning is not None):
+                    repair_label = (
+                        catalog[choice]["label"]
+                        if choice in catalog
+                        else "両方を残す" if choice == "BOTH" else "判断を保留する"
+                    )
+                    repair_system = (
+                        f"あなたは{persona['name']}。選択は{choice}で確定済み。再評価は禁止。"
+                        "渡されたD番号だけで公開用自然文を修復し、指定JSONだけを返す。"
+                    )
+                    repair_user = json.dumps(
+                        {
+                            "choice": choice,
+                            "label": repair_label,
+                            "allowed_data_ids": data_ids,
+                            "data": [item for item in data_view if item["id"] in data_ids],
+                            "previous_choice": prior_vote.get("choice"),
+                            "changed": changed,
+                            "rule": (
+                                "statementはlabelを自然な日本語1文にし、allowed_data_idsだけを[D01]形式で引用する。"
+                                "change_reasonはchanged=trueの時だけ、前回から変えた理由とallowed_data_idsを引用する。"
+                                "JSONキーはstatement,change_reasonだけ。"
+                            ),
+                            "format_example": {
+                                "statement": f"{repair_label}と判断します。根拠は[{data_ids[0]}]です。",
+                                "change_reason": (
+                                    f"前回より[{data_ids[0]}]を重視して選択を変更しました。" if changed else ""
+                                ),
+                            },
+                        },
+                        ensure_ascii=False,
+                    )
+                    repair_raw, repair_parsed = ask_json(repair_system, repair_user, min(args.max_tokens, 180))
+                    if statement_reason is not None:
+                        repaired, repair_statement_warning = validate_public_statement(
+                            repair_parsed.get("statement") if isinstance(repair_parsed, dict) else None,
+                            data_ids,
+                        )
+                        if repaired is not None:
+                            statement = repaired
+                            statement_origin = "model_repair"
+                        else:
+                            sanitized = sanitize_model_statement(
+                                repair_parsed.get("statement") if isinstance(repair_parsed, dict) else None,
+                                data_ids,
+                            )
+                            if sanitized is not None:
+                                statement = sanitized
+                                statement_origin = "model_sanitized"
+                    if changed and change_reason_warning is not None:
+                        repaired_reason, repair_change_reason_warning = validate_public_statement(
+                            repair_parsed.get("change_reason") if isinstance(repair_parsed, dict) else None,
+                            data_ids,
+                        )
+                        if repaired_reason is not None:
+                            change_reason = repaired_reason
+                            change_reason_origin = "model_repair"
+                        else:
+                            sanitized_reason = sanitize_model_statement(
+                                repair_parsed.get("change_reason") if isinstance(repair_parsed, dict) else None,
+                                data_ids,
+                            )
+                            if sanitized_reason is not None:
+                                change_reason = sanitized_reason
+                                change_reason_origin = "model_sanitized"
+                vote = {
+                    "choice": choice,
+                    "choice_origin": choice_origin,
+                    "data_ids": data_ids,
+                    "statement": statement,
+                    "statement_origin": statement_origin,
+                    "statement_warning": statement_reason,
+                    "changed_from_previous": changed,
+                    "change_reason": change_reason,
+                    "change_reason_origin": change_reason_origin,
+                    "change_reason_warning": change_reason_warning,
+                    "raw": raw,
+                    "repair_raw": repair_raw,
+                    "repair_statement_warning": repair_statement_warning,
+                    "repair_change_reason_warning": repair_change_reason_warning,
+                    "adapter": adapter_path,
+                }
+                pair_votes[persona["id"]] = vote
+                print(f"  {persona['name']}: {choice} — {statement} ({statement_origin})", flush=True)
+                if changed:
+                    print(f"    変更理由: {change_reason} ({change_reason_origin})", flush=True)
             votes[key] = pair_votes
         previous_tally = {
-            key: {choice: list(pair_votes.values()).count(choice) for choice in set(pair_votes.values())}
+            key: {
+                choice: [vote["choice"] for vote in pair_votes.values()].count(choice)
+                for choice in {vote["choice"] for vote in pair_votes.values()}
+            }
             for key, pair_votes in votes.items()
         }
         run["reconciliation"].append({"round": round_no, "votes": votes, "tally": previous_tally})
+        previous_votes = votes
+        write_json(partial_path, run)
 
     summary = synthesize_event_summary(events, catalog, run["reconciliation"], len(personas))
     run["summary"] = summary
+    run["metrics"] = event_run_metrics(run)
     print("\n######## 検証済み統合 ########", flush=True)
     print("複数人格が合意:", ", ".join(summary["consensus"]) or "なし", flush=True)
     print("異議なしの検証済み主張:", ", ".join(summary["unopposed_supported"]) or "なし", flush=True)
     print("解決した対立:", summary["resolved_conflicts"] or "なし", flush=True)
     print("対立継続:", summary["unresolved_conflicts"] or "なし", flush=True)
-    outdir = Path(args.out)
-    outdir.mkdir(parents=True, exist_ok=True)
-    outfile = outdir / f"event_debate_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    write_json(outfile, run)
-    print(f"保存: {outfile}", flush=True)
+    print("RSI shadow指標:", json.dumps(run["metrics"], ensure_ascii=False), flush=True)
+    write_json(partial_path, run)
+    partial_path.replace(final_path)
+    print(f"保存: {final_path}", flush=True)
     return 0
 
 
@@ -1368,9 +1913,22 @@ def parser() -> argparse.ArgumentParser:
     event_debate.add_argument("--out", default="runs")
     event_debate.add_argument("--max-turns", type=int, default=10)
     event_debate.add_argument("--reconcile-rounds", type=int, default=2)
-    event_debate.add_argument("--max-tokens", type=int, default=240)
+    event_debate.add_argument("--max-tokens", type=int, default=420)
     event_debate.add_argument("--temperature", type=float, default=0.1)
+    event_debate.add_argument("--seed", type=int, default=20260825)
+    event_debate.add_argument("--prompt-profile", choices=EVENT_PROMPT_PROFILES, default="orthogonal_fewshot")
+    event_debate.add_argument("--adapter-map", help="persona idからMLX LoRA directoryへのJSON map")
     event_debate.set_defaults(handler=run_event_debate)
+
+    rsi = subcommands.add_parser("rsi-shadow", help="gate one bounded prompt/config RSI shadow round")
+    rsi.add_argument("--parent-dev", required=True)
+    rsi.add_argument("--candidate-dev", required=True)
+    rsi.add_argument("--parent-holdout", required=True)
+    rsi.add_argument("--candidate-holdout", required=True)
+    rsi.add_argument("--round", type=int, default=1)
+    rsi.add_argument("--max-rounds", type=int, default=3)
+    rsi.add_argument("--out", required=True)
+    rsi.set_defaults(handler=run_rsi_shadow)
 
     mark = subcommands.add_parser("mark", help="explicitly approve or reject one run for training")
     mark.add_argument("run")

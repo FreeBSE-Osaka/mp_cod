@@ -14,6 +14,8 @@ class CodModelTest(unittest.TestCase):
         for config in domains.values():
             ids = [persona["id"] for persona in config["personas"]]
             self.assertEqual(len(ids), len(set(ids)))
+            self.assertTrue(all(persona["utility"] and persona["loss"] for persona in config["personas"]))
+            self.assertEqual(len({persona["utility"] for persona in config["personas"]}), len(ids))
 
     def test_identical_blind_answers_trigger_collapse_proxy(self):
         answer = {
@@ -161,6 +163,32 @@ class CodModelTest(unittest.TestCase):
         self.assertIsNone(reason)
         self.assertEqual(valid["confidence"], 85)
 
+    def test_public_statement_requires_a_selected_data_id(self):
+        statement, reason = cod_model.validate_public_statement("主経路を採ります。根拠は[D01]です。", ["D01"])
+        self.assertIsNone(reason)
+        self.assertIn("D01", statement)
+        statement, reason = cod_model.validate_public_statement("根拠は[D99]です。", ["D01"])
+        self.assertIsNone(statement)
+        self.assertIn("unselected", reason)
+        sanitized = cod_model.sanitize_model_statement(
+            "北東転向外れを独立シナリオとして残す。根拠は[D08]です。",
+            ["D09"],
+        )
+        self.assertEqual(sanitized, "北東転向外れを独立シナリオとして残す。根拠は[D09]。")
+
+    def test_adapter_map_rejects_unknown_personas(self):
+        with tempfile.TemporaryDirectory() as directory:
+            adapter = Path(directory) / "adapter"
+            adapter.mkdir()
+            (adapter / "adapter_config.json").write_text("{}")
+            (adapter / "adapters.safetensors").write_bytes(b"weights")
+            mapping = Path(directory) / "map.json"
+            mapping.write_text(
+                json.dumps({"schema_version": 1, "adapters": {"unknown": str(adapter)}})
+            )
+            with self.assertRaisesRegex(ValueError, "unknown personas"):
+                cod_model.load_adapter_map(str(mapping), {"known"})
+
     def test_objection_speaks_before_new_topic(self):
         ledger = {
             "claim_catalog": [
@@ -178,7 +206,8 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(events[0]["code"], "MAIN")
         self.assertEqual(events[1]["action"], "object")
         self.assertEqual(events[1]["code"], "OUT")
-        self.assertNotIn("text", events[1])
+        self.assertEqual(events[1]["statement"], "out。根拠は[D02]。")
+        self.assertEqual(events[1]["statement_origin"], "label_fallback")
 
     def test_agreement_can_target_older_claim(self):
         ledger = {
@@ -217,6 +246,128 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(summary["resolved_conflicts"], {"A|B": "A"})
         self.assertIn("A", summary["consensus"])
         self.assertIn("C", summary["consensus"])
+
+    def test_event_metrics_keep_model_and_fallback_separate(self):
+        run = {
+            "independent": {
+                "p1": {"raw": "raw1", "rejected": []},
+                "p2": {"raw": "raw2", "rejected": []},
+            },
+            "events": [
+                {
+                    "code": "A",
+                    "action": "new",
+                    "origin": "model",
+                    "statement": "Aを採ります。根拠は[D01]です。",
+                    "statement_origin": "model",
+                },
+                {
+                    "code": "B",
+                    "action": "object",
+                    "origin": "validated_fallback",
+                    "statement": "Bです。根拠は[D02]です。",
+                    "statement_origin": "label_fallback",
+                },
+            ],
+            "reconciliation": [
+                {
+                    "votes": {
+                        "A|B": {
+                            "p1": {
+                                "choice": "A",
+                                "choice_origin": "model_json",
+                                "statement_origin": "model_repair",
+                                "raw": '{"choice":"A"}',
+                            },
+                            "p2": {
+                                "choice": "B",
+                                "choice_origin": "model_json",
+                                "statement_origin": "model",
+                                "raw": '{"choice":"B"}',
+                            },
+                        }
+                    }
+                }
+            ],
+        }
+        metrics = cod_model.event_run_metrics(run)
+        self.assertEqual(metrics["model_claims"], 1)
+        self.assertEqual(metrics["validated_fallbacks"], 1)
+        self.assertEqual(metrics["fallback_rate"], 0.5)
+        self.assertEqual(metrics["model_statement_rate"], 0.75)
+        self.assertTrue(metrics["hard_gate_pass"])
+
+    def test_changed_reconciliation_vote_requires_model_change_reason(self):
+        run = {
+            "independent": {"p1": {"raw": "raw", "rejected": []}},
+            "events": [
+                {
+                    "code": "A",
+                    "action": "object",
+                    "origin": "model",
+                    "statement": "Aを採ります。根拠は[D01]です。",
+                    "statement_origin": "model",
+                }
+            ],
+            "reconciliation": [
+                {
+                    "votes": {
+                        "A|B": {
+                            "p1": {
+                                "choice": "A",
+                                "choice_origin": "model_json",
+                                "statement_origin": "model",
+                                "changed_from_previous": True,
+                                "change_reason_origin": "label_fallback",
+                                "raw": '{"choice":"A"}',
+                            }
+                        }
+                    }
+                }
+            ],
+        }
+        metrics = cod_model.event_run_metrics(run)
+        self.assertEqual(metrics["model_change_reason_rate"], 0.0)
+        self.assertFalse(metrics["hard_gate_pass"])
+
+    def test_bounded_rsi_requires_holdout_transfer_and_never_promotes(self):
+        parent = {
+            "shadow_score": 80.0,
+            "fallback_rate": 0.2,
+            "model_statement_rate": 0.7,
+            "near_duplicate_rate": 0.1,
+            "hard_gate_pass": True,
+        }
+        candidate = {
+            "shadow_score": 82.0,
+            "fallback_rate": 0.1,
+            "model_statement_rate": 0.9,
+            "near_duplicate_rate": 0.05,
+            "hard_gate_pass": True,
+        }
+        decision = cod_model.decide_rsi_shadow(
+            parent,
+            candidate,
+            {**parent, "shadow_score": 78.0},
+            {**candidate, "shadow_score": 80.0},
+            round_no=1,
+            max_rounds=3,
+            holdout_distinct=True,
+        )
+        self.assertEqual(decision["status"], "research_shadow_candidate")
+        self.assertTrue(decision["continue_allowed"])
+        self.assertFalse(decision["promotion_allowed"])
+        stopped = cod_model.decide_rsi_shadow(
+            parent,
+            candidate,
+            {**parent, "shadow_score": 78.0},
+            {**candidate, "shadow_score": 78.5},
+            round_no=1,
+            max_rounds=3,
+            holdout_distinct=True,
+        )
+        self.assertEqual(stopped["status"], "parent_retained")
+        self.assertFalse(stopped["continue_allowed"])
 
 
 if __name__ == "__main__":

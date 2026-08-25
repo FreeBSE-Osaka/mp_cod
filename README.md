@@ -15,7 +15,10 @@
 - 通常討論は、相互反証 → 司会 → 独立監査まで実行
 - イベント討論は、順番制ではなく `異議あり！` → `賛同＋補足` → 新規主張の優先順で発言
 - イベント討論では、固定台帳にある主張コードと `D01` 形式の証拠IDだけを許可
+- 各人格は検証済みコードを自然文へ言い換え、モデル生成文・ラベル補完・生出力を別々に保存
 - 証拠のない主張は自動失格し、対立は複数ラウンドで擦り合わせ
+- 人格ごとに効用と損失を分け、反論は前提否定・反例・トレードオフの型を使用
+- prompt/configだけを比較するbounded RSI shadow gateを同梱
 - 全呼び出しをJSON保存し、人間が承認した発言だけをLoRA用JSONLへ変換
 
 ## 必要環境
@@ -56,10 +59,37 @@ python3.11 -m venv .venv
   --domain weather \
   --model-path mlx-community/Qwen3-1.7B-4bit \
   --max-turns 10 \
-  --reconcile-rounds 2
+  --reconcile-rounds 2 \
+  --prompt-profile orthogonal_fewshot
 ```
 
-モデルには他人格の文章を渡さず、検証済みの主張コードと証拠IDだけを共有します。これにより、他者の回答をコピーした擬似的な合意を減らします。
+モデルには他人格の文章を渡さず、検証済みの主張コードと証拠IDだけを共有します。公開用 `statement` はモデルが自然文生成しますが、採決に使うのは検証済みコードだけです。不正なD番号は拒否し、選択済みDだけで自然文を一度修復します。本文は使えてD表記だけが欠けた場合は、本文を保持してD表記を安全補正した `model_sanitized` として保存し、それも失敗した時だけ `label_fallback` へ戻します。
+
+`--prompt-profile` は `baseline`、`orthogonal`、`orthogonal_fewshot` から選べます。既定値は目的関数と1件の形式例を使う `orthogonal_fewshot` です。
+
+### 人格別LoRA
+
+同じベースモデルを常駐させたまま、人格ごとにLoRA層を除去・ロードできます。
+
+```json
+{
+  "schema_version": 1,
+  "adapters": {
+    "dynamical_modeler": "/path/to/dynamical-adapter",
+    "ensemble_probabilist": "/path/to/ensemble-adapter"
+  }
+}
+```
+
+```sh
+<mlx-python> cod_model.py event-debate \
+  --ledger <claim-ledger.json> \
+  --domain weather \
+  --model-path <base-model> \
+  --adapter-map <adapter-map.json>
+```
+
+各Adapterは `adapter_config.json` と `adapters.safetensors` が必須で、実行ログに両方のSHA-256を保存します。KVキャッシュは人格間で共有しません。
 
 台風データは2026年8月25日15時50分JST時点の再現用スナップショットで、現在の予報には使えません。
 
@@ -97,6 +127,22 @@ python3.11 cod_model.py curriculum --count 240 --out data/auditor_curriculum
 ```
 
 Adapter WeightはこのGitリポジトリに含めていません。再現条件と評価値は [実験記録](docs/weight_experiment_20260825.md)、ハッシュと運用境界は [昇格記録](promotions/qwen3-1.7b-auditor-r1-step8.json) にあります。
+
+## bounded RSI shadow
+
+RSIは、異なる固定ledgerを使ったdevelopmentとholdoutの両方で候補runがParentを上回るか検査します。
+
+```sh
+python3.11 cod_model.py rsi-shadow \
+  --parent-dev runs/parent-dev.json \
+  --candidate-dev runs/candidate-dev.json \
+  --parent-holdout runs/parent-holdout.json \
+  --candidate-holdout runs/candidate-holdout.json \
+  --round 1 --max-rounds 3 \
+  --out runs/rsi-round1.json
+```
+
+評価対象はモデル主張率、自然文成功率、fallback率、生出力保存率、異なるコード間の同文率、発言イベントの多様性です。holdoutへ改善が移らない場合は停止します。結果が良くても `promotion_allowed=false`、`parent_replacement_allowed=false` であり、人間確認なしにWeight、コード、GitHub、Hugging Faceを変更しません。
 
 ## テスト
 
