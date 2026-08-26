@@ -24,6 +24,13 @@ DEFAULT_API_URL = "http://127.0.0.1:11434/api/chat"
 PROFILE_PATH = Path(__file__).with_name("personas.json")
 STANCES = ["主案", "対案", "条件付き", "保留"]
 EVENT_PROMPT_PROFILES = ("baseline", "orthogonal", "orthogonal_fewshot")
+MECHANICAL_UTTERANCE_PHRASES = (
+    "この点を今後の判断の軸",
+    "という可能性を重く見ています",
+    "という展開も考えておくべき",
+    "という選択も検討中",
+    "と判断します。根拠は",
+)
 
 
 def short_string(limit: int = 160) -> dict:
@@ -995,6 +1002,8 @@ def validate_dialogue_utterance(utterance: object) -> tuple[str | None, str | No
         return None, "utterance exposes internal protocol"
     if not re.search(r"[ぁ-んァ-ヶ一-龠]", normalized):
         return None, "utterance must contain natural Japanese"
+    if normalized[-1] not in "。！？!?":
+        return None, "utterance must end as a complete sentence"
     return normalized, None
 
 
@@ -1012,6 +1021,10 @@ def validate_dialogue_move(utterance: object, move: str) -> tuple[str | None, st
     if required and not any(marker in normalized for marker in required):
         return None, f"utterance does not express dialogue move: {move}"
     return normalized, None
+
+
+def is_mechanical_utterance(utterance: str) -> bool:
+    return any(phrase in utterance for phrase in MECHANICAL_UTTERANCE_PHRASES)
 
 
 def reaction_is_aligned(utterance: str, own_label: str, target_label: str, action: str) -> bool:
@@ -1187,14 +1200,32 @@ def event_run_metrics(run: dict) -> dict:
     model_claims = sum(event.get("origin") == "model" for event in events)
     fallbacks = sum(event.get("origin") == "validated_fallback" for event in events)
     model_statement_origins = {"model", "model_repair", "model_sanitized"}
-    model_utterance_origins = model_statement_origins | {"model_reaction"}
+    model_utterance_origins = model_statement_origins | {
+        "model_reaction",
+        "model_dialogue_v2",
+        "model_dialogue_v2_repair",
+    }
     model_statements = sum(event.get("statement_origin") in model_statement_origins for event in events)
     model_event_utterances = sum(event.get("utterance_origin") in model_utterance_origins for event in events)
+    dialogue_v2_utterances = sum(
+        event.get("utterance_origin") in {"model_dialogue_v2", "model_dialogue_v2_repair"}
+        for event in events
+    )
     reaction_events = [event for event in events if event.get("action") in {"object", "agree_extend"}]
     reaction_failures = sum(event.get("utterance_origin") != "model_reaction" for event in reaction_events)
     rejected = sum(len(value.get("rejected") or []) for value in independent.values())
     model_attempts = model_claims + rejected
     raw_records = [value.get("raw") for value in independent.values()]
+    raw_records.extend(
+        value.get("dialogue_render_raw")
+        for value in independent.values()
+        if value.get("dialogue_render_raw") is not None
+    )
+    raw_records.extend(
+        value.get("dialogue_render_repair_raw")
+        for value in independent.values()
+        if value.get("dialogue_render_repair_raw") is not None
+    )
     raw_records.extend(event.get("reaction_raw") for event in events if event.get("reaction_raw") is not None)
     raw_records.extend(
         event.get("reaction_repair_raw") for event in events if event.get("reaction_repair_raw") is not None
@@ -1245,6 +1276,8 @@ def event_run_metrics(run: dict) -> dict:
     dialogue_near_duplicate_rate = (
         dialogue_near_duplicates / len(dialogue_pairs) if dialogue_pairs else 0.0
     )
+    mechanical_utterances = sum(is_mechanical_utterance(text) for text, _ in dialogue_records)
+    mechanical_utterance_rate = mechanical_utterances / len(dialogue_records) if dialogue_records else 0.0
     vote_parse_fallbacks = sum(vote.get("choice_origin") == "parse_fallback" for vote in vote_records)
     changed_votes = [vote for vote in vote_records if vote.get("changed_from_previous")]
     model_change_reasons = sum(
@@ -1257,13 +1290,14 @@ def event_run_metrics(run: dict) -> dict:
     evidence_validity_rate = model_claims / model_attempts if model_attempts else 0.0
     score = 100 * (
         0.15 * model_claim_rate
-        + 0.15 * model_statement_rate
+        + 0.1 * model_statement_rate
         + 0.15 * model_utterance_rate
         + 0.15 * raw_record_rate
         + 0.1 * distinct_code_rate
-        + 0.1 * action_diversity
+        + 0.05 * action_diversity
         + 0.1 * (1.0 - near_duplicate_rate)
         + 0.1 * (1.0 - dialogue_near_duplicate_rate)
+        + 0.1 * (1.0 - mechanical_utterance_rate)
     )
     return {
         "event_count": total,
@@ -1278,11 +1312,14 @@ def event_run_metrics(run: dict) -> dict:
         "reconciliation_model_statements": vote_model_statements,
         "model_utterance_rate": round(model_utterance_rate, 4),
         "event_model_utterances": model_event_utterances,
+        "dialogue_v2_utterances": dialogue_v2_utterances,
         "reaction_events": len(reaction_events),
         "reaction_failures": reaction_failures,
         "reconciliation_model_utterances": vote_model_utterances,
         "dialogue_near_duplicate_pairs": dialogue_near_duplicates,
         "dialogue_near_duplicate_rate": round(dialogue_near_duplicate_rate, 4),
+        "mechanical_utterances": mechanical_utterances,
+        "mechanical_utterance_rate": round(mechanical_utterance_rate, 4),
         "reconciliation_parse_fallbacks": vote_parse_fallbacks,
         "changed_votes": len(changed_votes),
         "model_change_reason_rate": round(change_reason_rate, 4),
@@ -1331,6 +1368,10 @@ def decide_rsi_shadow(
             <= parent_dev.get("dialogue_near_duplicate_rate", 0.0),
             candidate_holdout.get("dialogue_near_duplicate_rate", 0.0)
             <= parent_holdout.get("dialogue_near_duplicate_rate", 0.0),
+            candidate_dev.get("mechanical_utterance_rate", 0.0)
+            <= parent_dev.get("mechanical_utterance_rate", 0.0),
+            candidate_holdout.get("mechanical_utterance_rate", 0.0)
+            <= parent_holdout.get("mechanical_utterance_rate", 0.0),
         )
     )
     eligible = (
@@ -1618,6 +1659,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     }
                 )
                 seen_codes.add(code)
+        dialogue_render_raw = None
+        dialogue_render_repair_raw = None
         persona_claims[persona["id"]] = valid
         run["independent"][persona["id"]] = {
             "raw": raw,
@@ -1625,6 +1668,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
             "rejected": rejected,
             "warnings": warnings,
             "adapter": adapter_path,
+            "dialogue_render_raw": dialogue_render_raw,
+            "dialogue_render_repair_raw": dialogue_render_repair_raw,
         }
         print(f"\n[{persona['name']}] 採用={len(valid)} 失格={len(rejected)}", flush=True)
         for claim in valid:

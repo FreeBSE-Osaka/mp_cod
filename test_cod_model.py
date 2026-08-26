@@ -25,6 +25,16 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(set(ledger["role_preferences"]), persona_ids)
         self.assertTrue(ledger["fixture"])
 
+    def test_general_holdout_ledger_matches_general_personas(self):
+        ledger = cod_model.load_claim_ledger(
+            Path("data/general_experiment_holdout/claim_ledger.json")
+        )
+        persona_ids = {persona["id"] for persona in cod_model.load_domains()["general"]["personas"]}
+        self.assertEqual(set(ledger["role_preferences"]), persona_ids)
+        self.assertTrue(ledger["fixture"])
+        self.assertTrue(cod_model.is_mechanical_utterance("この点を今後の判断の軸にしたいです。"))
+        self.assertFalse(cod_model.is_mechanical_utterance("8週間の期限を考えるとSwift先行が現実的です。"))
+
     def test_identical_blind_answers_trigger_collapse_proxy(self):
         answer = {
             "stance": "主案",
@@ -188,6 +198,9 @@ class CodModelTest(unittest.TestCase):
         )
         self.assertIsNone(reason)
         self.assertTrue(utterance.startswith("いえ"))
+        utterance, reason = cod_model.validate_dialogue_utterance("これはまだ文末がない発言です")
+        self.assertIsNone(utterance)
+        self.assertIn("complete sentence", reason)
         utterance, reason = cod_model.validate_dialogue_utterance(
             "私は北東転向の可能性を残します。根拠は[D09]です。"
         )
@@ -317,7 +330,7 @@ class CodModelTest(unittest.TestCase):
                     "statement": "Aを採ります。根拠は[D01]です。",
                     "statement_origin": "model",
                     "utterance": "私はAの見方を採ります。",
-                    "utterance_origin": "model",
+                    "utterance_origin": "model_dialogue_v2",
                 },
                 {
                     "code": "B",
@@ -361,6 +374,8 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(metrics["fallback_rate"], 0.5)
         self.assertEqual(metrics["model_statement_rate"], 0.75)
         self.assertEqual(metrics["model_utterance_rate"], 1.0)
+        self.assertEqual(metrics["dialogue_v2_utterances"], 1)
+        self.assertEqual(metrics["mechanical_utterance_rate"], 0.0)
         self.assertEqual(metrics["dialogue_near_duplicate_pairs"], 0)
         self.assertTrue(metrics["hard_gate_pass"])
 

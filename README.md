@@ -152,6 +152,8 @@ RSIは、異なる固定ledgerを使ったdevelopmentとholdoutの両方で候�
 
 別domainの凍結holdoutとして、架空の8週間iOS開発要件を使う [`data/software_architecture_holdout/claim_ledger.json`](data/software_architecture_holdout/claim_ledger.json) を同梱しています。実在案件の事実ではなく、Swift/MLX先行とRust共有コア先行を異なる目的関数で議論させる再現用fixtureです。
 
+第三domain候補として、架空の温室実験でヒーター効果・センサー誤差・換気交絡を検討する [`data/general_experiment_holdout/claim_ledger.json`](data/general_experiment_holdout/claim_ledger.json) も凍結しています。
+
 ```sh
 python3.11 cod_model.py rsi-shadow \
   --parent-dev runs/parent-dev.json \
@@ -165,6 +167,8 @@ python3.11 cod_model.py rsi-shadow \
 評価対象はモデル主張率、証拠文・会話文成功率、reaction失敗率、fallback率、生出力保存率、異なるclaim間の会話同文率、発言イベントの多様性です。Parentがhard gate不合格でも候補は評価できますが、候補自身はdevelopmentと別ledger holdoutの両方ですべてのhard gateを通る必要があります。holdoutへ改善が移らない場合は停止します。
 
 2026-08-26のローカルcross-domain smokeではweather development `+25.00`、software holdout `+13.75` で `research_shadow_candidate` になりました。これは昇格ではなく、引き続き `promotion_allowed=false`、`parent_replacement_allowed=false` です。人間確認なしにWeight、コード、GitHub、Hugging Faceを変更しません。
+
+続くRound 2では機械的な初期発言を減らす候補がweather `+1.25`、software `+0.83` でした。softwareが必須の`+1.00`へ届かなかったため `parent_retained`、`continue_allowed=false` で停止し、候補profileは公開コードへ残していません。第三domainの追加実走も行っていません。
 
 ## テスト
 

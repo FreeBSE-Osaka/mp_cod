@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の温室実験で、ヒーター設定変更後に観測された約2度の上昇をヒーター効果と結論づけてよいか、代替仮説と次の検証を判断する",
+  "data": [
+    {
+      "id": "D01",
+      "text": "同型の温室AとBがあり、正午にAだけヒーター設定を上げ、Bは変更しなかった。"
+    },
+    {
+      "id": "D02",
+      "text": "Aの固定センサーは10分後に2.0度上昇し、30分後の校正済み携帯計測器も1.8度の上昇を示した。Bは0.1度未満の変化だった。"
+    },
+    {
+      "id": "D03",
+      "text": "Aの固定センサーは18か月校正されておらず、メーカー推奨校正間隔は12か月である。"
+    },
+    {
+      "id": "D04",
+      "text": "実験後、Aの換気フラップはBより20%閉じていたが、実験前の位置は記録されていない。"
+    },
+    {
+      "id": "D05",
+      "text": "実験は1回だけで、温室を入れ替えるcross-overや無作為化は実施していない。"
+    },
+    {
+      "id": "D06",
+      "text": "電力ロガーでは設定変更後のAのヒーター消費電力が15%増加し、Bは変化しなかった。"
+    },
+    {
+      "id": "D07",
+      "text": "目的は最初の説明を正当化することではなく、ヒーター・センサー・換気の影響を判別できる次の実験を決めることである。"
+    }
+  ],
+  "claim_catalog": [
+    {
+      "code": "HEATER_EFFECT_PRIMARY",
+      "label": "観測された上昇の主因はヒーター設定変更である可能性が高い",
+      "supported_by": ["D01", "D02", "D06"],
+      "contradicts": ["SENSOR_DRIFT_PRIMARY", "HOLD_CAUSAL_CONCLUSION"],
+      "priority": 5
+    },
+    {
+      "code": "SENSOR_DRIFT_PRIMARY",
+      "label": "固定センサーの校正遅れを主な代替仮説として検討する",
+      "supported_by": ["D02", "D03"],
+      "contradicts": ["HEATER_EFFECT_PRIMARY"],
+      "priority": 4
+    },
+    {
+      "code": "VENTILATION_CONFOUNDER",
+      "label": "換気フラップ差を温度上昇の交絡要因として残す",
+      "supported_by": ["D04"],
+      "contradicts": [],
+      "priority": 4
+    },
+    {
+      "code": "HOLD_CAUSAL_CONCLUSION",
+      "label": "単発実験だけでは主因を確定せず結論を保留する",
+      "supported_by": ["D03", "D04", "D05"],
+      "contradicts": ["HEATER_EFFECT_PRIMARY"],
+      "priority": 5
+    },
+    {
+      "code": "CALIBRATE_AND_REPEAT",
+      "label": "固定センサーを校正して同じ実験を再実施する",
+      "supported_by": ["D03", "D05", "D07"],
+      "contradicts": [],
+      "priority": 5
+    },
+    {
+      "code": "RANDOMIZED_CROSSOVER",
+      "label": "温室AとBを入れ替える無作為cross-over実験を行う",
+      "supported_by": ["D01", "D05", "D07"],
+      "contradicts": [],
+      "priority": 4
+    },
+    {
+      "code": "ENERGY_LOG_SUPPORTS_HEATER",
+      "label": "消費電力増加はヒーター効果仮説を支持する",
+      "supported_by": ["D06"],
+      "contradicts": [],
+      "priority": 4
+    },
+    {
+      "code": "HANDHELD_SUPPORTS_REAL_WARMING",
+      "label": "携帯計測器の上昇は固定センサーだけの誤差ではないことを支持する",
+      "supported_by": ["D02"],
+      "contradicts": [],
+      "priority": 4
+    },
+    {
+      "code": "COMPARE_VENTILATION_STATE",
+      "label": "次回は実験前後の換気フラップ位置を記録して比較する",
+      "supported_by": ["D04", "D07"],
+      "contradicts": [],
+      "priority": 4
+    }
+  ],
+  "role_preferences": {
+    "hypothesis_builder": [
+      "HEATER_EFFECT_PRIMARY",
+      "VENTILATION_CONFOUNDER",
+      "RANDOMIZED_CROSSOVER"
+    ],
+    "falsifier": [
+      "SENSOR_DRIFT_PRIMARY",
+      "HOLD_CAUSAL_CONCLUSION",
+      "COMPARE_VENTILATION_STATE"
+    ],
+    "empirical_auditor": [
+      "ENERGY_LOG_SUPPORTS_HEATER",
+      "HANDHELD_SUPPORTS_REAL_WARMING",
+      "CALIBRATE_AND_REPEAT"
+    ]
+  }
+}
