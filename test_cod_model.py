@@ -175,6 +175,26 @@ class CodModelTest(unittest.TestCase):
             ["D09"],
         )
         self.assertEqual(sanitized, "北東転向外れを独立シナリオとして残す。根拠は[D09]。")
+        utterance, reason = cod_model.validate_dialogue_utterance(
+            "いえ、その見方では大陸側の高気圧の影響を見落としてしまいます。"
+        )
+        self.assertIsNone(reason)
+        self.assertTrue(utterance.startswith("いえ"))
+        utterance, reason = cod_model.validate_dialogue_utterance(
+            "私は北東転向の可能性を残します。根拠は[D09]です。"
+        )
+        self.assertIsNone(utterance)
+        self.assertIn("metadata", reason)
+        utterance, reason = cod_model.validate_dialogue_move(
+            "私もその見方に賛成します。", "revise"
+        )
+        self.assertIsNone(utterance)
+        self.assertIn("revise", reason)
+        utterance, reason = cod_model.validate_dialogue_move(
+            "確かにその影響を見落としていました。見方を改めます。", "revise"
+        )
+        self.assertIsNone(reason)
+        self.assertIn("見方を改めます", utterance)
 
     def test_adapter_map_rejects_unknown_personas(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -208,6 +228,8 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(events[1]["code"], "OUT")
         self.assertEqual(events[1]["statement"], "out。根拠は[D02]。")
         self.assertEqual(events[1]["statement_origin"], "label_fallback")
+        self.assertEqual(events[1]["utterance"], "out。")
+        self.assertEqual(events[1]["utterance_origin"], "statement_fallback")
 
     def test_agreement_can_target_older_claim(self):
         ledger = {
@@ -222,6 +244,22 @@ class CodModelTest(unittest.TestCase):
         ]
         action, target = cod_model.claim_reaction(events, {"code": "MAIN"}, {item["code"]: item for item in ledger["claim_catalog"]})
         self.assertEqual((action, target), ("agree_extend", "C01"))
+
+    def test_first_reconciliation_compares_against_initial_position(self):
+        claims = [{"code": "LOW"}, {"code": "OTHER"}]
+        self.assertEqual(cod_model.prior_pair_choice(claims, ("LOW", "HIGH"), {}), "LOW")
+        self.assertEqual(
+            cod_model.prior_pair_choice(claims, ("LOW", "HIGH"), {"choice": "HIGH"}),
+            "HIGH",
+        )
+        self.assertFalse(
+            cod_model.reaction_is_aligned(
+                "ただ、その見方では北東転向を低位に扱う点が抜けています。",
+                "北東転向を独立シナリオとして残す",
+                "北東転向を低位に扱う",
+                "object",
+            )
+        )
 
     def test_three_of_four_resolves_conflict(self):
         catalog = {
@@ -246,6 +284,16 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(summary["resolved_conflicts"], {"A|B": "A"})
         self.assertIn("A", summary["consensus"])
         self.assertIn("C", summary["consensus"])
+        self.assertTrue(
+            cod_model.reconciliation_has_supermajority(
+                {"A|B": {"A": 3, "B": 1}}, [("A", "B")], 4
+            )
+        )
+        self.assertFalse(
+            cod_model.reconciliation_has_supermajority(
+                {"A|B": {"A": 2, "B": 2}}, [("A", "B")], 4
+            )
+        )
 
     def test_event_metrics_keep_model_and_fallback_separate(self):
         run = {
@@ -260,6 +308,8 @@ class CodModelTest(unittest.TestCase):
                     "origin": "model",
                     "statement": "Aを採ります。根拠は[D01]です。",
                     "statement_origin": "model",
+                    "utterance": "私はAの見方を採ります。",
+                    "utterance_origin": "model",
                 },
                 {
                     "code": "B",
@@ -267,6 +317,9 @@ class CodModelTest(unittest.TestCase):
                     "origin": "validated_fallback",
                     "statement": "Bです。根拠は[D02]です。",
                     "statement_origin": "label_fallback",
+                    "utterance": "ただ、Bの可能性も残ります。",
+                    "utterance_origin": "model_reaction",
+                    "reaction_raw": '{"utterance":"ただ、Bの可能性も残ります。"}',
                 },
             ],
             "reconciliation": [
@@ -277,12 +330,16 @@ class CodModelTest(unittest.TestCase):
                                 "choice": "A",
                                 "choice_origin": "model_json",
                                 "statement_origin": "model_repair",
+                                "utterance": "私はAに賛成です。",
+                                "utterance_origin": "model_repair",
                                 "raw": '{"choice":"A"}',
                             },
                             "p2": {
                                 "choice": "B",
                                 "choice_origin": "model_json",
                                 "statement_origin": "model",
+                                "utterance": "私はBを支持します。",
+                                "utterance_origin": "model",
                                 "raw": '{"choice":"B"}',
                             },
                         }
@@ -295,6 +352,7 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(metrics["validated_fallbacks"], 1)
         self.assertEqual(metrics["fallback_rate"], 0.5)
         self.assertEqual(metrics["model_statement_rate"], 0.75)
+        self.assertEqual(metrics["model_utterance_rate"], 1.0)
         self.assertTrue(metrics["hard_gate_pass"])
 
     def test_changed_reconciliation_vote_requires_model_change_reason(self):
@@ -307,6 +365,8 @@ class CodModelTest(unittest.TestCase):
                     "origin": "model",
                     "statement": "Aを採ります。根拠は[D01]です。",
                     "statement_origin": "model",
+                    "utterance": "私はAへ見方を改めます。",
+                    "utterance_origin": "model",
                 }
             ],
             "reconciliation": [
@@ -317,6 +377,8 @@ class CodModelTest(unittest.TestCase):
                                 "choice": "A",
                                 "choice_origin": "model_json",
                                 "statement_origin": "model",
+                                "utterance": "確かに、Aへ見方を改めます。",
+                                "utterance_origin": "model",
                                 "changed_from_previous": True,
                                 "change_reason_origin": "label_fallback",
                                 "raw": '{"choice":"A"}',

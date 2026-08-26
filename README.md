@@ -15,8 +15,9 @@
 - 通常討論は、相互反証 → 司会 → 独立監査まで実行
 - イベント討論は、順番制ではなく `異議あり！` → `賛同＋補足` → 新規主張の優先順で発言
 - イベント討論では、固定台帳にある主張コードと `D01` 形式の証拠IDだけを許可
-- 各人格は検証済みコードを自然文へ言い換え、モデル生成文・ラベル補完・生出力を別々に保存
-- 証拠のない主張は自動失格し、対立は複数ラウンドで擦り合わせ
+- 内部の証拠文 `statement` と、表示専用の会話文 `utterance` を分離
+- 異議・賛同は相手の原文ではなく構造化主張だけを見て会話調で応答
+- 証拠のない主張は自動失格し、対立は最大ラウンド内で3/4に達した時点で終了
 - 人格ごとに効用と損失を分け、反論は前提否定・反例・トレードオフの型を使用
 - prompt/configだけを比較するbounded RSI shadow gateを同梱
 - 全呼び出しをJSON保存し、人間が承認した発言だけをLoRA用JSONLへ変換
@@ -58,12 +59,29 @@ python3.11 -m venv .venv
   --ledger data/typhoon18_20260825/claim_ledger.json \
   --domain weather \
   --model-path mlx-community/Qwen3-1.7B-4bit \
-  --max-turns 10 \
+  --max-turns 12 \
   --reconcile-rounds 2 \
+  --max-tokens 600 \
   --prompt-profile orthogonal_fewshot
 ```
 
-モデルには他人格の文章を渡さず、検証済みの主張コードと証拠IDだけを共有します。公開用 `statement` はモデルが自然文生成しますが、採決に使うのは検証済みコードだけです。不正なD番号は拒否し、選択済みDだけで自然文を一度修復します。本文は使えてD表記だけが欠けた場合は、本文を保持してD表記を安全補正した `model_sanitized` として保存し、それも失敗した時だけ `label_fallback` へ戻します。
+モデルには他人格の文章を渡さず、検証済みの主張コードと証拠IDだけを共有します。採決に使うのは検証済みコードだけです。
+
+- `statement`: D番号付きの内部証拠文
+- `utterance`: D番号や内部codeを読まない、UI・実況用の会話文
+
+異議なら相手の見落とし、賛同なら追加観点、見解変更なら「確かに／見落としていた／見方を改める」を発言契約として検査します。相手の原文は見せず、対象claimのlabelだけを渡すため、文章コピーによる擬似合意を避けます。
+
+不正なD番号は拒否し、選択済みDだけで `statement` を一度修復します。本文は使えてD表記だけが欠けた場合は `model_sanitized`、会話生成に失敗した場合だけ証拠文由来の表示へ戻します。初回raw、反応raw、修復rawはすべて保存します。
+
+会話例:
+
+```text
+力学役: 現時点では、北東転向外れは低位に扱う見方です。
+アンサンブル役: ただ、その見方では独立シナリオとして残す可能性を十分に扱えていません。
+観測役: 私もその見方に賛同します。独立シナリオとして残すことが重要です。
+力学役: 確かに、その点を見落としていました。見方を改めます。
+```
 
 `--prompt-profile` は `baseline`、`orthogonal`、`orthogonal_fewshot` から選べます。既定値は目的関数と1件の形式例を使う `orthogonal_fewshot` です。
 
@@ -142,7 +160,7 @@ python3.11 cod_model.py rsi-shadow \
   --out runs/rsi-round1.json
 ```
 
-評価対象はモデル主張率、自然文成功率、fallback率、生出力保存率、異なるコード間の同文率、発言イベントの多様性です。holdoutへ改善が移らない場合は停止します。結果が良くても `promotion_allowed=false`、`parent_replacement_allowed=false` であり、人間確認なしにWeight、コード、GitHub、Hugging Faceを変更しません。
+評価対象はモデル主張率、証拠文・会話文成功率、reaction失敗率、fallback率、生出力保存率、会話同文率、発言イベントの多様性です。holdoutへ改善が移らない場合は停止します。結果が良くても `promotion_allowed=false`、`parent_replacement_allowed=false` であり、人間確認なしにWeight、コード、GitHub、Hugging Faceを変更しません。
 
 ## テスト
 
