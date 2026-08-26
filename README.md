@@ -127,6 +127,26 @@ python3.11 cod_model.py export --runs runs --out data/sft
 
 `approved` 以外はexportされず、承認済みrunでも `--calls` にない発言は除外されます。出力先は `data/sft/<domain>/<persona>/` です。
 
+### Event会話データ
+
+event-debateの会話は、完走・hard gate再計算・人間レビューを通ったrunだけ承認します。
+
+```sh
+python3.11 cod_model.py mark-event runs/<event-run>.json approved \
+  --reviewer FreeBSE \
+  --note "根拠、異議、賛同、見解変更を確認"
+
+python3.11 cod_model.py export-dialogue \
+  runs/<approved-weather>.json \
+  runs/<approved-software>.json \
+  --out data/dialogue_sft \
+  --min-per-persona 30
+```
+
+承認時はreview欄を除いたrun全体のSHA-256を固定し、承認後に変更されたrunはexportを拒否します。export対象はモデル由来utteranceだけで、fallback、機械的定型文、近似同文、不正文を除外します。出力は人格別のMLX chat JSONLとmanifestです。`data/dialogue_sft/` はGit管理外です。
+
+2026-08-26時点のローカル収集はweather/software合計27件で、人格別2〜6件です。機械文9件、近似同文4件を除外し、generalの2runはhard gate不合格で不採用にしました。最低30件/人格と凍結valid/testへ届いていないため、全人格 `ready_for_training=false` でDialogue LoRA学習は開始していません。
+
 ## 軽量Weight実験
 
 Pythonが正解を厳密生成する有限集合カリキュラムを作れます。

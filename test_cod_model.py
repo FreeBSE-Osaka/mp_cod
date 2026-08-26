@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 import json
@@ -93,6 +94,69 @@ class CodModelTest(unittest.TestCase):
             result = cod_model.export_sft(SimpleNamespace(runs=str(runs), out=str(output), domain=None))
             self.assertEqual(result, 0)
             self.assertIn('"role": "assistant"', (output / "software/iterative_generalist/train.jsonl").read_text())
+
+    def test_event_dialogue_export_requires_approved_untampered_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ledger_path = Path("data/software_architecture_holdout/claim_ledger.json").resolve()
+            run_path = root / "event.json"
+            run = {
+                "schema_version": 2,
+                "model": "test-model",
+                "ledger": str(ledger_path),
+                "ledger_sha256": hashlib.sha256(ledger_path.read_bytes()).hexdigest(),
+                "domain": "software",
+                "independent": {
+                    "iterative_generalist": {"raw": "raw", "rejected": []}
+                },
+                "events": [
+                    {
+                        "claim_id": "C01",
+                        "persona_id": "iterative_generalist",
+                        "action": "new",
+                        "target_claim_id": None,
+                        "code": "SWIFT_MLX_VERTICAL_SLICE_FIRST",
+                        "data_ids": ["D01"],
+                        "origin": "model",
+                        "statement": "SwiftとMLXを先に試します。根拠は[D01]です。",
+                        "statement_origin": "model",
+                        "utterance": "8週間の期限があるため、まずSwiftとMLXで動く形を確かめます。",
+                        "utterance_origin": "model",
+                    }
+                ],
+                "reconciliation": [],
+            }
+            cod_model.write_json(run_path, run)
+            self.assertEqual(
+                cod_model.mark_event_run(
+                    SimpleNamespace(
+                        run=str(run_path),
+                        status="approved",
+                        reviewer="tester",
+                        note="fixture verified",
+                    )
+                ),
+                0,
+            )
+            out = root / "dialogue"
+            self.assertEqual(
+                cod_model.export_dialogue_sft(
+                    SimpleNamespace(runs=[str(run_path)], out=str(out), min_per_persona=1)
+                ),
+                0,
+            )
+            manifest = json.loads(
+                (out / "software/iterative_generalist/manifest.json").read_text()
+            )
+            self.assertEqual(manifest["total"], 1)
+            self.assertFalse(manifest["ready_for_training"])
+            tampered = json.loads(run_path.read_text())
+            tampered["events"][0]["utterance"] = "承認後に変更しました。"
+            cod_model.write_json(run_path, tampered)
+            with self.assertRaisesRegex(ValueError, "review後"):
+                cod_model.export_dialogue_sft(
+                    SimpleNamespace(runs=[str(run_path)], out=str(out), min_per_persona=1)
+                )
 
     def test_curriculum_is_exact_and_deterministic(self):
         with tempfile.TemporaryDirectory() as directory:

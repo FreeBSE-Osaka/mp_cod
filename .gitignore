@@ -6,6 +6,7 @@ __pycache__/
 # Generated debate and training outputs
 runs/
 data/sft/
+data/dialogue_sft/
 evaluations/
 
 # Model artifacts stay outside Git

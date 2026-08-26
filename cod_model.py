@@ -31,6 +31,14 @@ MECHANICAL_UTTERANCE_PHRASES = (
     "という選択も検討中",
     "と判断します。根拠は",
 )
+MODEL_UTTERANCE_ORIGINS = {
+    "model",
+    "model_reaction",
+    "model_repair",
+    "model_sanitized",
+    "model_dialogue_v2",
+    "model_dialogue_v2_repair",
+}
 
 
 def short_string(limit: int = 160) -> dict:
@@ -1200,11 +1208,7 @@ def event_run_metrics(run: dict) -> dict:
     model_claims = sum(event.get("origin") == "model" for event in events)
     fallbacks = sum(event.get("origin") == "validated_fallback" for event in events)
     model_statement_origins = {"model", "model_repair", "model_sanitized"}
-    model_utterance_origins = model_statement_origins | {
-        "model_reaction",
-        "model_dialogue_v2",
-        "model_dialogue_v2_repair",
-    }
+    model_utterance_origins = MODEL_UTTERANCE_ORIGINS
     model_statements = sum(event.get("statement_origin") in model_statement_origins for event in events)
     model_event_utterances = sum(event.get("utterance_origin") in model_utterance_origins for event in events)
     dialogue_v2_utterances = sum(
@@ -2143,6 +2147,204 @@ def run_event_debate(args: argparse.Namespace) -> int:
     return 0
 
 
+def event_review_sha256(run: dict) -> str:
+    payload = {key: value for key, value in run.items() if key != "training_review"}
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def mark_event_run(args: argparse.Namespace) -> int:
+    path = Path(args.run)
+    if path.name.endswith(".partial.json"):
+        raise ValueError("partial event run cannot be reviewed")
+    run = json.loads(path.read_text(encoding="utf-8"))
+    if run.get("schema_version", 0) < 2 or not isinstance(run.get("events"), list):
+        raise ValueError(f"event-debate runではありません: {path}")
+    metrics = event_run_metrics(run)
+    run["metrics"] = metrics
+    if args.status == "approved" and not metrics["hard_gate_pass"]:
+        raise ValueError("hard gateを通過していないevent runは承認できません")
+    run["training_review"] = {
+        "status": args.status,
+        "reviewed_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "reviewer": args.reviewer,
+        "note": args.note,
+        "content_sha256": event_review_sha256(run),
+    }
+    write_json(path, run)
+    print(
+        f"{path}: {args.status} sha256={run['training_review']['content_sha256']}",
+        flush=True,
+    )
+    return 0
+
+
+def export_dialogue_sft(args: argparse.Namespace) -> int:
+    if args.min_per_persona < 1:
+        raise ValueError("min-per-persona must be positive")
+    domains = load_domains()
+    grouped: dict[tuple[str, str], list[dict]] = {}
+    seen: dict[tuple[str, str], list[str]] = {}
+    sources: dict[tuple[str, str], set[str]] = {}
+    excluded = {"unapproved": 0, "fallback": 0, "mechanical": 0, "duplicate": 0, "invalid": 0}
+
+    def add_example(
+        *,
+        domain: str,
+        persona_id: str,
+        system: str,
+        user_payload: dict,
+        utterance: object,
+        origin: object,
+        source_sha: str,
+    ) -> None:
+        key = (domain, persona_id)
+        if origin not in MODEL_UTTERANCE_ORIGINS:
+            excluded["fallback"] += 1
+            return
+        normalized, _ = validate_dialogue_utterance(utterance)
+        if normalized is None:
+            excluded["invalid"] += 1
+            return
+        if is_mechanical_utterance(normalized):
+            excluded["mechanical"] += 1
+            return
+        if any(similarity(normalized, previous) >= 0.9 for previous in seen.setdefault(key, [])):
+            excluded["duplicate"] += 1
+            return
+        seen[key].append(normalized)
+        grouped.setdefault(key, []).append(
+            {
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+                    {
+                        "role": "assistant",
+                        "content": json.dumps({"utterance": normalized}, ensure_ascii=False),
+                    },
+                ]
+            }
+        )
+        sources.setdefault(key, set()).add(source_sha)
+
+    for run_name in args.runs:
+        path = Path(run_name)
+        run = json.loads(path.read_text(encoding="utf-8"))
+        review = run.get("training_review", {})
+        if review.get("status") != "approved":
+            excluded["unapproved"] += 1
+            continue
+        if review.get("content_sha256") != event_review_sha256(run):
+            raise ValueError(f"review後にevent runが変更されています: {path}")
+        if not event_run_metrics(run)["hard_gate_pass"]:
+            raise ValueError(f"hard gate再計算に失敗しました: {path}")
+        domain = str(run.get("domain"))
+        if domain not in domains:
+            raise ValueError(f"unknown domain in event run: {domain}")
+        ledger_path = Path(str(run.get("ledger")))
+        ledger = load_claim_ledger(ledger_path)
+        if hashlib.sha256(ledger_path.read_bytes()).hexdigest() != run.get("ledger_sha256"):
+            raise ValueError(f"ledgerがevent run作成後に変更されています: {ledger_path}")
+        catalog = {item["code"]: item for item in ledger["claim_catalog"]}
+        data = {item["id"]: item["text"] for item in ledger["data"]}
+        personas = {persona["id"]: persona for persona in domains[domain]["personas"]}
+        events = {event["claim_id"]: event for event in run["events"]}
+        source_sha = str(review["content_sha256"])
+        for event in run["events"]:
+            persona_id = event.get("persona_id")
+            if persona_id not in personas or event.get("code") not in catalog:
+                excluded["invalid"] += 1
+                continue
+            persona = personas[persona_id]
+            target = events.get(event.get("target_claim_id"))
+            system = (
+                f"あなたは{persona['name']}。最大化する効用: {persona['utility']}。"
+                f"最小化する損失: {persona['loss']}。構造化主張から会話文だけを返す。"
+            )
+            add_example(
+                domain=domain,
+                persona_id=persona_id,
+                system=system,
+                user_payload={
+                    "phase": "event",
+                    "move": event.get("action"),
+                    "own_claim": catalog[event["code"]]["label"],
+                    "target_claim": catalog[target["code"]]["label"] if target else None,
+                    "evidence": [data[value] for value in event.get("data_ids", []) if value in data],
+                },
+                utterance=event.get("utterance"),
+                origin=event.get("utterance_origin"),
+                source_sha=source_sha,
+            )
+        for round_data in run.get("reconciliation", []):
+            for pair_key, votes in (round_data.get("votes") or {}).items():
+                pair = pair_key.split("|")
+                for persona_id, vote in votes.items():
+                    choice = vote.get("choice") if isinstance(vote, dict) else None
+                    if persona_id not in personas or choice not in catalog:
+                        excluded["invalid"] += 1
+                        continue
+                    persona = personas[persona_id]
+                    system = (
+                        f"あなたは{persona['name']}。最大化する効用: {persona['utility']}。"
+                        f"最小化する損失: {persona['loss']}。すり合わせの会話文だけを返す。"
+                    )
+                    add_example(
+                        domain=domain,
+                        persona_id=persona_id,
+                        system=system,
+                        user_payload={
+                            "phase": "reconciliation",
+                            "move": vote.get("dialogue_move"),
+                            "previous_choice": vote.get("previous_choice"),
+                            "selected_claim": catalog[choice]["label"],
+                            "alternatives": [catalog[code]["label"] for code in pair if code in catalog],
+                            "evidence": [data[value] for value in vote.get("data_ids", []) if value in data],
+                        },
+                        utterance=vote.get("utterance"),
+                        origin=vote.get("utterance_origin"),
+                        source_sha=source_sha,
+                    )
+
+    out = Path(args.out)
+    manifests = {}
+    for (domain, persona_id), examples in sorted(grouped.items()):
+        target = out / domain / persona_id
+        splits = split_examples(examples)
+        for name, rows in splits.items():
+            write_jsonl(target / f"{name}.jsonl", rows)
+        ready = (
+            len(examples) >= args.min_per_persona
+            and bool(splits["valid"])
+            and bool(splits["test"])
+        )
+        manifest = {
+            "domain": domain,
+            "persona_id": persona_id,
+            "counts": {name: len(rows) for name, rows in splits.items()},
+            "total": len(examples),
+            "minimum": args.min_per_persona,
+            "source_run_sha256": sorted(sources[(domain, persona_id)]),
+            "ready_for_training": ready,
+        }
+        write_json(target / "manifest.json", manifest)
+        manifests[f"{domain}/{persona_id}"] = manifest
+        print(f"{domain}/{persona_id}: {len(examples)}/{args.min_per_persona} ready={ready}")
+    summary = {
+        "schema_version": 1,
+        "generated_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "minimum_per_persona": args.min_per_persona,
+        "personas": manifests,
+        "excluded": excluded,
+        "all_included_personas_ready": bool(manifests)
+        and all(item["ready_for_training"] for item in manifests.values()),
+        "warning": "Not a promotion artifact. Train only after each target persona has frozen valid/test splits.",
+    }
+    write_json(out / "manifest.json", summary)
+    print(f"dialogue export: {out} ready={summary['all_included_personas_ready']}")
+    return 0
+
+
 def export_sft(args: argparse.Namespace) -> int:
     runs_path = Path(args.runs)
     grouped: dict[tuple[str, str], list[dict]] = {}
@@ -2313,6 +2515,21 @@ def parser() -> argparse.ArgumentParser:
     rsi.add_argument("--max-rounds", type=int, default=3)
     rsi.add_argument("--out", required=True)
     rsi.set_defaults(handler=run_rsi_shadow)
+
+    mark_event = subcommands.add_parser("mark-event", help="approve or reject one complete event-debate run")
+    mark_event.add_argument("run")
+    mark_event.add_argument("status", choices=["approved", "rejected"])
+    mark_event.add_argument("--reviewer", default="FreeBSE")
+    mark_event.add_argument("--note", required=True)
+    mark_event.set_defaults(handler=mark_event_run)
+
+    dialogue_export = subcommands.add_parser(
+        "export-dialogue", help="export approved event dialogue as per-persona MLX chat JSONL"
+    )
+    dialogue_export.add_argument("runs", nargs="+")
+    dialogue_export.add_argument("--out", default="data/dialogue_sft")
+    dialogue_export.add_argument("--min-per-persona", type=int, default=30)
+    dialogue_export.set_defaults(handler=export_dialogue_sft)
 
     mark = subcommands.add_parser("mark", help="explicitly approve or reject one run for training")
     mark.add_argument("run")
