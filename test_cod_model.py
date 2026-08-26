@@ -36,6 +36,17 @@ class CodModelTest(unittest.TestCase):
         self.assertTrue(cod_model.is_mechanical_utterance("この点を今後の判断の軸にしたいです。"))
         self.assertFalse(cod_model.is_mechanical_utterance("8週間の期限を考えるとSwift先行が現実的です。"))
 
+    def test_collection_ledgers_match_domain_personas(self):
+        domains = cod_model.load_domains()
+        for path, domain in (
+            ("data/weather_update_holdout/claim_ledger.json", "weather"),
+            ("data/software_offline_sync_holdout/claim_ledger.json", "software"),
+        ):
+            ledger = cod_model.load_claim_ledger(Path(path))
+            persona_ids = {persona["id"] for persona in domains[domain]["personas"]}
+            self.assertEqual(set(ledger["role_preferences"]), persona_ids)
+            self.assertTrue(ledger["fixture"])
+
     def test_identical_blind_answers_trigger_collapse_proxy(self):
         answer = {
             "stance": "主案",

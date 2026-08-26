@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の既存SwiftUIアプリへ6週間でオフライン編集と後続同期を追加する。Swift actor中心のoutboxを先に出すか、将来のAndroid再利用を見据えたRust同期コアを先に分離するかを判断する",
+  "data": [
+    {
+      "id": "D01",
+      "text": "既存アプリはSwiftUI製で、編集データは現在端末内のSwiftコードから保存している。"
+    },
+    {
+      "id": "D02",
+      "text": "ネットワークがない間も編集を失わず、再接続後に順序を保って送信することが必須である。"
+    },
+    {
+      "id": "D03",
+      "text": "サーバーAPIはidempotency keyとversion番号を受け取り、重複送信を拒否できる。"
+    },
+    {
+      "id": "D04",
+      "text": "開発担当は2名で、6週間後にiPhone Simulator上のデモが必要である。"
+    },
+    {
+      "id": "D05",
+      "text": "将来Androidでも同期規則を再利用したいが、Android版の開始時期は未定である。"
+    },
+    {
+      "id": "D06",
+      "text": "Rust同期コアをiOSへ導入する場合、FFI、追加build target、署名、境界テストが必要になる。"
+    },
+    {
+      "id": "D07",
+      "text": "競合解決は入力versionと操作列から決定的に再現でき、監査ログへ残す必要がある。"
+    },
+    {
+      "id": "D08",
+      "text": "iOS background taskは時間制限があり、同期をcancelして次回再開できなければならない。"
+    },
+    {
+      "id": "D09",
+      "text": "Swift単独実装とRust共有実装の速度・メモリ・開発費を比較した実測値はまだない。"
+    }
+  ],
+  "claim_catalog": [
+    {
+      "code": "SWIFT_ACTOR_OUTBOX_FIRST",
+      "label": "まずSwift actor中心のoutboxでオフライン同期を完成させる",
+      "supported_by": ["D01", "D02", "D03", "D04"],
+      "contradicts": ["RUST_SYNC_CORE_FIRST"],
+      "priority": 5
+    },
+    {
+      "code": "RUST_SYNC_CORE_FIRST",
+      "label": "Android再利用を見据えてRust同期コアを先に分離する",
+      "supported_by": ["D05", "D06", "D07"],
+      "contradicts": ["SWIFT_ACTOR_OUTBOX_FIRST", "DEFER_RUST_SYNC", "MINIMIZE_SYNC_BOUNDARIES"],
+      "priority": 4
+    },
+    {
+      "code": "DEFER_RUST_SYNC",
+      "label": "Android開始時期と共有APIが固まるまでRust同期コアを延期する",
+      "supported_by": ["D04", "D05", "D06", "D09"],
+      "contradicts": ["RUST_SYNC_CORE_FIRST"],
+      "priority": 4
+    },
+    {
+      "code": "IDEMPOTENT_OUTBOX",
+      "label": "idempotency key付きoutboxを同期の中心にする",
+      "supported_by": ["D02", "D03"],
+      "contradicts": [],
+      "priority": 5
+    },
+    {
+      "code": "VERSIONED_CONFLICT_POLICY",
+      "label": "version番号と操作列から競合解決を決定的に行う",
+      "supported_by": ["D03", "D07"],
+      "contradicts": [],
+      "priority": 5
+    },
+    {
+      "code": "PURE_REDUCER_MERGE",
+      "label": "競合解決を副作用のないreducerとして分離する",
+      "supported_by": ["D07"],
+      "contradicts": [],
+      "priority": 4
+    },
+    {
+      "code": "MEASURE_REPLAY_FIRST",
+      "label": "共有コア抽象化の前に再送速度とメモリを測定する",
+      "supported_by": ["D04", "D09"],
+      "contradicts": [],
+      "priority": 4
+    },
+    {
+      "code": "CANCEL_RESUME_REQUIRED",
+      "label": "background制限に備えてcancelと次回resumeを必須にする",
+      "supported_by": ["D02", "D08"],
+      "contradicts": [],
+      "priority": 5
+    },
+    {
+      "code": "AUDIT_LOG_REQUIRED",
+      "label": "競合解決と再送結果を監査ログへ残す",
+      "supported_by": ["D03", "D07"],
+      "contradicts": [],
+      "priority": 4
+    },
+    {
+      "code": "MINIMIZE_SYNC_BOUNDARIES",
+      "label": "6週間の初期版では新しい言語境界を増やさない",
+      "supported_by": ["D01", "D04", "D06"],
+      "contradicts": ["RUST_SYNC_CORE_FIRST"],
+      "priority": 5
+    }
+  ],
+  "role_preferences": {
+    "iterative_generalist": [
+      "SWIFT_ACTOR_OUTBOX_FIRST",
+      "MEASURE_REPLAY_FIRST",
+      "MINIMIZE_SYNC_BOUNDARIES"
+    ],
+    "typed_domain_architect": [
+      "VERSIONED_CONFLICT_POLICY",
+      "RUST_SYNC_CORE_FIRST",
+      "AUDIT_LOG_REQUIRED"
+    ],
+    "functional_data_engineer": [
+      "PURE_REDUCER_MERGE",
+      "RUST_SYNC_CORE_FIRST",
+      "IDEMPOTENT_OUTBOX"
+    ],
+    "delivery_risk_manager": [
+      "CANCEL_RESUME_REQUIRED",
+      "DEFER_RUST_SYNC",
+      "IDEMPOTENT_OUTBOX"
+    ]
+  }
+}
