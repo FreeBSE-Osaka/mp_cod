@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空のiOSローカル推論機能で、6週間の初期版を単一pinモデルのatomic更新で作るか、複数versionを同時保持するmodel storeを先に設計するかを判断する",
+  "data": [
+    {"id": "D01", "text": "既存アプリはSwiftUI製で、現在ローカルWeightのversion managerを持っていない。"},
+    {"id": "D02", "text": "使用予定base modelは約984MB、人格Adapterは約2.5MBである。"},
+    {"id": "D03", "text": "試験端末でアプリが安全に使える空き容量の下限は2.5GBである。"},
+    {"id": "D04", "text": "Weight取得後はオフラインで推論でき、途中downloadを完成品として扱ってはならない。"},
+    {"id": "D05", "text": "配布manifestにはmodel id、revision、expected bytes、SHA-256を固定できる。"},
+    {"id": "D06", "text": "開発担当は2名で、6週間後にSimulatorでdownload・検証・推論のデモが必要である。"},
+    {"id": "D07", "text": "将来A/Bで複数base modelを比較したいが、実施時期と必要version数は未確定である。"},
+    {"id": "D08", "text": "更新失敗時は現在動くWeightを保持し、検証済み新Weightだけをatomic renameする必要がある。"},
+    {"id": "D09", "text": "複数base modelを同時保持した場合の実機ストレージ・起動時間は未計測である。"}
+  ],
+  "claim_catalog": [
+    {
+      "code": "PINNED_ATOMIC_MODEL_FIRST",
+      "label": "初期版は単一pinモデルをatomic更新する構成で完成させる",
+      "supported_by": ["D01", "D03", "D05", "D06", "D08"],
+      "contradicts": ["MULTI_VERSION_STORE_FIRST"],
+      "priority": 5
+    },
+    {
+      "code": "MULTI_VERSION_STORE_FIRST",
+      "label": "将来のA/B比較に備えて複数version storeを先に設計する",
+      "supported_by": ["D02", "D07", "D09"],
+      "contradicts": ["PINNED_ATOMIC_MODEL_FIRST"],
+      "priority": 4
+    },
+    {"code": "MEASURE_STORAGE_FIRST", "label": "抽象化前に実機ストレージと起動時間を測定する", "supported_by": ["D02", "D03", "D09"], "contradicts": [], "priority": 4},
+    {"code": "MINIMUM_STORE_SCOPE", "label": "6週間の初期版ではmodel storeの機能を最小化する", "supported_by": ["D01", "D06", "D07"], "contradicts": [], "priority": 5},
+    {"code": "VERSION_MANIFEST_REQUIRED", "label": "model id・revision・bytes・SHAを型付きmanifestで固定する", "supported_by": ["D05"], "contradicts": [], "priority": 5},
+    {"code": "CONTENT_ADDRESSED_CACHE", "label": "SHA単位のcontent-addressed cacheとして管理する", "supported_by": ["D05", "D08"], "contradicts": [], "priority": 4},
+    {"code": "PURE_MODEL_RESOLVER", "label": "model選択をmanifestからの純粋なresolverとして分離する", "supported_by": ["D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "PARTIAL_NEVER_ACTIVE", "label": "途中downloadをactive Weightへ昇格させない", "supported_by": ["D04", "D08"], "contradicts": [], "priority": 5},
+    {"code": "ROLLBACK_KEEP_CURRENT", "label": "更新失敗時は現在動くWeightへ即時rollbackする", "supported_by": ["D08"], "contradicts": [], "priority": 5},
+    {"code": "OFFLINE_AFTER_DOWNLOAD", "label": "取得後のオフライン推論を受入条件にする", "supported_by": ["D04"], "contradicts": [], "priority": 5}
+  ],
+  "role_preferences": {
+    "iterative_generalist": ["PINNED_ATOMIC_MODEL_FIRST", "MEASURE_STORAGE_FIRST", "MINIMUM_STORE_SCOPE"],
+    "typed_domain_architect": ["VERSION_MANIFEST_REQUIRED", "MULTI_VERSION_STORE_FIRST", "ROLLBACK_KEEP_CURRENT"],
+    "functional_data_engineer": ["CONTENT_ADDRESSED_CACHE", "PURE_MODEL_RESOLVER", "MEASURE_STORAGE_FIRST"],
+    "delivery_risk_manager": ["PARTIAL_NEVER_ACTIVE", "ROLLBACK_KEEP_CURRENT", "OFFLINE_AFTER_DOWNLOAD"]
+  }
+}

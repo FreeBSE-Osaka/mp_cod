@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "derived_from": "data/typhoon18_20260825/claim_ledger.json",
+  "topic": "2026年8月25日15時50分cutoffの台風18号固定データで、次の更新枠を進路操舵の確認と防災影響の確認のどちらへ優先配分するかを決める",
+  "data": [
+    {"id": "D01", "text": "JMA 25日15時はWNW20km/h、950hPa、最大40m/s、gust60m/sである。"},
+    {"id": "D02", "text": "JMAは27日東シナ海WSW10km/h、28日990hPa 23m/s、29日華南を予報する。"},
+    {"id": "D03", "text": "奄美・沖縄は25日夜から26日朝に暴風高波、奄美は土砂災害へ厳重警戒が必要である。"},
+    {"id": "D04", "text": "JTWC衛星解析は眼の西側、乾燥空気、VWS15〜20kt、SST29〜30Cを示す。"},
+    {"id": "D05", "text": "JTWCは亜熱帯高気圧の南西縁、24〜48時間の減速、その後の南西進を説明する。"},
+    {"id": "D06", "text": "JTWC信頼度は72時間までHigh、以後は陸地相互作用でMediumである。"},
+    {"id": "D07", "text": "UCAR主群は西〜南西進で、北東転向の少数外れもあるが公式確率ではない。"},
+    {"id": "D08", "text": "JMAは10分平均、JTWCは1分平均なので風速を直接比較してはならない。"}
+  ],
+  "claim_catalog": [
+    {
+      "code": "STEERING_SLOT_FIRST",
+      "label": "次の更新枠は実進路と亜熱帯高気圧の操舵確認へ優先配分する",
+      "supported_by": ["D02", "D05", "D06"],
+      "contradicts": ["IMPACT_SLOT_FIRST"],
+      "priority": 5
+    },
+    {
+      "code": "IMPACT_SLOT_FIRST",
+      "label": "次の更新枠は暴風高波と土砂災害の影響確認へ優先配分する",
+      "supported_by": ["D01", "D03", "D06"],
+      "contradicts": ["STEERING_SLOT_FIRST"],
+      "priority": 5
+    },
+    {"code": "MAIN_TRACK_WSW", "label": "主経路は東シナ海を西から南西へ進む見方を維持する", "supported_by": ["D02", "D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "LONG_RANGE_MEDIUM", "label": "72時間以後は中程度の信頼に留める", "supported_by": ["D06", "D07"], "contradicts": [], "priority": 4},
+    {"code": "SPREAD_MONITORING", "label": "アンサンブルの散らばり変化を確認する", "supported_by": ["D06", "D07"], "contradicts": [], "priority": 4},
+    {"code": "NORTH_TAIL_RETAIN", "label": "北東転向外れを低位シナリオとして残す", "supported_by": ["D07"], "contradicts": [], "priority": 3},
+    {"code": "STRUCTURE_MONITOR", "label": "眼・乾燥空気・シアの変化も並行監視する", "supported_by": ["D04"], "contradicts": [], "priority": 4},
+    {"code": "GRADUAL_WEAKENING", "label": "上陸前の緩やかな弱化を監視する", "supported_by": ["D02", "D04"], "contradicts": [], "priority": 4},
+    {"code": "AGENCY_COMPARE_SAFELY", "label": "JMAとJTWCの平均時間を揃えて比較する", "supported_by": ["D08"], "contradicts": [], "priority": 4},
+    {"code": "SHORT_TERM_WARNING", "label": "25日夜までの防災判断期限を優先する", "supported_by": ["D03", "D06"], "contradicts": [], "priority": 5},
+    {"code": "ACTION_BEFORE_WIND", "label": "暴風前に安全確保を完了する", "supported_by": ["D03"], "contradicts": [], "priority": 5}
+  ],
+  "role_preferences": {
+    "dynamical_modeler": ["STEERING_SLOT_FIRST", "MAIN_TRACK_WSW", "LONG_RANGE_MEDIUM"],
+    "ensemble_probabilist": ["SPREAD_MONITORING", "NORTH_TAIL_RETAIN", "MAIN_TRACK_WSW"],
+    "observation_nowcaster": ["STRUCTURE_MONITOR", "GRADUAL_WEAKENING", "AGENCY_COMPARE_SAFELY"],
+    "impact_risk_forecaster": ["IMPACT_SLOT_FIRST", "SHORT_TERM_WARNING", "ACTION_BEFORE_WIND"]
+  }
+}

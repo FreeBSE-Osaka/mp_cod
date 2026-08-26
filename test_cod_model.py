@@ -41,6 +41,9 @@ class CodModelTest(unittest.TestCase):
         for path, domain in (
             ("data/weather_update_holdout/claim_ledger.json", "weather"),
             ("data/software_offline_sync_holdout/claim_ledger.json", "software"),
+            ("data/weather_steering_vs_impact_holdout/claim_ledger.json", "weather"),
+            ("data/software_model_cache_holdout/claim_ledger.json", "software"),
+            ("data/general_rollout_holdout/claim_ledger.json", "general"),
         ):
             ledger = cod_model.load_claim_ledger(Path(path))
             persona_ids = {persona["id"] for persona in domains[domain]["personas"]}

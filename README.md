@@ -145,7 +145,7 @@ python3.11 cod_model.py export-dialogue \
 
 承認時はreview欄を除いたrun全体のSHA-256を固定し、承認後に変更されたrunはexportを拒否します。export対象はモデル由来utteranceだけで、fallback、機械的定型文、近似同文、不正文を除外します。出力は人格別のMLX chat JSONLとmanifestです。`data/dialogue_sft/` はGit管理外です。
 
-2026-08-26時点のローカル収集はweather/software合計45件で、人格別2〜11件です。機械文11件、近似同文8件を除外しました。generalの2runと三者優先度を扱うweather更新runはhard gate不合格で不採用、[`software_offline_sync_holdout`](data/software_offline_sync_holdout/claim_ledger.json) は合格して収集へ追加しました。元データから更新優先度を派生させた不採用fixtureも [`weather_update_holdout`](data/weather_update_holdout/claim_ledger.json) として残しています。最低30件/人格と凍結valid/testへ届いていないため、全人格 `ready_for_training=false` でDialogue LoRA学習は開始していません。
+2026-08-27時点のローカル収集はweather/software合計59件で、software人格11〜13件、weather人格2〜3件です。機械文16件、近似同文9件を除外しました。[`software_offline_sync_holdout`](data/software_offline_sync_holdout/claim_ledger.json) と [`software_model_cache_holdout`](data/software_model_cache_holdout/claim_ledger.json) は合格して収集へ追加しました。一方、[`weather_update_holdout`](data/weather_update_holdout/claim_ledger.json)、[`weather_steering_vs_impact_holdout`](data/weather_steering_vs_impact_holdout/claim_ledger.json)、general 2run、[`general_rollout_holdout`](data/general_rollout_holdout/claim_ledger.json) はすり合わせ会話のhard gate不合格で不採用です。最低30件/人格と凍結valid/testへ届いていないため、全人格 `ready_for_training=false` でDialogue LoRA学習は開始していません。
 
 ## 軽量Weight実験
 

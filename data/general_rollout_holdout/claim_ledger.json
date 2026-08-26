@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の入力フォーム検証機能A/Bテストで、入力エラーは減ったが離脱が増えた。新機能を全面展開するか、限定pilotを続けて追加検証するかを判断する",
+  "data": [
+    {"id": "D01", "text": "旧フォーム1000sessionと新フォーム1000sessionへ無作為に割り当てた。"},
+    {"id": "D02", "text": "入力エラー率は旧8%から新3%へ低下した。"},
+    {"id": "D03", "text": "送信前離脱率は旧12%から新18%へ上昇した。"},
+    {"id": "D04", "text": "mobileでは新フォームの離脱率が25%、desktopでは旧版との差が1%未満だった。"},
+    {"id": "D05", "text": "mobileの新フォームではsession終了イベントが10%欠落している可能性がある。"},
+    {"id": "D06", "text": "実験期間は1週間で、利用者が新しい操作へ慣れた後の追跡はない。"},
+    {"id": "D07", "text": "目的は入力エラーを減らしつつ、完了率を実質的に悪化させないことである。"}
+  ],
+  "claim_catalog": [
+    {
+      "code": "BROAD_ROLLOUT_NOW",
+      "label": "入力エラー減少を重視して新フォームを全面展開する",
+      "supported_by": ["D01", "D02", "D07"],
+      "contradicts": ["LIMITED_PILOT_CONTINUE"],
+      "priority": 4
+    },
+    {
+      "code": "LIMITED_PILOT_CONTINUE",
+      "label": "離脱増加を検証するまで新フォームは限定pilotに留める",
+      "supported_by": ["D03", "D04", "D05", "D06", "D07"],
+      "contradicts": ["BROAD_ROLLOUT_NOW"],
+      "priority": 5
+    },
+    {"code": "ERROR_REDUCTION_REAL", "label": "無作為比較で確認された入力エラー減少を有力な効果として扱う", "supported_by": ["D01", "D02"], "contradicts": [], "priority": 4},
+    {"code": "ABANDONMENT_COST_MATERIAL", "label": "送信前離脱の増加を無視できない損失として扱う", "supported_by": ["D03", "D07"], "contradicts": [], "priority": 5},
+    {"code": "MOBILE_SEGMENT_RISK", "label": "mobile利用者の離脱を独立した高リスクsegmentとして調べる", "supported_by": ["D04"], "contradicts": [], "priority": 5},
+    {"code": "MISSING_DATA_AUDIT", "label": "mobile終了イベント欠落を補正して指標を再計算する", "supported_by": ["D05"], "contradicts": [], "priority": 5},
+    {"code": "LONGER_EXPERIMENT", "label": "操作への慣れを確認するため実験期間を延長する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "PRE_REGISTER_NET_METRIC", "label": "エラー率と完了率を統合する評価指標を事前登録する", "supported_by": ["D02", "D03", "D07"], "contradicts": [], "priority": 4},
+    {"code": "NET_BENEFIT_UNRESOLVED", "label": "現データではエラー減少と離脱増加の純便益を確定しない", "supported_by": ["D02", "D03", "D05", "D07"], "contradicts": [], "priority": 5}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["BROAD_ROLLOUT_NOW", "ERROR_REDUCTION_REAL", "PRE_REGISTER_NET_METRIC"],
+    "falsifier": ["LIMITED_PILOT_CONTINUE", "ABANDONMENT_COST_MATERIAL", "MOBILE_SEGMENT_RISK"],
+    "empirical_auditor": ["MISSING_DATA_AUDIT", "NET_BENEFIT_UNRESOLVED", "LONGER_EXPERIMENT"]
+  }
+}
