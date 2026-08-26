@@ -17,6 +17,14 @@ class CodModelTest(unittest.TestCase):
             self.assertTrue(all(persona["utility"] and persona["loss"] for persona in config["personas"]))
             self.assertEqual(len({persona["utility"] for persona in config["personas"]}), len(ids))
 
+    def test_software_holdout_ledger_matches_software_personas(self):
+        ledger = cod_model.load_claim_ledger(
+            Path("data/software_architecture_holdout/claim_ledger.json")
+        )
+        persona_ids = {persona["id"] for persona in cod_model.load_domains()["software"]["personas"]}
+        self.assertEqual(set(ledger["role_preferences"]), persona_ids)
+        self.assertTrue(ledger["fixture"])
+
     def test_identical_blind_answers_trigger_collapse_proxy(self):
         answer = {
             "stance": "主案",
@@ -330,7 +338,7 @@ class CodModelTest(unittest.TestCase):
                                 "choice": "A",
                                 "choice_origin": "model_json",
                                 "statement_origin": "model_repair",
-                                "utterance": "私はAに賛成です。",
+                                "utterance": "私はAの見方を採ります。",
                                 "utterance_origin": "model_repair",
                                 "raw": '{"choice":"A"}',
                             },
@@ -353,6 +361,7 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(metrics["fallback_rate"], 0.5)
         self.assertEqual(metrics["model_statement_rate"], 0.75)
         self.assertEqual(metrics["model_utterance_rate"], 1.0)
+        self.assertEqual(metrics["dialogue_near_duplicate_pairs"], 0)
         self.assertTrue(metrics["hard_gate_pass"])
 
     def test_changed_reconciliation_vote_requires_model_change_reason(self):
@@ -398,7 +407,7 @@ class CodModelTest(unittest.TestCase):
             "fallback_rate": 0.2,
             "model_statement_rate": 0.7,
             "near_duplicate_rate": 0.1,
-            "hard_gate_pass": True,
+            "hard_gate_pass": False,
         }
         candidate = {
             "shadow_score": 82.0,

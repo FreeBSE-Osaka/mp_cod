@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の固定要件として、既存SwiftUI iOSアプリへ8週間でオフラインのローカル推論討論機能を追加する。Swift/MLXの縦切り実装を先に出すか、macOS再利用を見据えたRust共有コアを先に設計するかを判断する",
+  "data": [
+    {
+      "id": "D01",
+      "text": "既存アプリはiOS 17以降のSwiftUI製で、現在Rust FFIやWeb UIを使用していない。"
+    },
+    {
+      "id": "D02",
+      "text": "Weight取得後はネットワークなしでも討論を完走できることが必須要件である。"
+    },
+    {
+      "id": "D03",
+      "text": "開発担当は2名で、8週間後にSimulatorで動くデモを提示する必要がある。"
+    },
+    {
+      "id": "D04",
+      "text": "現在選定済みの推論経路はMLX SwiftとQwen3 1.7B 4bitである。"
+    },
+    {
+      "id": "D05",
+      "text": "将来macOSでも討論コアを再利用したいが、リリース時期と共有APIは未確定である。"
+    },
+    {
+      "id": "D06",
+      "text": "推論はcancelとunloadに対応し、失敗しても既存の解析結果やキャッシュを破損してはならない。"
+    },
+    {
+      "id": "D07",
+      "text": "D番号validator、イベントscheduler、3/4集計はモデルに依存しない純粋なデータ変換として実装できる。"
+    },
+    {
+      "id": "D08",
+      "text": "Rust共有コアをiOSへ導入する場合、FFI、追加build target、署名、境界テストが必要になる。"
+    },
+    {
+      "id": "D09",
+      "text": "Swift単独版とRust共有版の速度・メモリ・保守費を比較した実測値はまだない。"
+    },
+    {
+      "id": "D10",
+      "text": "人格Adapterのロードに失敗した場合もbase modelへ戻して機能を継続する必要がある。"
+    }
+  ],
+  "claim_catalog": [
+    {
+      "code": "SWIFT_MLX_VERTICAL_SLICE_FIRST",
+      "label": "まずSwiftとMLXだけで縦切りの動作版を完成させる",
+      "supported_by": ["D01", "D02", "D03", "D04"],
+      "contradicts": ["RUST_SHARED_CORE_FIRST"],
+      "priority": 5
+    },
+    {
+      "code": "RUST_SHARED_CORE_FIRST",
+      "label": "macOS再利用を見据えてRust共有コアを先に設計する",
+      "supported_by": ["D05", "D07", "D08"],
+      "contradicts": ["SWIFT_MLX_VERTICAL_SLICE_FIRST", "DEFER_RUST_UNTIL_REUSE_FIXED", "MINIMIZE_NEW_DEPENDENCIES"],
+      "priority": 4
+    },
+    {
+      "code": "DEFER_RUST_UNTIL_REUSE_FIXED",
+      "label": "共有APIと再利用時期が固まるまでRust導入を延期する",
+      "supported_by": ["D03", "D05", "D08", "D09"],
+      "contradicts": ["RUST_SHARED_CORE_FIRST"],
+      "priority": 4
+    },
+    {
+      "code": "MEASURE_BEFORE_ABSTRACTION",
+      "label": "抽象化の前にSwift版の速度・メモリ・開発時間を測定する",
+      "supported_by": ["D03", "D04", "D09"],
+      "contradicts": [],
+      "priority": 4
+    },
+    {
+      "code": "PURE_DATA_DEBATE_CORE",
+      "label": "validatorとschedulerを純粋なデータ変換として分離する",
+      "supported_by": ["D06", "D07"],
+      "contradicts": [],
+      "priority": 4
+    },
+    {
+      "code": "DEFINE_SCHEMA_BOUNDARY_FIRST",
+      "label": "UI実装より先にclaim schemaと失敗境界を固定する",
+      "supported_by": ["D06", "D07", "D10"],
+      "contradicts": [],
+      "priority": 4
+    },
+    {
+      "code": "MINIMIZE_NEW_DEPENDENCIES",
+      "label": "8週間の初期版では新しい言語境界と依存を増やさない",
+      "supported_by": ["D01", "D03", "D08"],
+      "contradicts": ["RUST_SHARED_CORE_FIRST"],
+      "priority": 5
+    },
+    {
+      "code": "ROLLBACK_AND_BASE_FALLBACK",
+      "label": "cancel・unload・base model fallbackを最初から実装する",
+      "supported_by": ["D06", "D10"],
+      "contradicts": [],
+      "priority": 5
+    },
+    {
+      "code": "OFFLINE_FIRST",
+      "label": "ネットワークなしで討論を完走する経路を最優先する",
+      "supported_by": ["D02", "D04"],
+      "contradicts": [],
+      "priority": 5
+    }
+  ],
+  "role_preferences": {
+    "iterative_generalist": [
+      "SWIFT_MLX_VERTICAL_SLICE_FIRST",
+      "MEASURE_BEFORE_ABSTRACTION",
+      "MINIMIZE_NEW_DEPENDENCIES"
+    ],
+    "typed_domain_architect": [
+      "DEFINE_SCHEMA_BOUNDARY_FIRST",
+      "RUST_SHARED_CORE_FIRST",
+      "ROLLBACK_AND_BASE_FALLBACK"
+    ],
+    "functional_data_engineer": [
+      "PURE_DATA_DEBATE_CORE",
+      "RUST_SHARED_CORE_FIRST",
+      "MEASURE_BEFORE_ABSTRACTION"
+    ],
+    "delivery_risk_manager": [
+      "ROLLBACK_AND_BASE_FALLBACK",
+      "DEFER_RUST_UNTIL_REUSE_FIXED",
+      "OFFLINE_FIRST"
+    ]
+  }
+}

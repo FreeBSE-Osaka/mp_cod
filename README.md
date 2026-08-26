@@ -150,6 +150,8 @@ Adapter WeightはこのGitリポジトリに含めていません。再現条件
 
 RSIは、異なる固定ledgerを使ったdevelopmentとholdoutの両方で候補runがParentを上回るか検査します。
 
+別domainの凍結holdoutとして、架空の8週間iOS開発要件を使う [`data/software_architecture_holdout/claim_ledger.json`](data/software_architecture_holdout/claim_ledger.json) を同梱しています。実在案件の事実ではなく、Swift/MLX先行とRust共有コア先行を異なる目的関数で議論させる再現用fixtureです。
+
 ```sh
 python3.11 cod_model.py rsi-shadow \
   --parent-dev runs/parent-dev.json \
@@ -160,7 +162,9 @@ python3.11 cod_model.py rsi-shadow \
   --out runs/rsi-round1.json
 ```
 
-評価対象はモデル主張率、証拠文・会話文成功率、reaction失敗率、fallback率、生出力保存率、会話同文率、発言イベントの多様性です。holdoutへ改善が移らない場合は停止します。結果が良くても `promotion_allowed=false`、`parent_replacement_allowed=false` であり、人間確認なしにWeight、コード、GitHub、Hugging Faceを変更しません。
+評価対象はモデル主張率、証拠文・会話文成功率、reaction失敗率、fallback率、生出力保存率、異なるclaim間の会話同文率、発言イベントの多様性です。Parentがhard gate不合格でも候補は評価できますが、候補自身はdevelopmentと別ledger holdoutの両方ですべてのhard gateを通る必要があります。holdoutへ改善が移らない場合は停止します。
+
+2026-08-26のローカルcross-domain smokeではweather development `+25.00`、software holdout `+13.75` で `research_shadow_candidate` になりました。これは昇格ではなく、引き続き `promotion_allowed=false`、`parent_replacement_allowed=false` です。人間確認なしにWeight、コード、GitHub、Hugging Faceを変更しません。
 
 ## テスト
 

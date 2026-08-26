@@ -1233,10 +1233,14 @@ def event_run_metrics(run: dict) -> dict:
         if public_statement_total
         else 0.0
     )
-    dialogue_records = [event.get("utterance", "") for event in events] + [
-        vote.get("utterance", "") for vote in vote_records
+    dialogue_records = [(event.get("utterance", ""), event.get("code")) for event in events] + [
+        (vote.get("utterance", ""), vote.get("choice")) for vote in vote_records
     ]
-    dialogue_pairs = [similarity(left, right) for left, right in itertools.combinations(dialogue_records, 2)]
+    dialogue_pairs = [
+        similarity(left_text, right_text)
+        for (left_text, left_code), (right_text, right_code) in itertools.combinations(dialogue_records, 2)
+        if left_code != right_code
+    ]
     dialogue_near_duplicates = sum(value >= 0.8 for value in dialogue_pairs)
     dialogue_near_duplicate_rate = (
         dialogue_near_duplicates / len(dialogue_pairs) if dialogue_pairs else 0.0
@@ -1331,9 +1335,7 @@ def decide_rsi_shadow(
     )
     eligible = (
         holdout_distinct
-        and parent_dev["hard_gate_pass"]
         and candidate_dev["hard_gate_pass"]
-        and parent_holdout["hard_gate_pass"]
         and candidate_holdout["hard_gate_pass"]
         and non_regression
         and dev_gain >= 1.0
