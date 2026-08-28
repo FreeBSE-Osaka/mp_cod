@@ -294,6 +294,16 @@ class CodModelTest(unittest.TestCase):
         )
         self.assertIsNone(reason)
         self.assertIn("見方を改めます", utterance)
+        self.assertEqual(
+            cod_model.sanitize_dialogue_move(
+                "私もその見方に賛同します。根拠は[D03]です。", "agree"
+            ),
+            "私もその見方に賛同します。",
+        )
+        maintained = cod_model.sanitize_dialogue_move(
+            "送信前離脱率は旧12%から新18%へ上昇した。", "maintain"
+        )
+        self.assertTrue(maintained.startswith("私はこの見方を維持します。"))
 
     def test_adapter_map_rejects_unknown_personas(self):
         with tempfile.TemporaryDirectory() as directory:

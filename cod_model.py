@@ -1047,6 +1047,28 @@ def dialogue_fallback(statement: str) -> str:
     return f"{visible}。"
 
 
+def sanitize_dialogue_move(utterance: object, move: str) -> str | None:
+    if not isinstance(utterance, str):
+        return None
+    visible = utterance.split("根拠", 1)[0]
+    visible = re.sub(r"\[?D\d{2,}\]?", "", visible).strip(" 、,。.[]")
+    if not visible:
+        return None
+    visible = f"{visible}。"
+    normalized, _ = validate_dialogue_move(visible, move)
+    if normalized is not None:
+        return normalized
+    prefixes = {
+        "object": "ただ、その見方では不十分です。",
+        "agree": "私もその見方に賛成です。",
+        "maintain": "私はこの見方を維持します。",
+        "revise": "確かに見落としていました。見方を改めます。",
+    }
+    candidate = f"{prefixes.get(move, '')}{visible}"
+    normalized, _ = validate_dialogue_move(candidate, move)
+    return normalized
+
+
 def validate_coded_claim(claim: dict, ledger: dict) -> tuple[dict | None, str | None]:
     if not isinstance(claim, dict):
         return None, "claim is not an object"
@@ -2059,6 +2081,14 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         if repaired_utterance is not None:
                             utterance = repaired_utterance
                             utterance_origin = "model_repair"
+                        else:
+                            sanitized_utterance = sanitize_dialogue_move(
+                                repair_parsed.get("utterance") if isinstance(repair_parsed, dict) else None,
+                                dialogue_move,
+                            )
+                            if sanitized_utterance is not None:
+                                utterance = sanitized_utterance
+                                utterance_origin = "model_sanitized"
                     if changed and change_reason_warning is not None:
                         repaired_reason, repair_change_reason_warning = validate_public_statement(
                             repair_parsed.get("change_reason") if isinstance(repair_parsed, dict) else None,
