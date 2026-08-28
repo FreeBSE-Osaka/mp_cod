@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の配送会社で新route最適化を全車両へ展開するか、遅延が集中するdepotで地図を更新してpilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "8週間・走行200万kmの再生で新routeは燃料使用量を11%削減した。"},
+    {"id": "D02", "text": "同じ再生で時間内配達率は92%から88%へ低下し、契約SLAの90%を下回った。"},
+    {"id": "D03", "text": "新routeで増えた遅延の73%は都市部depotに集中し、その道路工事mapは3か月更新されていなかった。"},
+    {"id": "D04", "text": "運転者の手動override率は4%から19%へ上昇した。"},
+    {"id": "D05", "text": "再生期間の降雨日は3日だけで、積雪と台風による通行止めを含んでいない。"},
+    {"id": "D06", "text": "燃料11%削減を全車両で維持できれば月320万円の費用削減になる見積もりである。"},
+    {"id": "D07", "text": "目的は時間内配達率90%以上を守りながら燃料費と走行距離を減らすことである。"}
+  ],
+  "claim_catalog": [
+    {"code": "FLEET_DEPLOY_NOW", "label": "燃料削減を優先して新route最適化を全車両へ展開する", "supported_by": ["D01", "D06", "D07"], "contradicts": ["MAP_VALIDATION_FIRST"], "priority": 4},
+    {"code": "MAP_VALIDATION_FIRST", "label": "都市部depotの道路工事map未更新を遅延の交絡候補として先に検証する", "supported_by": ["D03", "D02", "D07"], "contradicts": ["FLEET_DEPLOY_NOW"], "priority": 5},
+    {"code": "FUEL_GAIN", "label": "燃料使用量11%削減を運用上有意な効果として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "MONTHLY_SAVINGS", "label": "月320万円の費用削減余地を重く扱う", "supported_by": ["D06", "D07"], "contradicts": [], "priority": 4},
+    {"code": "SLA_BREACH", "label": "時間内配達率88%がSLA 90%を下回る事実を重大視する", "supported_by": ["D02", "D07"], "contradicts": [], "priority": 5},
+    {"code": "MAP_CONFOUNDER", "label": "都市部depotの道路工事map未更新を遅延の交絡候補として検証する", "supported_by": ["D03"], "contradicts": [], "priority": 5},
+    {"code": "WEATHER_STRESS_HOLDOUT", "label": "積雪と台風通行止めを含むholdoutで再評価する", "supported_by": ["D05"], "contradicts": [], "priority": 4},
+    {"code": "OVERRIDE_AUDIT", "label": "手動override率19%の理由と安全影響を監査する", "supported_by": ["D04"], "contradicts": [], "priority": 4},
+    {"code": "DELIVERY_UTILITY", "label": "燃料費・時間内配達率・override率を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D04", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["FLEET_DEPLOY_NOW", "FUEL_GAIN", "MONTHLY_SAVINGS"],
+    "falsifier": ["MAP_VALIDATION_FIRST", "SLA_BREACH", "MAP_CONFOUNDER"],
+    "empirical_auditor": ["WEATHER_STRESS_HOLDOUT", "OVERRIDE_AUDIT", "DELIVERY_UTILITY"]
+  }
+}

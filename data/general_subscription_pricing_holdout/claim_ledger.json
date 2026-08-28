@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空のsubscriptionで月額を1200円から900円へ値下げして全新規利用者へ展開するか、無作為化した長期cohort試験を続けるかを判断する",
+  "data": [
+    {"id": "D01", "text": "4週間のlanding page比較で新規登録12000人の購入転換率は6.1%から8.4%へ上昇した。"},
+    {"id": "D02", "text": "初月の利用者1人あたり売上は1180円から940円へ低下した。"},
+    {"id": "D03", "text": "30日継続率は54%から61%へ上昇した。"},
+    {"id": "D04", "text": "900円pageへの流入はaffiliate経由が68%、1200円pageでは40%で、割付は無作為ではなかった。"},
+    {"id": "D05", "text": "比較対象は新規月額利用者だけで、既存利用者と年額契約を含んでいない。"},
+    {"id": "D06", "text": "値下げの損益分岐には6か月継続率68%以上が必要だが、観測済みなのは30日までである。"},
+    {"id": "D07", "text": "目的は購入転換率を上げながら12か月LTVと総利益を増やすことである。"}
+  ],
+  "claim_catalog": [
+    {"code": "ROLL_OUT_LOWER_PRICE", "label": "購入転換率と30日継続率の改善を優先して900円価格を全新規利用者へ展開する", "supported_by": ["D01", "D03", "D07"], "contradicts": ["RANDOMIZED_COHORT_FIRST"], "priority": 4},
+    {"code": "RANDOMIZED_COHORT_FIRST", "label": "流入経路を無作為化した長期cohort試験を先に行う", "supported_by": ["D02", "D04", "D06", "D07"], "contradicts": ["ROLL_OUT_LOWER_PRICE"], "priority": 5},
+    {"code": "CONVERSION_GAIN", "label": "購入転換率6.1%から8.4%への増加を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "RETENTION_SIGNAL", "label": "30日継続率54%から61%への増加を成長signalとして扱う", "supported_by": ["D03"], "contradicts": [], "priority": 4},
+    {"code": "REVENUE_DROP", "label": "初月売上1180円から940円への低下を重大な損失として扱う", "supported_by": ["D02", "D07"], "contradicts": [], "priority": 5},
+    {"code": "CHANNEL_CONFOUNDER", "label": "affiliate流入比率の差と非無作為割付を交絡として検証する", "supported_by": ["D04"], "contradicts": [], "priority": 5},
+    {"code": "LONG_LTV_HOLDOUT", "label": "6か月継続率と12か月LTVまで追跡するholdoutを設ける", "supported_by": ["D06", "D07"], "contradicts": [], "priority": 4},
+    {"code": "SEGMENT_TRANSFER", "label": "新規月額利用者の結果が既存・年額利用者へ移行可能かを分けて検証する", "supported_by": ["D05"], "contradicts": [], "priority": 3},
+    {"code": "LTV_UTILITY", "label": "転換率・継続率・総利益を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D03", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["ROLL_OUT_LOWER_PRICE", "CONVERSION_GAIN", "RETENTION_SIGNAL"],
+    "falsifier": ["RANDOMIZED_COHORT_FIRST", "REVENUE_DROP", "CHANNEL_CONFOUNDER"],
+    "empirical_auditor": ["LONG_LTV_HOLDOUT", "SEGMENT_TRANSFER", "LTV_UTILITY"]
+  }
+}

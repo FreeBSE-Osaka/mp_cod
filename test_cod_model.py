@@ -48,6 +48,9 @@ class CodModelTest(unittest.TestCase):
             ("data/general_inventory_policy_holdout/claim_ledger.json", "general"),
             ("data/general_energy_peak_holdout/claim_ledger.json", "general"),
             ("data/general_refund_automation_holdout/claim_ledger.json", "general"),
+            ("data/general_quality_inspection_holdout/claim_ledger.json", "general"),
+            ("data/general_subscription_pricing_holdout/claim_ledger.json", "general"),
+            ("data/general_route_optimizer_holdout/claim_ledger.json", "general"),
         ):
             ledger = cod_model.load_claim_ledger(Path(path))
             persona_ids = {persona["id"] for persona in domains[domain]["personas"]}
@@ -309,11 +312,42 @@ class CodModelTest(unittest.TestCase):
         )
         self.assertTrue(maintained.startswith("私はこの見方を維持します。"))
         self.assertEqual(
-            cod_model.restore_claim_label_suru(
+            cod_model.restore_claim_label(
                 "現時点では、事前冷却を全zoneへ展開ると見ています。",
                 "事前冷却を全zoneへ展開する",
             ),
             "現時点では、事前冷却を全zoneへ展開すると見ています。",
+        )
+        self.assertEqual(
+            cod_model.restore_claim_label(
+                "欠陥流出・再検柾費・生産遅延を統合するutilityを事前登録すると見ています。",
+                "欠陥流出・再検査費・生産遅延を統合するutilityを事前登録する",
+            ),
+            "欠陥流出・再検査費・生産遅延を統合するutilityを事前登録すると見ています。",
+        )
+        self.assertEqual(
+            cod_model.restore_claim_label(
+                "確かに、光学条件を直した製品line限定pilotと人手再検柾を先に行います。",
+                "光学条件を直した製品line限定pilotと人手再検査を先に行う",
+            ),
+            "確かに、光学条件を直した製品line限定pilotと人手再検査を先に行います。",
+        )
+        unrelated = "私は別の条件を先に確認すべきだと思います。"
+        self.assertEqual(
+            cod_model.restore_claim_label(unrelated, "欠陥検出率を優先して全製品lineへ展開する"),
+            unrelated,
+        )
+        self.assertTrue(
+            cod_model.dialogue_matches_claim(
+                "都市部depotの道路工事map未更新が遅延の原因とされる可能性を検証します。",
+                "都市部depotの道路工事map未更新を遅延の交絡候補として検証する",
+            )
+        )
+        self.assertFalse(
+            cod_model.dialogue_matches_claim(
+                "都市部depotの道路工事map未更新を遅延の交絡候補として検証します。",
+                "道路工事mapを更新した都市部depotでpilotを先に行う",
+            )
         )
 
     def test_adapter_map_rejects_unknown_personas(self):
@@ -476,7 +510,7 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(metrics["dialogue_v2_utterances"], 1)
         self.assertEqual(metrics["mechanical_utterance_rate"], 0.0)
         self.assertEqual(metrics["dialogue_near_duplicate_pairs"], 0)
-        self.assertTrue(metrics["hard_gate_pass"])
+        self.assertFalse(metrics["hard_gate_pass"])
 
     def test_changed_reconciliation_vote_requires_model_change_reason(self):
         run = {

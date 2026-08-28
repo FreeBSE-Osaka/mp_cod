@@ -15,6 +15,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from difflib import SequenceMatcher
 from fractions import Fraction
 from pathlib import Path
 
@@ -1015,11 +1016,27 @@ def validate_dialogue_utterance(utterance: object) -> tuple[str | None, str | No
     return normalized, None
 
 
-def restore_claim_label_suru(utterance: object, label: str) -> object:
-    if not isinstance(utterance, str) or "する" not in label:
+def restore_claim_label(utterance: object, label: str) -> object:
+    if not isinstance(utterance, str) or label in utterance or len(label) < 12:
         return utterance
     collapsed = label.replace("する", "る")
-    return utterance.replace(collapsed, label, 1) if collapsed in utterance else utterance
+    if collapsed != label and collapsed in utterance:
+        return utterance.replace(collapsed, label, 1)
+    width = len(label)
+    candidates = (
+        (SequenceMatcher(None, label, utterance[start : start + width], autojunk=False).ratio(), start)
+        for start in range(max(0, len(utterance) - width + 1))
+    )
+    best_score, start = max(candidates, default=(0.0, 0))
+    if best_score < 0.92:
+        return utterance
+    fragment = list(utterance[start : start + width])
+    typos = [index for index, (expected, actual) in enumerate(zip(label, fragment)) if expected != actual and index < width - 3]
+    if not 1 <= len(typos) <= 2:
+        return utterance
+    for index in typos:
+        fragment[index] = label[index]
+    return f"{utterance[:start]}{''.join(fragment)}{utterance[start + width:]}"
 
 
 def validate_dialogue_move(utterance: object, move: str) -> tuple[str | None, str | None]:
@@ -1043,9 +1060,15 @@ def is_mechanical_utterance(utterance: str) -> bool:
 
 
 def reaction_is_aligned(utterance: str, own_label: str, target_label: str, action: str) -> bool:
+    if not dialogue_matches_claim(utterance, own_label):
+        return False
     if action != "object":
         return True
     return similarity(utterance, own_label) >= similarity(utterance, target_label)
+
+
+def dialogue_matches_claim(utterance: str, label: str) -> bool:
+    return label in utterance or similarity(utterance, label) >= 0.3
 
 
 def dialogue_fallback(statement: str) -> str:
@@ -1368,6 +1391,7 @@ def event_run_metrics(run: dict) -> dict:
             and raw_record_rate == 1.0
             and vote_parse_fallbacks == 0
             and change_reason_rate == 1.0
+            and model_statement_rate == 1.0
             and model_utterance_rate == 1.0
             and reaction_failures == 0
         ),
@@ -1658,11 +1682,17 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     normalized["statement_origin"] = "model"
                 normalized["statement"] = statement
                 raw_utterance = claim.get("utterance")
-                candidate_utterance = restore_claim_label_suru(
+                candidate_utterance = restore_claim_label(
                     raw_utterance,
                     catalog[normalized["code"]]["label"],
                 )
                 utterance, utterance_reason = validate_dialogue_utterance(candidate_utterance)
+                if utterance is not None and not dialogue_matches_claim(
+                    utterance,
+                    catalog[normalized["code"]]["label"],
+                ):
+                    utterance = None
+                    utterance_reason = "utterance does not match selected claim label"
                 if utterance is None:
                     utterance = dialogue_fallback(statement)
                     normalized["utterance_origin"] = "statement_fallback"
@@ -1773,8 +1803,12 @@ def run_event_debate(args: argparse.Namespace) -> int:
             )
             reaction_raw, reaction_parsed = ask_json(reaction_system, reaction_user, min(args.max_tokens, 220))
             reaction_ids = reaction_parsed.get("data_ids") if isinstance(reaction_parsed, dict) else None
-            utterance, warning = validate_dialogue_move(
+            reaction_candidate = restore_claim_label(
                 reaction_parsed.get("utterance") if isinstance(reaction_parsed, dict) else None,
+                event["label"],
+            )
+            utterance, warning = validate_dialogue_move(
+                reaction_candidate,
                 reaction_move,
             )
             reaction_alignment = (
@@ -1823,8 +1857,12 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 )
                 repair_raw, repair_parsed = ask_json(reaction_system, repair_user, min(args.max_tokens, 220))
                 repair_ids = repair_parsed.get("data_ids") if isinstance(repair_parsed, dict) else None
-                utterance, repair_warning = validate_dialogue_move(
+                reaction_repair_candidate = restore_claim_label(
                     repair_parsed.get("utterance") if isinstance(repair_parsed, dict) else None,
+                    event["label"],
+                )
+                utterance, repair_warning = validate_dialogue_move(
+                    reaction_repair_candidate,
                     reaction_move,
                 )
                 reaction_ids = repair_ids
@@ -1995,15 +2033,24 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     if changed
                     else "maintain" if previous_choice == choice else "agree"
                 )
+                selected_label = (
+                    catalog[choice]["label"]
+                    if choice in catalog
+                    else "両方を残す" if choice == "BOTH" else "判断を保留する"
+                )
+                raw_utterance = parsed.get("utterance") if isinstance(parsed, dict) else None
+                candidate_utterance = restore_claim_label(raw_utterance, selected_label)
                 utterance, utterance_warning = validate_dialogue_move(
-                    parsed.get("utterance") if isinstance(parsed, dict) else None,
+                    candidate_utterance,
                     dialogue_move,
                 )
                 if utterance is None:
                     utterance = dialogue_fallback(statement)
                     utterance_origin = "statement_fallback"
                 else:
-                    utterance_origin = "model"
+                    utterance_origin = (
+                        "model_sanitized" if candidate_utterance != raw_utterance else "model"
+                    )
                 change_reason = ""
                 change_reason_origin = "not_required"
                 change_reason_warning = None
@@ -2029,11 +2076,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     or utterance_warning is not None
                     or (changed and change_reason_warning is not None)
                 ):
-                    repair_label = (
-                        catalog[choice]["label"]
-                        if choice in catalog
-                        else "両方を残す" if choice == "BOTH" else "判断を保留する"
-                    )
+                    repair_label = selected_label
                     repair_system = (
                         f"あなたは{persona['name']}。選択は{choice}で確定済み。再評価は禁止。"
                         "渡されたD番号だけで公開用自然文を修復し、指定JSONだけを返す。"
@@ -2088,16 +2131,27 @@ def run_event_debate(args: argparse.Namespace) -> int:
                                 statement = sanitized
                                 statement_origin = "model_sanitized"
                     if utterance_warning is not None:
+                        raw_repaired_utterance = (
+                            repair_parsed.get("utterance") if isinstance(repair_parsed, dict) else None
+                        )
+                        repair_candidate_utterance = restore_claim_label(
+                            raw_repaired_utterance,
+                            repair_label,
+                        )
                         repaired_utterance, repair_utterance_warning = validate_dialogue_move(
-                            repair_parsed.get("utterance") if isinstance(repair_parsed, dict) else None,
+                            repair_candidate_utterance,
                             dialogue_move,
                         )
                         if repaired_utterance is not None:
                             utterance = repaired_utterance
-                            utterance_origin = "model_repair"
+                            utterance_origin = (
+                                "model_sanitized"
+                                if repair_candidate_utterance != raw_repaired_utterance
+                                else "model_repair"
+                            )
                         else:
                             sanitized_utterance = sanitize_dialogue_move(
-                                repair_parsed.get("utterance") if isinstance(repair_parsed, dict) else None,
+                                repair_candidate_utterance,
                                 dialogue_move,
                             )
                             if sanitized_utterance is not None:

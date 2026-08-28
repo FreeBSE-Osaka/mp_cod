@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の製造lineで画像検査の判定を厳しくして欠陥流出を減らすか、製品line限定pilotと人手再検査で検証するかを判断する",
+  "data": [
+    {"id": "D01", "text": "製品画像10000件の再生で、厳しい判定は既知欠陥100件中95件、現行判定は78件を検出した。"},
+    {"id": "D02", "text": "同じ再生で良品の誤rejectは250件から820件へ増加した。"},
+    {"id": "D03", "text": "人手再検査の処理上限は400件/日で、生産量10000件/日に厳しい判定を適用すると誤reject候補は約820件/日になる。"},
+    {"id": "D04", "text": "誤rejectの64%は光沢仕上げlineに集中し、そのcameraには偏光filterが付いていない。"},
+    {"id": "D05", "text": "欠陥流出1件の平均損失は12万円、人手再検査1件の費用は900円と見積もられている。"},
+    {"id": "D06", "text": "再生dataは昼勤と同一材料lotのみで、夜勤と新しいcoating材料を含んでいない。"},
+    {"id": "D07", "text": "目的は欠陥流出損失を減らしつつ、再検査待ちによる生産遅延を許容範囲に保つことである。"}
+  ],
+  "claim_catalog": [
+    {"code": "DEPLOY_STRICT_NOW", "label": "欠陥検出率を優先して厳しい判定を全製品lineへ展開する", "supported_by": ["D01", "D05", "D07"], "contradicts": ["LINE_PILOT_FIRST"], "priority": 4},
+    {"code": "LINE_PILOT_FIRST", "label": "光学条件を直した製品line限定pilotと人手再検査を先に行う", "supported_by": ["D02", "D03", "D04", "D07"], "contradicts": ["DEPLOY_STRICT_NOW"], "priority": 5},
+    {"code": "DEFECT_RECALL_GAIN", "label": "既知欠陥の検出78件から95件への増加を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "ESCAPE_COST", "label": "欠陥流出1件あたり12万円の損失を重く扱う", "supported_by": ["D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "REINSPECTION_OVERLOAD", "label": "誤reject820件/日が人手上限400件/日を超える事実を重大視する", "supported_by": ["D02", "D03"], "contradicts": [], "priority": 5},
+    {"code": "OPTICAL_CONFOUNDER", "label": "光沢lineの偏光filter不足を誤rejectの交絡候補として検証する", "supported_by": ["D04"], "contradicts": [], "priority": 5},
+    {"code": "SHIFT_MATERIAL_HOLDOUT", "label": "夜勤と新coating材料を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "QUALITY_UTILITY", "label": "欠陥流出・再検査費・生産遅延を統合するutilityを事前登録する", "supported_by": ["D02", "D03", "D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "ROLLBACK_CRITERIA", "label": "line単位の停止条件と再検査queue上限を事前に固定する", "supported_by": ["D03", "D07"], "contradicts": [], "priority": 3}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["DEPLOY_STRICT_NOW", "DEFECT_RECALL_GAIN", "ESCAPE_COST"],
+    "falsifier": ["LINE_PILOT_FIRST", "REINSPECTION_OVERLOAD", "OPTICAL_CONFOUNDER"],
+    "empirical_auditor": ["SHIFT_MATERIAL_HOLDOUT", "QUALITY_UTILITY", "ROLLBACK_CRITERIA"]
+  }
+}
