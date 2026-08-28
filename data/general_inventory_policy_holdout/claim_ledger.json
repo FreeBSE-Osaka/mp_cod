@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の部品倉庫で欠品を減らすため全品目の安全在庫を増やすか、対象品目を絞ったpilotで検証するかを判断する",
+  "data": [
+    {"id": "D01", "text": "直近6か月の注文12000件のうち420件で欠品が発生し、緊急配送費は合計840万円だった。"},
+    {"id": "D02", "text": "全240品目の安全在庫を増やすsimulationでは、欠品が420件から150件へ減少した。"},
+    {"id": "D03", "text": "同じsimulationで在庫金額は28%増え、倉庫使用率は72%から91%へ上昇した。"},
+    {"id": "D04", "text": "倉庫使用率が88%を超えた過去期間では、平均pick時間が14分から29分へ延び、誤出荷率が0.7%から1.9%へ増えた。"},
+    {"id": "D05", "text": "欠品の61%は18品目に集中しているが、提案は全240品目を一律に増やす設計である。"},
+    {"id": "D06", "text": "simulationは通常期のlead timeを使用し、供給途絶と年末繁忙期を含んでいない。"},
+    {"id": "D07", "text": "目的は欠品と緊急配送費を減らしつつ、pick遅延と誤出荷を許容範囲に保つことである。"}
+  ],
+  "claim_catalog": [
+    {"code": "RAISE_ALL_NOW", "label": "欠品削減を優先して全品目の安全在庫を直ちに増やす", "supported_by": ["D01", "D02", "D07"], "contradicts": ["TARGETED_PILOT_FIRST"], "priority": 4},
+    {"code": "TARGETED_PILOT_FIRST", "label": "欠品が集中する品目に限定したpilotを先に実施する", "supported_by": ["D03", "D04", "D05", "D07"], "contradicts": ["RAISE_ALL_NOW"], "priority": 5},
+    {"code": "STOCKOUT_GAIN", "label": "欠品420件から150件への減少を実質的な改善として扱う", "supported_by": ["D01", "D02"], "contradicts": [], "priority": 4},
+    {"code": "EXPEDITE_COST", "label": "緊急配送費840万円の削減余地を重く扱う", "supported_by": ["D01", "D07"], "contradicts": [], "priority": 4},
+    {"code": "CONGESTION_RISK", "label": "倉庫使用率91%によるpick遅延と誤出荷を重大な制約として扱う", "supported_by": ["D03", "D04", "D07"], "contradicts": [], "priority": 5},
+    {"code": "SKU_CONCENTRATION", "label": "欠品の61%が18品目へ集中している偏りを検証する", "supported_by": ["D05"], "contradicts": [], "priority": 5},
+    {"code": "STRESS_HOLDOUT", "label": "供給途絶と繁忙期を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "COST_WEIGHTED_UTILITY", "label": "欠品費用・在庫費用・誤出荷を統合するutilityを事前登録する", "supported_by": ["D01", "D03", "D04", "D07"], "contradicts": [], "priority": 4},
+    {"code": "TRANSFER_CHECK", "label": "通常期simulationが繁忙期にも移行可能かを独立検証する", "supported_by": ["D02", "D06"], "contradicts": [], "priority": 3}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["RAISE_ALL_NOW", "STOCKOUT_GAIN", "EXPEDITE_COST"],
+    "falsifier": ["TARGETED_PILOT_FIRST", "CONGESTION_RISK", "SKU_CONCENTRATION"],
+    "empirical_auditor": ["STRESS_HOLDOUT", "COST_WEIGHTED_UTILITY", "TRANSFER_CHECK"]
+  }
+}

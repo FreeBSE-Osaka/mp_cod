@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の商業施設で冷房の事前冷却により電力peakを下げる施策を全館展開するか、zone限定pilotで検証するかを判断する",
+  "data": [
+    {"id": "D01", "text": "20日間の試験で事前冷却を行った日の最大需要電力は対照日より14%低かった。"},
+    {"id": "D02", "text": "同じ試験で温熱comfortへの苦情率は3%から11%へ上昇した。"},
+    {"id": "D03", "text": "14%のpeak削減を維持できれば需要料金は月180万円減る見積もりである。"},
+    {"id": "D04", "text": "苦情の70%は西側zoneに集中し、そのzoneの温度sensorは校正期限を4か月過ぎていた。"},
+    {"id": "D05", "text": "試験は晴天の夏日に限られ、高湿度日と降雨日を含んでいない。"},
+    {"id": "D06", "text": "施設管理者は苦情率8%以下と最大需要電力10%以上削減を運用条件にしている。"},
+    {"id": "D07", "text": "目的は利用者のcomfortを保ちながら電力peakと需要料金を減らすことである。"}
+  ],
+  "claim_catalog": [
+    {"code": "DEPLOY_ALL_ZONES_NOW", "label": "電力peak削減を優先して事前冷却を全zoneへ展開する", "supported_by": ["D01", "D03", "D07"], "contradicts": ["ZONE_PILOT_FIRST"], "priority": 4},
+    {"code": "ZONE_PILOT_FIRST", "label": "sensor校正後にzone限定pilotで事前冷却を再検証する", "supported_by": ["D02", "D04", "D06", "D07"], "contradicts": ["DEPLOY_ALL_ZONES_NOW"], "priority": 5},
+    {"code": "PEAK_GAIN", "label": "最大需要電力14%削減を運用上有意な効果として扱う", "supported_by": ["D01", "D06"], "contradicts": [], "priority": 4},
+    {"code": "SAVINGS_MATERIAL", "label": "需要料金月180万円の削減余地を重く扱う", "supported_by": ["D03", "D07"], "contradicts": [], "priority": 4},
+    {"code": "COMFORT_BREACH", "label": "苦情率11%が運用条件8%を超えた事実を重大視する", "supported_by": ["D02", "D06"], "contradicts": [], "priority": 5},
+    {"code": "SENSOR_CONFOUNDER", "label": "西側zoneのsensor校正遅れを交絡候補として検証する", "supported_by": ["D04"], "contradicts": [], "priority": 5},
+    {"code": "WEATHER_HOLDOUT", "label": "高湿度日と降雨日を含むholdoutで再評価する", "supported_by": ["D05"], "contradicts": [], "priority": 4},
+    {"code": "COMPOSITE_UTILITY", "label": "peak削減・料金・苦情率を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D03", "D06", "D07"], "contradicts": [], "priority": 4},
+    {"code": "REVERSIBLE_ROLLOUT", "label": "zone単位で停止可能な段階展開と判定条件を固定する", "supported_by": ["D04", "D06"], "contradicts": [], "priority": 3}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["DEPLOY_ALL_ZONES_NOW", "PEAK_GAIN", "SAVINGS_MATERIAL"],
+    "falsifier": ["ZONE_PILOT_FIRST", "COMFORT_BREACH", "SENSOR_CONFOUNDER"],
+    "empirical_auditor": ["WEATHER_HOLDOUT", "COMPOSITE_UTILITY", "REVERSIBLE_ROLLOUT"]
+  }
+}

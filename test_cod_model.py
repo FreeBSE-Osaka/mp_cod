@@ -45,6 +45,9 @@ class CodModelTest(unittest.TestCase):
             ("data/software_model_cache_holdout/claim_ledger.json", "software"),
             ("data/general_rollout_holdout/claim_ledger.json", "general"),
             ("data/general_alert_threshold_holdout/claim_ledger.json", "general"),
+            ("data/general_inventory_policy_holdout/claim_ledger.json", "general"),
+            ("data/general_energy_peak_holdout/claim_ledger.json", "general"),
+            ("data/general_refund_automation_holdout/claim_ledger.json", "general"),
         ):
             ledger = cod_model.load_claim_ledger(Path(path))
             persona_ids = {persona["id"] for persona in domains[domain]["personas"]}
@@ -305,6 +308,13 @@ class CodModelTest(unittest.TestCase):
             "送信前離脱率は旧12%から新18%へ上昇した。", "maintain"
         )
         self.assertTrue(maintained.startswith("私はこの見方を維持します。"))
+        self.assertEqual(
+            cod_model.restore_claim_label_suru(
+                "現時点では、事前冷却を全zoneへ展開ると見ています。",
+                "事前冷却を全zoneへ展開する",
+            ),
+            "現時点では、事前冷却を全zoneへ展開すると見ています。",
+        )
 
     def test_adapter_map_rejects_unknown_personas(self):
         with tempfile.TemporaryDirectory() as directory:

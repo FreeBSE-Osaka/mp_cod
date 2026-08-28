@@ -1015,6 +1015,13 @@ def validate_dialogue_utterance(utterance: object) -> tuple[str | None, str | No
     return normalized, None
 
 
+def restore_claim_label_suru(utterance: object, label: str) -> object:
+    if not isinstance(utterance, str) or "する" not in label:
+        return utterance
+    collapsed = label.replace("する", "る")
+    return utterance.replace(collapsed, label, 1) if collapsed in utterance else utterance
+
+
 def validate_dialogue_move(utterance: object, move: str) -> tuple[str | None, str | None]:
     normalized, reason = validate_dialogue_utterance(utterance)
     if normalized is None:
@@ -1650,7 +1657,12 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 else:
                     normalized["statement_origin"] = "model"
                 normalized["statement"] = statement
-                utterance, utterance_reason = validate_dialogue_utterance(claim.get("utterance"))
+                raw_utterance = claim.get("utterance")
+                candidate_utterance = restore_claim_label_suru(
+                    raw_utterance,
+                    catalog[normalized["code"]]["label"],
+                )
+                utterance, utterance_reason = validate_dialogue_utterance(candidate_utterance)
                 if utterance is None:
                     utterance = dialogue_fallback(statement)
                     normalized["utterance_origin"] = "statement_fallback"
@@ -1660,7 +1672,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         "field": "utterance",
                     })
                 else:
-                    normalized["utterance_origin"] = "model"
+                    normalized["utterance_origin"] = (
+                        "model_sanitized" if candidate_utterance != raw_utterance else "model"
+                    )
                 normalized["utterance"] = utterance
                 valid.append(normalized)
                 seen_codes.add(normalized["code"])

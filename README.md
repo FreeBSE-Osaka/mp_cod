@@ -145,7 +145,7 @@ python3.11 cod_model.py export-dialogue \
 
 承認時はreview欄を除いたrun全体のSHA-256を固定し、承認後に変更されたrunはexportを拒否します。export対象はモデル由来utteranceだけで、fallback、機械的定型文、近似同文、不正文を除外します。出力は人格別のMLX chat JSONLとmanifestです。`data/dialogue_sft/` はGit管理外です。
 
-2026-08-28時点のローカル収集は3domain合計95件です。general人格は各12件、software人格11〜13件、weather人格2〜3件で、機械文26件、近似同文11件を除外しました。Generalのagree / maintain修復文からD根拠句を除き、欠けたmove表現だけを補う `model_sanitized` により、[`general_experiment_holdout`](data/general_experiment_holdout/claim_ledger.json)、[`general_rollout_holdout`](data/general_rollout_holdout/claim_ledger.json)、[`general_alert_threshold_holdout`](data/general_alert_threshold_holdout/claim_ledger.json) を合格runとして収集できました。weather更新runはすり合わせ会話のhard gate不合格で引き続き不採用です。最低30件/人格へ届いていないため、全人格 `ready_for_training=false` でDialogue LoRA学習は開始していません。
+2026-08-28時点のローカル収集は3domain合計113件です。general人格は各18件、software人格11〜13件、weather人格2〜3件で、機械文44件、近似同文11件を除外しました。Generalはrollout、温室実験、異常検知しきい値、在庫、電力peak、返金自動化の6runを合格として収集しています。agree / maintain修復ではD根拠句を除き、独立発言でclaim中の「する」が「る」へ脱落した場合はrawを保持したまま表示文だけを `model_sanitized` で補正します。weather更新runはすり合わせ会話のhard gate不合格で引き続き不採用です。最低30件/人格へ届いていないため、全人格 `ready_for_training=false` でDialogue LoRA学習は開始していません。
 
 ## 軽量Weight実験
 

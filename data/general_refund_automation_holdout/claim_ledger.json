@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の通販窓口で自動返金の上限を3000円から10000円へ拡大するか、shadow判定と層別人手確認を続けるかを判断する",
+  "data": [
+    {"id": "D01", "text": "過去4週間のticket 640件を再生した結果、新上限では解決時間中央値が19時間から2.1時間へ短縮した。"},
+    {"id": "D02", "text": "同じ再生で誤返金率は1.2%から4.8%へ上昇した。"},
+    {"id": "D03", "text": "誤返金による損失見積もりは週8.5万円から41万円へ増加した。"},
+    {"id": "D04", "text": "誤返金の72%は取引開始60日未満の出店者に集中していた。"},
+    {"id": "D05", "text": "人手確認の処理上限は週180件で、新上限の対象候補は週240件である。"},
+    {"id": "D06", "text": "再生期間は閑散期のみで、holiday saleと過去に不正が急増した期間を含んでいない。"},
+    {"id": "D07", "text": "目的は解決時間を短縮しつつ、誤返金率と損失額を許容範囲に抑えることである。"}
+  ],
+  "claim_catalog": [
+    {"code": "EXPAND_LIMIT_NOW", "label": "解決時間短縮を優先して自動返金上限を10000円へ拡大する", "supported_by": ["D01", "D07"], "contradicts": ["SHADOW_STRATIFIED_REVIEW"], "priority": 4},
+    {"code": "SHADOW_STRATIFIED_REVIEW", "label": "出店者risk別のshadow判定と層別人手確認を先に行う", "supported_by": ["D02", "D03", "D04", "D05", "D07"], "contradicts": ["EXPAND_LIMIT_NOW"], "priority": 5},
+    {"code": "SPEED_GAIN", "label": "解決時間19時間から2.1時間への短縮を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "SERVICE_VALUE", "label": "返金待ち時間の短縮を利用者価値として重く扱う", "supported_by": ["D01", "D07"], "contradicts": [], "priority": 3},
+    {"code": "ERROR_LOSS", "label": "誤返金率4.8%と週41万円の損失を重大な反証として扱う", "supported_by": ["D02", "D03"], "contradicts": [], "priority": 5},
+    {"code": "NEW_SELLER_SEGMENT", "label": "誤返金の72%が新規出店者へ集中する偏りを検証する", "supported_by": ["D04"], "contradicts": [], "priority": 5},
+    {"code": "REVIEW_CAPACITY", "label": "週180件の人手上限と対象240件の差をhard constraintとして扱う", "supported_by": ["D05"], "contradicts": [], "priority": 5},
+    {"code": "FRAUD_SEASON_HOLDOUT", "label": "saleと不正急増期を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "REFUND_UTILITY", "label": "速度・誤返金率・損失額を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D03", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["EXPAND_LIMIT_NOW", "SPEED_GAIN", "SERVICE_VALUE"],
+    "falsifier": ["SHADOW_STRATIFIED_REVIEW", "ERROR_LOSS", "NEW_SELLER_SEGMENT"],
+    "empirical_auditor": ["REVIEW_CAPACITY", "FRAUD_SEASON_HOLDOUT", "REFUND_UTILITY"]
+  }
+}
