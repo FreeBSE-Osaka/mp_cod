@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の異常検知システムで閾値を下げると見逃しは減るが誤警報が増える。新閾値を本番展開するか、shadow運用で追加検証するかを判断する",
+  "data": [
+    {"id": "D01", "text": "過去100件の実障害に対し現行閾値は70件、新閾値は88件を検知した。"},
+    {"id": "D02", "text": "誤警報は現行20件/日から新閾値55件/日へ増加した。"},
+    {"id": "D03", "text": "on-call担当が品質を落とさず調査できる上限は30件/日である。"},
+    {"id": "D04", "text": "現行閾値で見逃した30件のうち8件は重大障害で、検知遅延中央値は4時間だった。"},
+    {"id": "D05", "text": "誤警報が40件/日を超えた過去期間では、確認開始までの中央値が18分から47分へ悪化した。"},
+    {"id": "D06", "text": "評価期間は1か月で、季節イベントや大型release期間を含んでいない。"},
+    {"id": "D07", "text": "目的は重大障害のrecallを上げながら、on-callが処理可能なalert量を維持することである。"}
+  ],
+  "claim_catalog": [
+    {
+      "code": "LOWER_THRESHOLD_NOW",
+      "label": "重大障害の見逃し削減を優先して新閾値を本番展開する",
+      "supported_by": ["D01", "D04", "D07"],
+      "contradicts": ["SHADOW_TUNE_FIRST"],
+      "priority": 4
+    },
+    {
+      "code": "SHADOW_TUNE_FIRST",
+      "label": "誤警報と担当容量を検証するまで新閾値はshadow運用に留める",
+      "supported_by": ["D02", "D03", "D05", "D06", "D07"],
+      "contradicts": ["LOWER_THRESHOLD_NOW"],
+      "priority": 5
+    },
+    {"code": "RECALL_GAIN_MATERIAL", "label": "70件から88件への検知増加を実質的な改善として扱う", "supported_by": ["D01", "D07"], "contradicts": [], "priority": 4},
+    {"code": "SEVERE_MISS_COST", "label": "重大障害8件の見逃しと4時間の遅延を重く扱う", "supported_by": ["D04"], "contradicts": [], "priority": 5},
+    {"code": "FALSE_ALERT_COST", "label": "55件/日の誤警報を運用上の重大な損失として扱う", "supported_by": ["D02", "D05"], "contradicts": [], "priority": 5},
+    {"code": "CAPACITY_LIMIT", "label": "on-call上限30件/日をhard constraintとして扱う", "supported_by": ["D03", "D07"], "contradicts": [], "priority": 5},
+    {"code": "SEVERITY_WEIGHTED_THRESHOLD", "label": "重大度別に異なる閾値を検証する", "supported_by": ["D03", "D04", "D07"], "contradicts": [], "priority": 4},
+    {"code": "LONGER_HOLDOUT", "label": "季節イベントを含む長期間のholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "PRE_REGISTER_UTILITY", "label": "recall・誤警報・応答遅延を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D05", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["LOWER_THRESHOLD_NOW", "RECALL_GAIN_MATERIAL", "SEVERITY_WEIGHTED_THRESHOLD"],
+    "falsifier": ["SHADOW_TUNE_FIRST", "FALSE_ALERT_COST", "CAPACITY_LIMIT"],
+    "empirical_auditor": ["SEVERE_MISS_COST", "LONGER_HOLDOUT", "PRE_REGISTER_UTILITY"]
+  }
+}
