@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空のbike shareで自動再配置を全networkへ展開するか、需要が集中する通勤station群で担当付きpilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "6週間の再生で自動再配置は利用可能率を68%から82%へ上げた。"},
+    {"id": "D02", "text": "同じ再生で再配置truckの走行距離は24%、燃料費は18%増えた。"},
+    {"id": "D03", "text": "夜間teamが処理できるのは6 route/夜までで、全network展開には平均10 route/夜が必要である。"},
+    {"id": "D04", "text": "貸出不能の71%は12の通勤stationと7〜9時・17〜20時に集中していた。"},
+    {"id": "D05", "text": "22時以降の再配置を増やした期間は騒音苦情が週5件から19件へ増えた。"},
+    {"id": "D06", "text": "再生期間は春の平日のみで、雨天、連休、大規模eventを含んでいない。"},
+    {"id": "D07", "text": "目的は利用可能率を上げつつ、夜間routeを6以下、騒音苦情を週10件以下に保つことである。"}
+  ],
+  "claim_catalog": [
+    {"code": "FULL_NETWORK_ROLLOUT", "label": "利用可能率の改善を優先して自動再配置を全networkへ展開する", "supported_by": ["D01", "D07"], "contradicts": ["COMMUTE_CLUSTER_PILOT"], "priority": 4},
+    {"code": "COMMUTE_CLUSTER_PILOT", "label": "需要が集中する通勤station群で自動再配置pilotを先に行う", "supported_by": ["D04", "D03", "D07"], "contradicts": ["FULL_NETWORK_ROLLOUT"], "priority": 5},
+    {"code": "AVAILABILITY_GAIN", "label": "利用可能率68%から82%への上昇を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "UNMET_DEMAND_VALUE", "label": "貸出不能を減らして通勤需要を回復する価値を重く扱う", "supported_by": ["D01", "D04", "D07"], "contradicts": [], "priority": 4},
+    {"code": "ROUTE_OVERLOAD", "label": "必要10 routeが夜間上限6 routeを超える事実を重大視する", "supported_by": ["D03", "D07"], "contradicts": [], "priority": 5},
+    {"code": "DEMAND_CONCENTRATION", "label": "貸出不能の71%が通勤stationと時間帯へ集中する偏りを検証する", "supported_by": ["D04"], "contradicts": [], "priority": 5},
+    {"code": "WEATHER_EVENT_HOLDOUT", "label": "雨天、連休、大規模eventを含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "TRANSFER_AUDIT", "label": "春平日の結果が他の天候と曜日へ移行可能かを独立監査する", "supported_by": ["D01", "D06"], "contradicts": [], "priority": 3},
+    {"code": "NETWORK_UTILITY", "label": "利用可能率・route数・燃料費・苦情を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D03", "D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "OWNED_PILOT", "label": "夜間teamを担当者として12 station限定pilotを実施する", "supported_by": ["D03", "D04", "D07"], "contradicts": [], "priority": 5},
+    {"code": "ROLLBACK_TRIGGER", "label": "夜間6 routeまたは騒音苦情週10件を超えた時点を停止条件にする", "supported_by": ["D03", "D05", "D07"], "contradicts": [], "priority": 5},
+    {"code": "SHIFT_CAPACITY_PLAN", "label": "走行距離24%増を含む6 route以内のshift計画を先に作る", "supported_by": ["D02", "D03", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["FULL_NETWORK_ROLLOUT", "AVAILABILITY_GAIN", "UNMET_DEMAND_VALUE"],
+    "falsifier": ["COMMUTE_CLUSTER_PILOT", "ROUTE_OVERLOAD", "DEMAND_CONCENTRATION"],
+    "empirical_auditor": ["WEATHER_EVENT_HOLDOUT", "TRANSFER_AUDIT", "NETWORK_UTILITY"],
+    "pragmatic_operator": ["OWNED_PILOT", "ROLLBACK_TRIGGER", "SHIFT_CAPACITY_PLAN"]
+  }
+}

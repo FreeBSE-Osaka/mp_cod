@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "fixture": false,
+  "as_of": "2026-08-28",
+  "topic": "2026年8月28日に公表された近畿地域の活断層の長期評価を基に、関西の地震発生懸念をどの程度強く受け止めるべきか。短期予知や特定日の予測は行わず、確率の意味と不確実性を議論する",
+  "sources": [
+    {
+      "id": "S01",
+      "title": "近畿地域の活断層の地域評価",
+      "publisher": "地震調査研究推進本部 地震調査委員会",
+      "published_at": "2026-08-28",
+      "url": "https://www.jishin.go.jp/evaluation/long_term_evaluation/regional_evaluation/kinki-detail/"
+    },
+    {
+      "id": "S02",
+      "title": "近畿地域の活断層の長期評価（第一版）のポイント",
+      "publisher": "地震調査研究推進本部 事務局",
+      "published_at": "2026-08-28",
+      "url": "https://www.jishin.go.jp/main/chousa/26aug_chi_kinki/kinki_point.pdf"
+    },
+    {
+      "id": "S03",
+      "title": "近畿地域の活断層の長期評価（第一版）の概要",
+      "publisher": "地震調査研究推進本部 事務局",
+      "published_at": "2026-08-28",
+      "url": "https://www.jishin.go.jp/main/chousa/26aug_chi_kinki/kinki_gaiyo.pdf"
+    }
+  ],
+  "data": [
+    {"id": "D01", "text": "地震調査委員会は2026年8月28日、陸域と沿岸海域の活断層によるM6.8以上を対象とする近畿地域の活断層の長期評価（第一版）を公表した。"},
+    {"id": "D02", "text": "今後30年以内に区域内のどこかでM6.8以上が発生する確率は、近畿全域50〜60%、近畿北西部30%、近畿三角帯40〜60%、紀伊半島7%である。評価対象は重複を除き45断層である。"},
+    {"id": "D03", "text": "個別活断層の30年確率ランクはSが3%以上、Aが0.1%以上3%未満、Zが0.1%未満、Xが過去データ不足で確率不明である。地震後経過率0.7以上にはアスタリスクを付す。"},
+    {"id": "D04", "text": "2016年熊本地震前、布田川断層帯の30年確率はほぼ0〜0.9%だった。低い数値が安心情報に誤読された教訓から、確率ランクによる分かりやすい表記が導入された。"},
+    {"id": "D05", "text": "六甲・淡路島断層帯の六甲山地南縁−淡路島東岸区間は、M7.8程度、S*ランク、30年確率ほぼ0〜7%へ改訂された。淡路島西岸区間はZランクのままである。"},
+    {"id": "D06", "text": "上町断層帯主部はS*からZへ下がり、30年確率はほぼ0〜0.003%となった。一方、全体の長さは約56km、連動時M7.7程度へ拡大し、新設の沿岸部区間はXランクである。"},
+    {"id": "D07", "text": "琵琶湖西岸断層帯北部はM7.3程度、S*ランク、30年確率3〜14%へ上がった。南部はM7.4程度、Zランク、ほぼ0%のままである。"},
+    {"id": "D08", "text": "京都盆地−奈良盆地断層帯は全長約57km、連動時M7.8程度。北部はAランク0.7〜1%、南部はS*ランクほぼ0〜6%である。"},
+    {"id": "D09", "text": "浦底−柳ヶ瀬山断層帯はM7.4程度で、XランクからS*ランク、30年確率ほぼ0〜18%へ改訂された。"},
+    {"id": "D10", "text": "地域50〜60%は45断層のいずれかによるM6.8以上が近畿のどこかで起きる長期確率であり、特定の市町村の揺れの確率、特定断層の確率、直近数日や数年の発生予告ではない。"},
+    {"id": "D11", "text": "Zランクでも大地震の可能性は残り、Xランクは低確率ではなく確率を評価できないことを意味する。ランク低下と想定規模縮小は同義ではない。"},
+    {"id": "D12", "text": "各確率は算定基準日2026年1月1日の長期モデル評価で、過去活動時期、平均活動間隔、断層区分などの新知見により将来改訂されうる。"},
+    {"id": "D13", "text": "主な改訂例は、六甲山地南縁−淡路島東岸がM7.8程度・ほぼ0〜7%、琵琶湖西岸北部がM7.3程度・3〜14%、京都盆地−奈良盆地全体が連動時M7.8程度で南部ほぼ0〜6%、浦底−柳ヶ瀬山がM7.4程度・ほぼ0〜18%である。"}
+  ],
+  "claim_catalog": [
+    {"code": "LEAD_WITH_REGIONAL_CONCERN", "label": "近畿全域50〜60%を長期的な地震懸念の大きさとして最初に重く伝える", "supported_by": ["D02", "D10", "D01"], "contradicts": ["LEAD_WITH_UNCERTAINTY_LIMITS"], "priority": 5},
+    {"code": "LEAD_WITH_UNCERTAINTY_LIMITS", "label": "30年確率から直近数日や数年の発生時期を予測できないことを最初に強調する", "supported_by": ["D10", "D12"], "contradicts": ["LEAD_WITH_REGIONAL_CONCERN"], "priority": 5},
+    {"code": "TRIANGLE_BELT_CONCERN", "label": "近畿三角帯40〜60%と活断層の集中を主要な懸念として扱う", "supported_by": ["D02"], "contradicts": [], "priority": 4},
+    {"code": "MULTI_FAULT_CONCERN", "label": "六甲、琵琶湖西岸、京都−奈良、浦底−柳ヶ瀬山の複数リスクを並行して見る", "supported_by": ["D13"], "contradicts": [], "priority": 4},
+    {"code": "LOW_RANK_NOT_SAFETY", "label": "Zランクや低い数値を安全宣言として扱わない", "supported_by": ["D04", "D06", "D11"], "contradicts": [], "priority": 5},
+    {"code": "AGGREGATE_NOT_LOCAL", "label": "地域集約確率を個別断層や居住地点の確率へ読み替えない", "supported_by": ["D10", "D02"], "contradicts": [], "priority": 5},
+    {"code": "RANK_SEMANTICS", "label": "S・A・Z・Xとアスタリスクの定義を分けて解釈する", "supported_by": ["D03", "D11"], "contradicts": [], "priority": 5},
+    {"code": "MAGNITUDE_PROBABILITY_SEPARATION", "label": "地震規模の変化と発生確率の変化を混同しない", "supported_by": ["D13", "D06", "D11"], "contradicts": [], "priority": 5},
+    {"code": "WIDE_RANGE_UNCERTAINTY", "label": "ほぼ0〜7%、3〜14%、ほぼ0〜18%という幅自体を不確実性として残す", "supported_by": ["D13"], "contradicts": [], "priority": 4},
+    {"code": "DUAL_LAYER_COMMUNICATION", "label": "地域全体の長期懸念と個別断層の不確実性を二層に分けて説明する", "supported_by": ["D10", "D02", "D03", "D05", "D12"], "contradicts": [], "priority": 5},
+    {"code": "TRACK_REVISIONS_AND_X", "label": "Xランクと大幅改訂された断層を今後の知見更新対象として追跡する", "supported_by": ["D03", "D06", "D09", "D12"], "contradicts": [], "priority": 4},
+    {"code": "NO_DAILY_COUNTDOWN", "label": "30年確率から日単位の発生時期や直近の切迫を逆算しない", "supported_by": ["D10", "D12"], "contradicts": [], "priority": 5}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["LEAD_WITH_REGIONAL_CONCERN", "TRIANGLE_BELT_CONCERN", "MULTI_FAULT_CONCERN"],
+    "falsifier": ["LEAD_WITH_UNCERTAINTY_LIMITS", "LOW_RANK_NOT_SAFETY", "AGGREGATE_NOT_LOCAL"],
+    "empirical_auditor": ["RANK_SEMANTICS", "MAGNITUDE_PROBABILITY_SEPARATION", "WIDE_RANGE_UNCERTAINTY"],
+    "pragmatic_operator": ["DUAL_LAYER_COMMUNICATION", "TRACK_REVISIONS_AND_X", "NO_DAILY_COUNTDOWN"]
+  }
+}

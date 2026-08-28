@@ -27,10 +27,12 @@ STANCES = ["主案", "対案", "条件付き", "保留"]
 EVENT_PROMPT_PROFILES = ("baseline", "orthogonal", "orthogonal_fewshot")
 MECHANICAL_UTTERANCE_PHRASES = (
     "この点を今後の判断の軸",
+    "現時点では、",
     "という可能性を重く見ています",
     "という展開も考えておくべき",
     "という選択も検討中",
     "と判断します。根拠は",
+    "という点を見落としていました。見方を改めます",
 )
 MODEL_UTTERANCE_ORIGINS = {
     "model",
@@ -39,6 +41,23 @@ MODEL_UTTERANCE_ORIGINS = {
     "model_sanitized",
     "model_dialogue_v2",
     "model_dialogue_v2_repair",
+}
+MOVE_UTTERANCE_TEMPLATES = {
+    "agree": (
+        "その案には賛成です。私としては、『{label}』という点も大事だと思います。",
+        "同じ結論です。『{label}』を理由に加えたいです。",
+        "そこは同意します。特に『{label}』は外せません。",
+    ),
+    "maintain": (
+        "結論は変わりません。私は『{label}』を支持します。",
+        "今のところ見方は同じです。『{label}』が決め手です。",
+        "結論を維持します。再確認しても『{label}』を選びます。",
+    ),
+    "revise": (
+        "前の見方を修正します。『{label}』の方がデータに合っています。",
+        "考え直しました。今回は『{label}』を支持します。",
+        "先ほどとは結論を変えます。『{label}』を採ります。",
+    ),
 }
 
 
@@ -185,12 +204,13 @@ def ask_ollama(
     model: str,
     system: str,
     user: str,
-    schema: dict,
+    schema: dict | str,
     api_url: str,
     timeout: int,
     num_predict: int,
     temperature: float,
     seed: int,
+    include_raw: bool = False,
 ) -> tuple[dict, dict]:
     last_error: Exception | None = None
     for attempt in range(2):
@@ -232,6 +252,8 @@ def ask_ollama(
                 "tokens_per_second": round(payload.get("eval_count", 0) / eval_seconds, 2) if eval_seconds else 0,
                 "total_seconds": round(payload.get("total_duration", 0) / 1_000_000_000, 3),
             }
+            if include_raw:
+                meta["_raw_content"] = content
             return result, meta
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
             last_error = exc
@@ -990,6 +1012,10 @@ def sanitize_model_statement(statement: object, data_ids: list[str]) -> str | No
     if not isinstance(statement, str) or not data_ids:
         return None
     normalized = re.sub(r"\s+", " ", statement).strip()
+    corrected = re.sub(r"\[\s*D\d{2,}\s*\]", f"[{data_ids[0]}]", normalized)
+    corrected, _ = validate_public_statement(corrected, data_ids)
+    if corrected is not None:
+        return corrected
     if "根拠" in normalized:
         normalized = normalized.split("根拠", 1)[0]
     normalized = re.sub(r"\[?D\d{2,}\]?", "", normalized)
@@ -1009,6 +1035,8 @@ def validate_dialogue_utterance(utterance: object) -> tuple[str | None, str | No
         return None, "utterance must keep D ids in metadata, not dialogue"
     if "_" in normalized or any(mark in normalized for mark in ("{", "}", "claim_catalog", "data_ids")):
         return None, "utterance exposes internal protocol"
+    if re.search(r"[。！？][のをにがは](?=[ぁ-んァ-ヶ一-龠])", normalized):
+        return None, "utterance contains an orphan particle after a sentence boundary"
     if not re.search(r"[ぁ-んァ-ヶ一-龠]", normalized):
         return None, "utterance must contain natural Japanese"
     if normalized[-1] not in "。！？!?":
@@ -1039,19 +1067,29 @@ def restore_claim_label(utterance: object, label: str) -> object:
     return f"{utterance[:start]}{''.join(fragment)}{utterance[start + width:]}"
 
 
+def dialogue_move_example(label: str, move: str, variant: int = 0) -> str:
+    templates = MOVE_UTTERANCE_TEMPLATES[move]
+    return templates[variant % len(templates)].replace("{label}", label)
+
+
 def validate_dialogue_move(utterance: object, move: str) -> tuple[str | None, str | None]:
     normalized, reason = validate_dialogue_utterance(utterance)
     if normalized is None:
         return None, reason
     markers = {
-        "object": ("いえ", "ただ", "しかし", "その見方", "見落と", "抜け"),
-        "agree": ("賛成", "同意", "私も", "同じ見方"),
+        "object": ("いえ", "ただ", "しかし", "その見方", "見落と", "抜け", "懸念"),
+        "agree": ("賛成", "同意", "私も", "同じ見方", "同じ結論"),
         "maintain": ("維持", "引き続き", "変わりません", "見方です"),
-        "revise": ("確かに", "見落と", "改め", "修正", "考え直"),
+        "revise": ("確かに", "見落と", "改め", "修正", "考え直", "結論を変え"),
     }
     required = markers.get(move)
     if required and not any(marker in normalized for marker in required):
         return None, f"utterance does not express dialogue move: {move}"
+    if move == "object" and not any(
+        marker in normalized
+        for marker in ("代わり", "代案", "提案", "条件", "なら", "まず", "先に", "修正", "べき", "した上で", "案を")
+    ):
+        return None, "objection must include an alternative, revision, or adoption condition"
     return normalized, None
 
 
@@ -1071,6 +1109,11 @@ def dialogue_matches_claim(utterance: str, label: str) -> bool:
     return label in utterance or similarity(utterance, label) >= 0.3
 
 
+def independent_utterance_is_aligned(utterance: str, code: str, claims: list[dict]) -> bool:
+    scores = {claim["code"]: similarity(utterance, claim["label"]) for claim in claims}
+    return code in scores and scores[code] >= max(scores.values(), default=0.0)
+
+
 def dialogue_fallback(statement: str) -> str:
     visible = statement.split("根拠", 1)[0]
     visible = re.sub(r"\[?D\d{2,}\]?", "", visible).strip(" 、,。.[]")
@@ -1082,6 +1125,7 @@ def sanitize_dialogue_move(utterance: object, move: str) -> str | None:
         return None
     visible = utterance.split("根拠", 1)[0]
     visible = re.sub(r"\[?D\d{2,}\]?", "", visible).strip(" 、,。.[]")
+    visible = re.sub(r"([。！？])の(結果|データ)", r"\1その\2", visible)
     if not visible:
         return None
     visible = f"{visible}。"
@@ -1089,10 +1133,10 @@ def sanitize_dialogue_move(utterance: object, move: str) -> str | None:
     if normalized is not None:
         return normalized
     prefixes = {
-        "object": "ただ、その見方では不十分です。",
-        "agree": "私もその見方に賛成です。",
-        "maintain": "私はこの見方を維持します。",
-        "revise": "確かに見落としていました。見方を改めます。",
+        "object": "その案には懸念があります。代わりに、",
+        "agree": "その案に賛成です。",
+        "maintain": "結論は変わりません。",
+        "revise": "前の見方を修正します。",
     }
     candidate = f"{prefixes.get(move, '')}{visible}"
     normalized, _ = validate_dialogue_move(candidate, move)
@@ -1268,7 +1312,10 @@ def event_run_metrics(run: dict) -> dict:
         for event in events
     )
     reaction_events = [event for event in events if event.get("action") in {"object", "agree_extend"}]
-    reaction_failures = sum(event.get("utterance_origin") != "model_reaction" for event in reaction_events)
+    reaction_failures = sum(
+        event.get("utterance_origin") not in {"model_reaction", "model_sanitized"}
+        for event in reaction_events
+    )
     rejected = sum(len(value.get("rejected") or []) for value in independent.values())
     model_attempts = model_claims + rejected
     raw_records = [value.get("raw") for value in independent.values()]
@@ -1525,56 +1572,105 @@ def run_rsi_shadow(args: argparse.Namespace) -> int:
 
 
 def run_event_debate(args: argparse.Namespace) -> int:
-    try:
-        import mlx.core as mx
-        from mlx_lm import generate, load
-        from mlx_lm.sample_utils import make_sampler
-        from mlx_lm.tuner.utils import load_adapters, remove_lora_layers
-    except ImportError as exc:
-        raise ValueError("event-debateはMLX-LM環境のPythonで実行してください") from exc
     ledger = load_claim_ledger(Path(args.ledger))
     domains = load_domains()
-    personas = domains[args.domain]["personas"]
-    adapter_map = load_adapter_map(args.adapter_map, {persona["id"] for persona in personas})
+    domain_personas = domains[args.domain]["personas"]
+    preferences = ledger.get("role_preferences", {})
+    known_personas = {persona["id"] for persona in domain_personas}
+    unknown_personas = set(preferences) - known_personas
+    if unknown_personas:
+        raise ValueError(f"ledger has unknown personas: {sorted(unknown_personas)}")
+    personas = [persona for persona in domain_personas if persona["id"] in preferences]
+    if len(personas) < 2:
+        raise ValueError("event-debate requires at least two active personas")
+    if args.backend == "mlx" and not args.model_path:
+        raise ValueError("MLX backend requires --model-path")
+    if args.backend == "ollama" and args.adapter_map:
+        raise ValueError("Ollama backend does not accept an MLX --adapter-map")
+    adapter_map = (
+        load_adapter_map(args.adapter_map, {persona["id"] for persona in personas})
+        if args.backend == "mlx"
+        else {}
+    )
     catalog = {item["code"]: item for item in ledger["claim_catalog"]}
     data_view = [{"id": item["id"], "text": item["text"]} for item in ledger["data"]]
     catalog_view = [
         {"code": item["code"], "label": item["label"], "supported_by": item["supported_by"]}
         for item in ledger["claim_catalog"]
     ]
-    preferences = ledger.get("role_preferences", {})
-    print(f"[MLX] {args.model_path} をロード", flush=True)
-    model, tokenizer = load(args.model_path)
-    model.eval()
-    mx.random.seed(args.seed)
-    sampler = make_sampler(temp=args.temperature, top_p=0.85)
-    active_adapter: str | None = None
-    adapter_layers_active = False
+    model_id = args.model_path if args.backend == "mlx" else args.ollama_model
+    if args.backend == "mlx":
+        try:
+            import mlx.core as mx
+            from mlx_lm import generate, load
+            from mlx_lm.sample_utils import make_sampler
+            from mlx_lm.tuner.utils import load_adapters, remove_lora_layers
+        except ImportError as exc:
+            raise ValueError("MLX backendはMLX-LM環境のPythonで実行してください") from exc
+        print(f"[MLX] {model_id} をロード", flush=True)
+        model, tokenizer = load(model_id)
+        model.eval()
+        mx.random.seed(args.seed)
+        sampler = make_sampler(temp=args.temperature, top_p=0.85)
+        active_adapter: str | None = None
+        adapter_layers_active = False
 
-    def activate_persona_adapter(persona_id: str) -> str | None:
-        nonlocal model, active_adapter, adapter_layers_active
-        target = adapter_map.get(persona_id)
-        if target == active_adapter and (target is not None or not adapter_layers_active):
+        def activate_persona_adapter(persona_id: str) -> str | None:
+            nonlocal model, active_adapter, adapter_layers_active
+            target = adapter_map.get(persona_id)
+            if target == active_adapter and (target is not None or not adapter_layers_active):
+                return target
+            if adapter_layers_active:
+                model = remove_lora_layers(model)
+                adapter_layers_active = False
+            if target is not None:
+                model = load_adapters(model, target)
+                model.eval()
+                adapter_layers_active = True
+            active_adapter = target
             return target
-        if adapter_layers_active:
-            model = remove_lora_layers(model)
-            adapter_layers_active = False
-        if target is not None:
-            model = load_adapters(model, target)
-            model.eval()
-            adapter_layers_active = True
-        active_adapter = target
-        return target
 
-    def ask_json(system: str, user: str, max_tokens: int) -> tuple[str, dict | None]:
-        prompt = tokenizer.apply_chat_template(
-            [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
-        raw = generate(model, tokenizer, prompt=prompt, max_tokens=max_tokens, sampler=sampler, verbose=False).strip()
-        return raw, parse_json_object(raw)
+        def ask_json(system: str, user: str, max_tokens: int) -> tuple[str, dict | None]:
+            prompt = tokenizer.apply_chat_template(
+                [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+            raw = generate(
+                model,
+                tokenizer,
+                prompt=prompt,
+                max_tokens=max_tokens,
+                sampler=sampler,
+                verbose=False,
+            ).strip()
+            return raw, parse_json_object(raw)
+
+    else:
+        print(f"[Ollama] {model_id} を使用", flush=True)
+        ollama_call_index = 0
+
+        def activate_persona_adapter(persona_id: str) -> str | None:
+            return None
+
+        def ask_json(system: str, user: str, max_tokens: int) -> tuple[str, dict | None]:
+            nonlocal ollama_call_index
+            ollama_call_index += 1
+            parsed, meta = ask_ollama(
+                model=model_id,
+                system=system,
+                user=user,
+                schema="json",
+                api_url=args.api_url,
+                timeout=args.timeout,
+                num_predict=max_tokens,
+                temperature=args.temperature,
+                seed=args.seed + ollama_call_index,
+                include_raw=True,
+            )
+            raw = str(meta.pop("_raw_content"))
+            return raw, parsed
 
     created_at = dt.datetime.now().astimezone()
     outdir = Path(args.out)
@@ -1585,7 +1681,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
     run = {
         "schema_version": 2,
         "created_at": created_at.isoformat(timespec="seconds"),
-        "model": args.model_path,
+        "model": model_id,
+        "backend": args.backend,
         "ledger": args.ledger,
         "ledger_sha256": hashlib.sha256(Path(args.ledger).read_bytes()).hexdigest(),
         "domain": args.domain,
@@ -1618,6 +1715,11 @@ def run_event_debate(args: argparse.Namespace) -> int:
             if args.prompt_profile != "baseline"
             else persona["objective"]
         )
+        speech_examples = persona.get("speech_examples") or [
+            "私の見立てでは、『{label}』が有力です。",
+            "この数字なら、『{label}』を検討する価値があります。",
+            "別の角度では、『{label}』も外せません。",
+        ]
         system = (
             f"あなたは{persona['name']}。他人格の文章は一切見ていない。{objective}。"
             "dataとclaim_catalogだけを独立確認する。台帳外の主張は禁止。"
@@ -1638,8 +1740,10 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 "labelの意味やdataにない事実を追加しない。"
                 "utteranceは320字以内の会話調1〜2文で、code、D番号、根拠番号という語を出さない。"
                 "『〜と判断します。根拠は〜です』の定型読み上げを避け、自分の見立てとして話す。"
+                "3件で同じ書き出しを繰り返さず、『現時点では』『可能性を重く見ています』を使わない。"
                 "labelをそのまま復唱するだけで終えず、選んだdataの要点を可能なら一つ自分の言葉で加える。"
             ),
+            "speech_style_examples": speech_examples,
         }
         if args.prompt_profile == "orthogonal_fewshot" and available_catalog:
             prompt_payload["format_example"] = {
@@ -1652,15 +1756,11 @@ def run_event_debate(args: argparse.Namespace) -> int:
                             f"{example['label']}と判断します。"
                             f"根拠は[{example['supported_by'][0]}]です。"
                         ),
-                        "utterance": (
-                            f"現時点では、{example['label']}と見ています。"
-                            if example == available_catalog[0]
-                            else f"{example['label']}という可能性を重く見ています。"
-                            if example == available_catalog[1]
-                            else f"私は、{example['label']}という展開も考えておくべきだと思います。"
+                        "utterance": speech_examples[index % len(speech_examples)].replace(
+                            "{label}", example["label"]
                         ),
                     }
-                    for example in available_catalog
+                    for index, example in enumerate(available_catalog)
                 ]
             }
         user = json.dumps(
@@ -1675,8 +1775,12 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 normalized["origin"] = "model"
                 statement, statement_reason = validate_public_statement(claim.get("statement"), normalized["data_ids"])
                 if statement is None:
-                    statement = label_statement(normalized["code"], normalized["data_ids"], ledger)
-                    normalized["statement_origin"] = "label_fallback"
+                    statement = sanitize_model_statement(claim.get("statement"), normalized["data_ids"])
+                    if statement is None:
+                        statement = label_statement(normalized["code"], normalized["data_ids"], ledger)
+                        normalized["statement_origin"] = "label_fallback"
+                    else:
+                        normalized["statement_origin"] = "model_sanitized"
                     warnings.append({"code": normalized["code"], "reason": statement_reason})
                 else:
                     normalized["statement_origin"] = "model"
@@ -1687,9 +1791,10 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     catalog[normalized["code"]]["label"],
                 )
                 utterance, utterance_reason = validate_dialogue_utterance(candidate_utterance)
-                if utterance is not None and not dialogue_matches_claim(
+                if utterance is not None and not independent_utterance_is_aligned(
                     utterance,
-                    catalog[normalized["code"]]["label"],
+                    normalized["code"],
+                    available_catalog,
                 ):
                     utterance = None
                     utterance_reason = "utterance does not match selected claim label"
@@ -1771,9 +1876,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
             target_event = event_by_id[event["target_claim_id"]]
             reaction_move = "object" if event["action"] == "object" else "agree"
             move_rule = (
-                "『いえ』『ただ』などから始め、相手の見方で抜ける条件を具体的に指摘する。"
+                "相手の見方で抜ける条件を具体的に指摘し、その後に代案・修正版・採用条件のどれかを一つ示す。単なる否定は禁止。"
                 if event["action"] == "object"
-                else "『私もその見方に賛成です』などから始め、同じ文を繰り返さず専門観点を一つ加える。"
+                else "賛同を自然に示し、相手と同じ文を繰り返さず専門観点を一つ加える。"
             )
             reaction_system = (
                 f"あなたは{persona['name']}。他者の原文は見ず、構造化された主張だけに応答する。"
@@ -1792,9 +1897,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     ),
                     "format_example": {
                         "utterance": (
-                            f"いえ、その見方では{event['label']}という点が抜けています。"
+                            f"その案には懸念があります。代わりに、『{event['label']}』を検討したいです。"
                             if event["action"] == "object"
-                            else f"私もその見方に賛成です。加えて、{event['label']}という点も重要です。"
+                            else f"その案には賛成です。加えて、『{event['label']}』も重要です。"
                         ),
                         "data_ids": event["data_ids"][:1],
                     },
@@ -1802,7 +1907,11 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 ensure_ascii=False,
             )
             reaction_raw, reaction_parsed = ask_json(reaction_system, reaction_user, min(args.max_tokens, 220))
-            reaction_ids = reaction_parsed.get("data_ids") if isinstance(reaction_parsed, dict) else None
+            initial_reaction_ids = (
+                reaction_parsed.get("data_ids") if isinstance(reaction_parsed, dict) else None
+            )
+            reaction_ids = initial_reaction_ids
+            reaction_sanitized = False
             reaction_candidate = restore_claim_label(
                 reaction_parsed.get("utterance") if isinstance(reaction_parsed, dict) else None,
                 event["label"],
@@ -1835,20 +1944,16 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         "action": reaction_move,
                         "own_claim": {"label": event["label"], "data_ids": event["data_ids"]},
                         "own_data": [item for item in data_view if item["id"] in event["data_ids"]],
-                        "target_claim": (
-                            {"label": target_event["label"]}
-                            if reaction_move == "agree"
-                            else {"summary": "自分とは異なる見方"}
-                        ),
+                        "target_claim": {"label": target_event["label"]},
                         "rule": (
                             f"{move_rule} 相手側の根拠を選ばず、data_idsはown_claimからだけ選ぶ。"
                             "utteranceにcodeやD番号を出さない。JSONキーはutterance,data_idsだけ。"
                         ),
                         "format_example": {
                             "utterance": (
-                                f"ただ、その見方では{event['label']}という可能性を十分に扱えていません。"
+                                f"ただ、そのまま進めるのは危険です。まず、『{event['label']}』を試すべきです。"
                                 if reaction_move == "object"
-                                else f"私もその見方に賛成です。{event['label']}という点を付け加えます。"
+                                else f"同じ結論です。『{event['label']}』という観点を付け加えます。"
                             ),
                             "data_ids": event["data_ids"][:1],
                         },
@@ -1886,9 +1991,36 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         if not repair_alignment
                         else "reaction repair data_ids are unsupported"
                     )
+                    for candidate, candidate_ids in (
+                        (reaction_repair_candidate, repair_ids),
+                        (reaction_candidate, initial_reaction_ids),
+                        (event["utterance"], event["data_ids"]),
+                    ):
+                        sanitized = sanitize_dialogue_move(candidate, reaction_move)
+                        sanitized_valid = (
+                            sanitized is not None
+                            and isinstance(candidate_ids, list)
+                            and bool(candidate_ids)
+                            and all(isinstance(value, str) for value in candidate_ids)
+                            and set(candidate_ids).issubset(set(event["data_ids"]))
+                            and reaction_is_aligned(
+                                sanitized,
+                                event["label"],
+                                target_event["label"],
+                                reaction_move,
+                            )
+                        )
+                        if sanitized_valid:
+                            utterance = sanitized
+                            reaction_ids = candidate_ids
+                            reaction_valid = True
+                            reaction_sanitized = True
+                            break
             if reaction_valid:
                 event["utterance"] = utterance
-                event["utterance_origin"] = "model_reaction"
+                event["utterance_origin"] = (
+                    "model_sanitized" if reaction_sanitized else "model_reaction"
+                )
                 event["reaction_data_ids"] = list(dict.fromkeys(reaction_ids))
             event["reaction_raw"] = reaction_raw
         target = f" -> {event['target_claim_id']}" if event["target_claim_id"] else ""
@@ -1955,8 +2087,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
                             "選択したcodeのsupported_byにあるD番号だけを[D01]形式で引用する。"
                             "change_reasonは前ラウンドから選択を変えた時だけ、その理由とD番号を書く。"
                             "変えていない時は空文字。utteranceはcodeやD番号を読まず、専門家同士の自然な会話にする。"
-                            "前の選択から変えるなら『確かに』『見落としていました』などで認め、変更後の見方を話す。"
-                            "前の選択がなく他者側へ賛同するなら『私もその見方に賛成です』から始める。"
+                            "前の選択から変えるなら、前の判断をどう変えたか率直に話す。『確かに』『見落としていました』を常用しない。"
+                            "賛同、維持、変更で同じ書き出しを繰り返さず、自分の言葉で理由を一つ添える。"
                             "JSONキーはchoice,data_ids,statement,change_reason,utteranceだけ。"
                         ),
                         "format_example": {
@@ -1971,13 +2103,12 @@ def run_event_debate(args: argparse.Namespace) -> int:
                                 if previous_choice and previous_choice != pair[0]
                                 else ""
                             ),
-                            "utterance": (
-                                f"確かに、{catalog[pair[0]]['label']}という点を見落としていました。"
-                                "その点を踏まえて見方を改めます。"
+                            "utterance": dialogue_move_example(
+                                catalog[pair[0]]["label"],
+                                "revise"
                                 if previous_choice and previous_choice != pair[0]
-                                else f"私は引き続き、{catalog[pair[0]]['label']}という見方です。"
-                                if previous_choice == pair[0]
-                                else f"私もその見方に賛成です。{catalog[pair[0]]['label']}という点が重要です。"
+                                else "maintain" if previous_choice == pair[0] else "agree",
+                                persona_rank[persona["id"]] + round_no,
                             ),
                         }
                         if args.prompt_profile == "orthogonal_fewshot"
@@ -2093,8 +2224,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
                             "rule": (
                                 "statementはlabelを自然な日本語1文にし、allowed_data_idsだけを[D01]形式で引用する。"
                                 "change_reasonはchanged=trueの時だけ、前回から変えた理由とallowed_data_idsを引用する。"
-                                "utteranceはcodeやD番号を出さない自然な会話調。reviseなら見落としを認めて見解を改め、"
-                                "agreeなら他者への賛同と自分の観点を述べ、maintainなら理由を短く話す。"
+                                "utteranceはcodeやD番号を出さない自然な会話調。reviseなら前の判断から変えることを率直に述べ、"
+                                "agreeなら他者への賛同と自分の観点を述べ、maintainなら理由を短く話す。同じ口癖を繰り返さない。"
                                 "JSONキーはstatement,change_reason,utteranceだけ。"
                             ),
                             "format_example": {
@@ -2102,12 +2233,10 @@ def run_event_debate(args: argparse.Namespace) -> int:
                                 "change_reason": (
                                     f"前回より[{data_ids[0]}]を重視して選択を変更しました。" if changed else ""
                                 ),
-                                "utterance": (
-                                    f"確かに、{repair_label}という点を見落としていました。見方を改めます。"
-                                    if dialogue_move == "revise"
-                                    else f"私もその見方に賛成です。{repair_label}という点が重要です。"
-                                    if dialogue_move == "agree"
-                                    else f"私は引き続き、{repair_label}という見方です。"
+                                "utterance": dialogue_move_example(
+                                    repair_label,
+                                    dialogue_move,
+                                    persona_rank[persona["id"]] + round_no,
                                 ),
                             },
                         },
@@ -2590,10 +2719,14 @@ def parser() -> argparse.ArgumentParser:
     weight_audit.add_argument("--out")
     weight_audit.set_defaults(handler=run_weight_audit)
 
-    event_debate = subcommands.add_parser("event-debate", help="run evidence-coded, event-driven MLX debate")
+    event_debate = subcommands.add_parser("event-debate", help="run evidence-coded, event-driven local debate")
     event_debate.add_argument("--ledger", required=True)
     event_debate.add_argument("--domain", required=True, choices=sorted(load_domains()))
-    event_debate.add_argument("--model-path", required=True)
+    event_debate.add_argument("--backend", choices=("mlx", "ollama"), default="mlx")
+    event_debate.add_argument("--model-path", help="local MLX model directory")
+    event_debate.add_argument("--ollama-model", default=DEFAULT_MODEL)
+    event_debate.add_argument("--api-url", default=DEFAULT_API_URL)
+    event_debate.add_argument("--timeout", type=int, default=180)
     event_debate.add_argument("--out", default="runs")
     event_debate.add_argument("--max-turns", type=int, default=10)
     event_debate.add_argument("--reconcile-rounds", type=int, default=2)

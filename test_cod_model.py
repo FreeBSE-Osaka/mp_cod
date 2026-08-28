@@ -12,6 +12,10 @@ class CodModelTest(unittest.TestCase):
     def test_profiles_are_distinct(self):
         domains = cod_model.load_domains()
         self.assertGreaterEqual(len(domains["software"]["personas"]), 4)
+        self.assertIn(
+            "pragmatic_operator",
+            {persona["id"] for persona in domains["general"]["personas"]},
+        )
         for config in domains.values():
             ids = [persona["id"] for persona in config["personas"]]
             self.assertEqual(len(ids), len(set(ids)))
@@ -31,9 +35,11 @@ class CodModelTest(unittest.TestCase):
             Path("data/general_experiment_holdout/claim_ledger.json")
         )
         persona_ids = {persona["id"] for persona in cod_model.load_domains()["general"]["personas"]}
-        self.assertEqual(set(ledger["role_preferences"]), persona_ids)
+        self.assertLessEqual(set(ledger["role_preferences"]), persona_ids)
+        self.assertGreaterEqual(len(ledger["role_preferences"]), 3)
         self.assertTrue(ledger["fixture"])
         self.assertTrue(cod_model.is_mechanical_utterance("この点を今後の判断の軸にしたいです。"))
+        self.assertTrue(cod_model.is_mechanical_utterance("現時点では、この案が有力です。"))
         self.assertFalse(cod_model.is_mechanical_utterance("8週間の期限を考えるとSwift先行が現実的です。"))
 
     def test_collection_ledgers_match_domain_personas(self):
@@ -51,10 +57,19 @@ class CodModelTest(unittest.TestCase):
             ("data/general_quality_inspection_holdout/claim_ledger.json", "general"),
             ("data/general_subscription_pricing_holdout/claim_ledger.json", "general"),
             ("data/general_route_optimizer_holdout/claim_ledger.json", "general"),
+            ("data/general_predictive_maintenance_holdout/claim_ledger.json", "general"),
+            ("data/general_lightweight_packaging_holdout/claim_ledger.json", "general"),
+            ("data/general_irrigation_policy_holdout/claim_ledger.json", "general"),
+            ("data/general_weight_transfer_holdout/claim_ledger.json", "general"),
+            ("data/general_conversation_v2_holdout/claim_ledger.json", "general"),
         ):
             ledger = cod_model.load_claim_ledger(Path(path))
             persona_ids = {persona["id"] for persona in domains[domain]["personas"]}
-            self.assertEqual(set(ledger["role_preferences"]), persona_ids)
+            active_ids = set(ledger["role_preferences"])
+            self.assertLessEqual(active_ids, persona_ids)
+            self.assertGreaterEqual(len(active_ids), 3)
+            if domain != "general":
+                self.assertEqual(active_ids, persona_ids)
             self.assertTrue(ledger["fixture"])
 
     def test_identical_blind_answers_trigger_collapse_proxy(self):
@@ -277,7 +292,13 @@ class CodModelTest(unittest.TestCase):
             "北東転向外れを独立シナリオとして残す。根拠は[D08]です。",
             ["D09"],
         )
-        self.assertEqual(sanitized, "北東転向外れを独立シナリオとして残す。根拠は[D09]。")
+        self.assertEqual(sanitized, "北東転向外れを独立シナリオとして残す。根拠は[D09]です。")
+        sanitized = cod_model.sanitize_model_statement(
+            "複数断層の評価は[D02]を統合した[ D13]で確認できます。",
+            ["D13"],
+        )
+        self.assertNotIn("D02", sanitized)
+        self.assertIn("D13", sanitized)
         utterance, reason = cod_model.validate_dialogue_utterance(
             "いえ、その見方では大陸側の高気圧の影響を見落としてしまいます。"
         )
@@ -301,6 +322,26 @@ class CodModelTest(unittest.TestCase):
         )
         self.assertIsNone(reason)
         self.assertIn("見方を改めます", utterance)
+        objection, reason = cod_model.validate_dialogue_move(
+            "ただ、その案では処理上限を超えます。", "object"
+        )
+        self.assertIsNone(objection)
+        self.assertIn("alternative", reason)
+        objection, reason = cod_model.validate_dialogue_move(
+            "その案には懸念があります。代わりに対象を絞ったpilotを先に試すべきです。",
+            "object",
+        )
+        self.assertIsNone(reason)
+        self.assertIn("代わりに", objection)
+        objection = cod_model.sanitize_dialogue_move(
+            "私の見立てでは、全networkへ展開する案が有力です。",
+            "object",
+        )
+        self.assertTrue(objection.startswith("その案には懸念があります。代わりに、"))
+        for move in ("agree", "maintain", "revise"):
+            examples = [cod_model.dialogue_move_example("対象を絞ったpilotを行う", move, index) for index in range(3)]
+            self.assertEqual(len(set(examples)), 3)
+            self.assertTrue(all("確かに" not in example for example in examples))
         self.assertEqual(
             cod_model.sanitize_dialogue_move(
                 "私もその見方に賛同します。根拠は[D03]です。", "agree"
@@ -310,7 +351,22 @@ class CodModelTest(unittest.TestCase):
         maintained = cod_model.sanitize_dialogue_move(
             "送信前離脱率は旧12%から新18%へ上昇した。", "maintain"
         )
-        self.assertTrue(maintained.startswith("私はこの見方を維持します。"))
+        self.assertTrue(maintained.startswith("結論は変わりません。"))
+        orphaned, reason = cod_model.validate_dialogue_utterance(
+            "私もその見方に賛同します。の結果を踏まえ、全配送へ展開します。"
+        )
+        self.assertIsNone(orphaned)
+        self.assertIn("orphan particle", reason)
+        repaired = cod_model.sanitize_dialogue_move(
+            "私もその見方に賛同します。[D01]の結果を踏まえ、全配送へ展開します。",
+            "agree",
+        )
+        self.assertIn("。その結果を踏まえ", repaired)
+        repaired = cod_model.sanitize_dialogue_move(
+            "結論を維持します。[D01]のデータに基づき、全networkへ展開します。",
+            "maintain",
+        )
+        self.assertIn("。そのデータに基づき", repaired)
         self.assertEqual(
             cod_model.restore_claim_label(
                 "現時点では、事前冷却を全zoneへ展開ると見ています。",
@@ -349,6 +405,28 @@ class CodModelTest(unittest.TestCase):
                 "道路工事mapを更新した都市部depotでpilotを先に行う",
             )
         )
+        claims = [
+            {"code": "PILOT", "label": "道路工事mapを更新した都市部depotでpilotを先に行う"},
+            {"code": "MAP", "label": "都市部depotの道路工事map未更新を遅延の交絡候補として検証する"},
+        ]
+        self.assertFalse(
+            cod_model.independent_utterance_is_aligned(
+                "都市部depotの道路工事map未更新を遅延の交絡候補として検証します。",
+                "PILOT",
+                claims,
+            )
+        )
+        natural_claims = [
+            {"code": "REGION", "label": "近畿全域50〜60%を長期的な地震懸念として重く伝える"},
+            {"code": "TRIANGLE", "label": "近畿三角帯40〜60%を主要な懸念として扱う"},
+        ]
+        self.assertTrue(
+            cod_model.independent_utterance_is_aligned(
+                "まずはこの広範な確率帯を無視せず、長期的な懸念として真剣に考えたいです。",
+                "REGION",
+                natural_claims,
+            )
+        )
 
     def test_adapter_map_rejects_unknown_personas(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -362,6 +440,24 @@ class CodModelTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "unknown personas"):
                 cod_model.load_adapter_map(str(mapping), {"known"})
+
+    def test_event_parser_supports_ollama_backend(self):
+        args = cod_model.parser().parse_args(
+            [
+                "event-debate",
+                "--ledger",
+                "ledger.json",
+                "--domain",
+                "general",
+                "--backend",
+                "ollama",
+                "--ollama-model",
+                "qwen3.5:4b",
+            ]
+        )
+        self.assertEqual(args.backend, "ollama")
+        self.assertEqual(args.ollama_model, "qwen3.5:4b")
+        self.assertIsNone(args.model_path)
 
     def test_objection_speaks_before_new_topic(self):
         ledger = {
@@ -472,7 +568,7 @@ class CodModelTest(unittest.TestCase):
                     "statement": "Bです。根拠は[D02]です。",
                     "statement_origin": "label_fallback",
                     "utterance": "ただ、Bの可能性も残ります。",
-                    "utterance_origin": "model_reaction",
+                    "utterance_origin": "model_sanitized",
                     "reaction_raw": '{"utterance":"ただ、Bの可能性も残ります。"}',
                 },
             ],
@@ -510,6 +606,7 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(metrics["dialogue_v2_utterances"], 1)
         self.assertEqual(metrics["mechanical_utterance_rate"], 0.0)
         self.assertEqual(metrics["dialogue_near_duplicate_pairs"], 0)
+        self.assertEqual(metrics["reaction_failures"], 0)
         self.assertFalse(metrics["hard_gate_pass"])
 
     def test_changed_reconciliation_vote_requires_model_change_reason(self):

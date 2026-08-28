@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の農場で予報連動灌漑を全圃場へ展開するか、砂質圃場のsoil sensorを校正してpilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "1作期・120圃場の試験で予報連動灌漑は使用水量を17%削減した。"},
+    {"id": "D02", "text": "同じ試験で収量は平均4%低下した。"},
+    {"id": "D03", "text": "収量低下の63%は砂質圃場に集中していた。"},
+    {"id": "D04", "text": "砂質圃場のsoil sensor 38%は校正期限を過ぎ、含水率を平均6ポイント高く表示していた。"},
+    {"id": "D05", "text": "pump電力使用量は12%減り、1作期あたり48万円の削減になった。"},
+    {"id": "D06", "text": "試験は通常の乾期1作だけで、雨期と連続猛暑日を含んでいない。"},
+    {"id": "D07", "text": "目的は収量を許容範囲に保ちながら水使用量とpump電力を減らすことである。"}
+  ],
+  "claim_catalog": [
+    {"code": "DEPLOY_FORECAST_IRRIGATION", "label": "水とpump電力の削減を優先して予報連動灌漑を全圃場へ展開する", "supported_by": ["D01", "D05", "D07"], "contradicts": ["SANDY_FIELD_PILOT"], "priority": 4},
+    {"code": "SANDY_FIELD_PILOT", "label": "砂質圃場のsoil sensorを校正して予報連動灌漑pilotを先に行う", "supported_by": ["D04", "D02", "D03", "D07"], "contradicts": ["DEPLOY_FORECAST_IRRIGATION"], "priority": 5},
+    {"code": "WATER_GAIN", "label": "使用水量17%削減を運用上有意な効果として扱う", "supported_by": ["D01", "D07"], "contradicts": [], "priority": 4},
+    {"code": "ENERGY_SAVINGS", "label": "pump電力12%と48万円の削減を重く扱う", "supported_by": ["D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "YIELD_LOSS", "label": "平均収量4%低下を重大な損失として扱う", "supported_by": ["D02", "D07"], "contradicts": [], "priority": 5},
+    {"code": "SOIL_SENSOR_CONFOUNDER", "label": "砂質圃場sensorの校正遅れと含水率6ポイント偏差を交絡として検証する", "supported_by": ["D04"], "contradicts": [], "priority": 5},
+    {"code": "WEATHER_SEASON_HOLDOUT", "label": "雨期と連続猛暑日を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "FIELD_TRANSFER", "label": "砂質圃場の結果が他の土壌区分へ移行可能かを検証する", "supported_by": ["D03", "D04"], "contradicts": [], "priority": 3},
+    {"code": "IRRIGATION_UTILITY", "label": "水量・電力・収量を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D05", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["DEPLOY_FORECAST_IRRIGATION", "WATER_GAIN", "ENERGY_SAVINGS"],
+    "falsifier": ["SANDY_FIELD_PILOT", "YIELD_LOSS", "SOIL_SENSOR_CONFOUNDER"],
+    "empirical_auditor": ["WEATHER_SEASON_HOLDOUT", "FIELD_TRANSFER", "IRRIGATION_UTILITY"]
+  }
+}

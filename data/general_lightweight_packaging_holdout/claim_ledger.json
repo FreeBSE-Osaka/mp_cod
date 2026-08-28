@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の通販物流で軽量梱包を全配送へ展開するか、破損が集中する長距離高湿度laneで補強pilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "6週間の試験で軽量梱包は荷物重量を18%、配送費を9%削減した。"},
+    {"id": "D02", "text": "同じ試験で商品破損率は1.4%から3.8%へ上昇した。"},
+    {"id": "D03", "text": "増加した破損の72%は長距離かつ高湿度の配送laneに集中し、箱の圧縮変形が確認された。"},
+    {"id": "D04", "text": "破損補償と再配送の費用は週35万円から94万円へ増加した。"},
+    {"id": "D05", "text": "軽量梱包を全配送へ適用した場合、梱包材由来CO2を7%削減できる見積もりである。"},
+    {"id": "D06", "text": "試験は温暖な6週間のみで、凍結環境と5段を超える積載を含んでいない。"},
+    {"id": "D07", "text": "目的は配送費とCO2を減らしながら、破損率と再配送を許容範囲に保つことである。"}
+  ],
+  "claim_catalog": [
+    {"code": "ROLL_OUT_LIGHTWEIGHT", "label": "配送費とCO2削減を優先して軽量梱包を全配送へ展開する", "supported_by": ["D01", "D05", "D07"], "contradicts": ["HUMID_LANE_PILOT"], "priority": 4},
+    {"code": "HUMID_LANE_PILOT", "label": "長距離高湿度laneで箱を補強した軽量梱包pilotを先に行う", "supported_by": ["D03", "D02", "D04", "D07"], "contradicts": ["ROLL_OUT_LIGHTWEIGHT"], "priority": 5},
+    {"code": "SHIPPING_SAVINGS", "label": "荷物重量18%と配送費9%の削減を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "CARBON_GAIN", "label": "梱包材由来CO2 7%削減を環境価値として重く扱う", "supported_by": ["D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "DAMAGE_COST", "label": "破損率3.8%と週94万円の補償・再配送費を重大視する", "supported_by": ["D02", "D04"], "contradicts": [], "priority": 5},
+    {"code": "HUMIDITY_CONFOUNDER", "label": "破損の72%が長距離高湿度laneへ集中する偏りを検証する", "supported_by": ["D03"], "contradicts": [], "priority": 5},
+    {"code": "STACK_FREEZE_HOLDOUT", "label": "凍結環境と高積載を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "LANE_TRANSFER", "label": "試験結果が距離と湿度の異なる配送laneへ移行可能かを検証する", "supported_by": ["D03", "D06"], "contradicts": [], "priority": 3},
+    {"code": "PACKAGING_UTILITY", "label": "配送費・CO2・破損補償費を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D04", "D05", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["ROLL_OUT_LIGHTWEIGHT", "SHIPPING_SAVINGS", "CARBON_GAIN"],
+    "falsifier": ["HUMID_LANE_PILOT", "DAMAGE_COST", "HUMIDITY_CONFOUNDER"],
+    "empirical_auditor": ["STACK_FREEZE_HOLDOUT", "LANE_TRANSFER", "PACKAGING_UTILITY"]
+  }
+}

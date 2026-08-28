@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の行政窓口で予約枠を8% overbookingして全支所へ展開するか、no-showが集中する時間帯だけでpilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "10週間の履歴再生で8% overbookingは完了手続きを7600件から8420件へ増やした。"},
+    {"id": "D02", "text": "同じ再生で待ち時間中央値は18分から41分へ増加した。"},
+    {"id": "D03", "text": "待機中の離脱率は2.1%から6.9%へ上昇した。"},
+    {"id": "D04", "text": "no-showの64%は月曜午前の最初の2枠と、21日以上前にonline予約された枠に集中していた。"},
+    {"id": "D05", "text": "職員が品質を保って処理できる上限は105件/日で、8% overbooking時の予約候補は平均113件/日である。"},
+    {"id": "D06", "text": "履歴再生は通常週のみで、年度末手続き集中期と連休前後を含んでいない。"},
+    {"id": "D07", "text": "目的は完了手続き件数を増やしつつ、待ち時間と離脱率を許容範囲に保つことである。"}
+  ],
+  "claim_catalog": [
+    {"code": "ROLL_OUT_OVERBOOKING", "label": "完了手続き件数の増加を優先して8% overbookingを全支所へ展開する", "supported_by": ["D01", "D07"], "contradicts": ["SEGMENT_PILOT_FIRST"], "priority": 4},
+    {"code": "SEGMENT_PILOT_FIRST", "label": "no-showが集中する時間帯と予約条件だけでoverbooking pilotを先に行う", "supported_by": ["D04", "D02", "D03", "D05", "D07"], "contradicts": ["ROLL_OUT_OVERBOOKING"], "priority": 5},
+    {"code": "THROUGHPUT_GAIN", "label": "完了手続き7600件から8420件への増加を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "NO_SHOW_RECOVERY", "label": "空き枠を完了手続きへ転換する余地を重く扱う", "supported_by": ["D01", "D04", "D07"], "contradicts": [], "priority": 4},
+    {"code": "WAIT_ABANDON_COST", "label": "待ち時間41分と離脱率6.9%を重大な損失として扱う", "supported_by": ["D02", "D03", "D07"], "contradicts": [], "priority": 5},
+    {"code": "DAILY_CAPACITY", "label": "予約候補113件が処理上限105件を超える事実をhard constraintとして扱う", "supported_by": ["D05"], "contradicts": [], "priority": 5},
+    {"code": "PEAK_SEASON_HOLDOUT", "label": "年度末集中期と連休前後を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "BRANCH_TRANSFER", "label": "no-show集中segmentの結果が他の時間帯と支所へ移行可能かを検証する", "supported_by": ["D04", "D06"], "contradicts": [], "priority": 3},
+    {"code": "SERVICE_UTILITY", "label": "完了件数・待ち時間・離脱率を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D03", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["ROLL_OUT_OVERBOOKING", "THROUGHPUT_GAIN", "NO_SHOW_RECOVERY"],
+    "falsifier": ["SEGMENT_PILOT_FIRST", "WAIT_ABANDON_COST", "DAILY_CAPACITY"],
+    "empirical_auditor": ["PEAK_SEASON_HOLDOUT", "BRANCH_TRANSFER", "SERVICE_UTILITY"]
+  }
+}

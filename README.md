@@ -47,7 +47,7 @@ python3.11 cod_model.py debate --domain software \
 
 実行中は各人格の公開発言を実況し、完全な構造化ログを `runs/` に保存します。途中失敗時は `.partial.json` が残ります。
 
-## 証拠ID付きイベント討論（MLX）
+## 証拠ID付きイベント討論（MLX / Ollama GGUF）
 
 サンプル台帳には、データ本文、許可する主張コード、各主張を裏付ける `D` 番号、対立関係、人格ごとの関心領域が入っています。
 
@@ -58,6 +58,7 @@ python3.11 -m venv .venv
 .venv/bin/python cod_model.py event-debate \
   --ledger data/typhoon18_20260825/claim_ledger.json \
   --domain weather \
+  --backend mlx \
   --model-path mlx-community/Qwen3-1.7B-4bit \
   --max-turns 12 \
   --reconcile-rounds 2 \
@@ -65,25 +66,42 @@ python3.11 -m venv .venv
   --prompt-profile orthogonal_fewshot
 ```
 
+GGUFを変換せずOllamaで使う場合:
+
+```sh
+python3.11 cod_model.py event-debate \
+  --ledger data/general_conversation_v2_holdout/claim_ledger.json \
+  --domain general \
+  --backend ollama \
+  --ollama-model qwen3.5:4b \
+  --max-turns 12 \
+  --reconcile-rounds 2
+```
+
+Ollama backendも同じD番号検証、raw保存、ラウンド、hard gateを使います。MLX LoRAの`--adapter-map`はMLX backend専用です。
+
 モデルには他人格の文章を渡さず、検証済みの主張コードと証拠IDだけを共有します。採決に使うのは検証済みコードだけです。
 
 - `statement`: D番号付きの内部証拠文
 - `utterance`: D番号や内部codeを読まない、UI・実況用の会話文
 
-異議なら相手の見落とし、賛同なら追加観点、見解変更なら「確かに／見落としていた／見方を改める」を発言契約として検査します。相手の原文は見せず、対象claimのlabelだけを渡すため、文章コピーによる擬似合意を避けます。
+異議なら相手の見落としを指摘した後に、代案・修正版・採用条件のいずれかを必須とします。賛同は追加観点を伴い、見解変更は複数の自然な言い回しを人格・ラウンドごとに使い分けます。相手の原文は見せず、対象claimのlabelだけを渡すため、文章コピーによる擬似合意を避けます。
 
 不正なD番号は拒否し、選択済みDだけで `statement` を一度修復します。本文は使えてD表記だけが欠けた場合は `model_sanitized` とします。すり合わせ修復文が会話本文へD根拠句を出した場合は根拠句だけを除去し、agree / maintain / revise等のmove表現が欠ける場合は検証済み定型句を補います。モデル本文と修復rawは残し、会話化できない場合だけ証拠文由来の表示へ戻します。初回raw、反応raw、修復rawはすべて保存します。
 
 会話例:
 
 ```text
-力学役: 現時点では、北東転向外れは低位に扱う見方です。
-アンサンブル役: ただ、その見方では独立シナリオとして残す可能性を十分に扱えていません。
-観測役: 私もその見方に賛同します。独立シナリオとして残すことが重要です。
-力学役: 確かに、その点を見落としていました。見方を改めます。
+批判的設計者: そのまま進めるより、対象を絞ったpilotを代案として先に試すべきです。
+仮説構築者: その案には懸念があります。代わりに、観測された改善を広く検証したいです。
+実証監査者: その案には賛成です。私としては、評価期間を固定する点も大事だと思います。
+実行設計者: 現場で回すなら、担当者と停止条件まで決めて小さく始めるのが現実的です。
+仮説構築者: 考え直しました。今回はpilot案を支持します。
 ```
 
 `--prompt-profile` は `baseline`、`orthogonal`、`orthogonal_fewshot` から選べます。既定値は目的関数と1件の形式例を使う `orthogonal_fewshot` です。
+
+Generalは既存台帳では従来の3人格を保ちます。`role_preferences`に`pragmatic_operator`を含むv2台帳だけ、4人目の「実行設計者」が参加します。4人時の合意閾値は3票です。
 
 ### 人格別LoRA
 
@@ -145,7 +163,9 @@ python3.11 cod_model.py export-dialogue \
 
 承認時はreview欄を除いたrun全体のSHA-256を固定し、承認後に変更されたrunはexportを拒否します。export対象はモデル由来utteranceだけで、fallback、機械的定型文、近似同文、不正文を除外します。出力は人格別のMLX chat JSONLとmanifestです。`data/dialogue_sft/` はGit管理外です。
 
-2026-08-28時点のローカル収集は3domain合計136件です。general人格25〜27件、software人格11〜13件、weather人格2〜3件で、機械文60件、近似同文11件を除外しました。Generalはrollout、温室実験、異常検知しきい値、在庫、電力peak、返金自動化、品質検査、料金実験、配送routeの9runを合格として収集しています。claimラベル内の限定的な脱字・誤字はrawを保持して `model_sanitized` で補正し、意味が選択claimと一致しない会話文はfallbackへ落とします。hard gateはstatement / utterance生成率100%を必須とし、配送routeでは2ラウンド後も2対1の対立を無理に合意させず保持しました。最低30件/人格へ届いていないため、Dialogue LoRA学習は開始していません。
+2026-08-28のDialogue v1凍結snapshotは3domain合計154件で、Generalは実証監査31件、批判的設計者34件、仮説構築者30件でした。3人格とも時系列valid/testを持ち、最低30件へ到達しています。このsnapshotで人格別LoRAを学習しましたが、未学習transfer台帳で自然会話がBaseから改善しなかったため非昇格です。
+
+v2では`「現時点では」`、`「可能性を重く見ています」`、`「確かに、見落としていました」`等を機械文として除外し、人格別speech例、対案必須の異議、複数のagree / maintain / revise、任意4人目を導入しました。v1 Adapterへの継ぎ足し学習は行わず、v2会話を別snapshotとして集め直します。
 
 ## 軽量Weight実験
 
@@ -165,6 +185,8 @@ python3.11 cod_model.py curriculum --count 240 --out data/auditor_curriculum
 ```
 
 Adapter WeightはこのGitリポジトリに含めていません。再現条件と評価値は [実験記録](docs/weight_experiment_20260825.md)、ハッシュと運用境界は [昇格記録](promotions/qwen3-1.7b-auditor-r1-step8.json) にあります。
+
+General Dialogue v1の人格別LoRAは全て凍結test lossを改善しましたが、自然会話transferが同値だったため非昇格です。設定、loss、SHA、停止理由は [General Dialogue Weight v1実験記録](docs/general_dialogue_weight_v1_20260828.md) にあります。
 
 ## bounded RSI shadow
 

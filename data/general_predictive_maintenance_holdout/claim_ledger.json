@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の工場でsensor予兆に基づく保全へ全設備を切り替えるか、旧firmware設備を更新して高故障lineでpilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "180台・12か月の履歴再生でsensor予兆保全は突発故障を46件から27件へ減らした。"},
+    {"id": "D02", "text": "同じ再生で計画保全の作業時間は3600時間から2800時間へ22%減少した。"},
+    {"id": "D03", "text": "誤alertは月14件から63件へ増加した。"},
+    {"id": "D04", "text": "保全teamが通常業務を保ちながら調査できるalertは月40件までである。"},
+    {"id": "D05", "text": "誤alertの58%は旧sensor firmwareを使う24台に集中していた。"},
+    {"id": "D06", "text": "履歴再生は厳冬期のcold startと大規模overhaul直後を含んでいない。"},
+    {"id": "D07", "text": "目的は突発故障による停止時間と保全作業量を同時に減らすことである。"}
+  ],
+  "claim_catalog": [
+    {"code": "DEPLOY_SENSOR_POLICY", "label": "突発故障と計画保全時間の削減を優先してsensor予兆保全を全設備へ展開する", "supported_by": ["D01", "D02", "D07"], "contradicts": ["FIRMWARE_PILOT_FIRST"], "priority": 4},
+    {"code": "FIRMWARE_PILOT_FIRST", "label": "旧firmwareを更新した高故障lineでsensor予兆保全のpilotを先に行う", "supported_by": ["D05", "D03", "D04", "D07"], "contradicts": ["DEPLOY_SENSOR_POLICY"], "priority": 5},
+    {"code": "FAILURE_REDUCTION", "label": "突発故障46件から27件への減少を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "MAINTENANCE_SAVINGS", "label": "計画保全時間22%削減を運用上有意な効果として扱う", "supported_by": ["D02", "D07"], "contradicts": [], "priority": 4},
+    {"code": "ALERT_OVERLOAD", "label": "誤alert月63件が調査上限40件を超える事実を重大視する", "supported_by": ["D03", "D04"], "contradicts": [], "priority": 5},
+    {"code": "FIRMWARE_CONFOUNDER", "label": "旧firmware24台への誤alert集中を交絡候補として検証する", "supported_by": ["D05"], "contradicts": [], "priority": 5},
+    {"code": "COLD_START_HOLDOUT", "label": "厳冬期cold startとoverhaul直後を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "ASSET_TRANSFER", "label": "高故障lineの結果が全180台へ移行可能かを設備群別に検証する", "supported_by": ["D01", "D05"], "contradicts": [], "priority": 3},
+    {"code": "DOWNTIME_UTILITY", "label": "突発故障・保全時間・alert調査量を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D03", "D04", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["DEPLOY_SENSOR_POLICY", "FAILURE_REDUCTION", "MAINTENANCE_SAVINGS"],
+    "falsifier": ["FIRMWARE_PILOT_FIRST", "ALERT_OVERLOAD", "FIRMWARE_CONFOUNDER"],
+    "empirical_auditor": ["COLD_START_HOLDOUT", "ASSET_TRANSFER", "DOWNTIME_UTILITY"]
+  }
+}
