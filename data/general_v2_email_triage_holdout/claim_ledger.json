@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の業務窓口で自動email triageを全mailへ展開するか、誤振分けが集中する契約添付mailでpilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "5週間の試験で初回応答時間中央値は9時間から2.5時間へ短縮した。"},
+    {"id": "D02", "text": "誤振分け率は1.3%から4.4%へ上昇した。"},
+    {"id": "D03", "text": "誤振分けの72%は契約書を添付したmailに集中していた。"},
+    {"id": "D04", "text": "reviewerの確認上限は120件/日で、全展開時の候補は210件/日である。"},
+    {"id": "D05", "text": "応答SLA超過は月180件から55件へ減少した。"},
+    {"id": "D06", "text": "試験は平日日中のみで、週末、incident時、多言語mailを含んでいない。"},
+    {"id": "D07", "text": "目的は応答時間とSLA超過を減らしつつ、誤振分けとreview量を許容範囲に保つことである。"},
+    {"id": "D08", "text": "停止判定に使える観測済み基準は、現行誤振分け率1.3%、試験4.4%、review上限120件/日である。"},
+    {"id": "D09", "text": "mail別review計画には、誤振分けの72%が契約添付mailへ集中する事実と上限120件/日を使用できる。"},
+    {"id": "D10", "text": "試験では初回応答時間が9時間から2.5時間へ短縮し、SLA超過が月180件から55件へ減少した。"}
+  ],
+  "claim_catalog": [
+    {"code": "FULL_TRIAGE_ROLLOUT", "label": "応答時間とSLA超過の削減を優先して自動triageを全mailへ展開する", "supported_by": ["D10"], "contradicts": ["CONTRACT_MAIL_PILOT"], "priority": 4},
+    {"code": "CONTRACT_MAIL_PILOT", "label": "誤振分けが集中する契約添付mailでtriage pilotを先に行う", "supported_by": ["D03", "D02", "D07"], "contradicts": ["FULL_TRIAGE_ROLLOUT"], "priority": 5},
+    {"code": "RESPONSE_TIME_GAIN", "label": "応答時間9時間から2.5時間への短縮を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "SLA_RECOVERY", "label": "SLA超過180件から55件への減少を重く扱う", "supported_by": ["D05"], "contradicts": [], "priority": 4},
+    {"code": "MISROUTE_COST", "label": "誤振分け率4.4%を重大な損失として扱う", "supported_by": ["D02", "D07"], "contradicts": [], "priority": 5},
+    {"code": "ATTACHMENT_CONCENTRATION", "label": "誤振分けの72%が契約添付mailへ集中する偏りを検証する", "supported_by": ["D03"], "contradicts": [], "priority": 5},
+    {"code": "WEEKEND_INCIDENT_HOLDOUT", "label": "週末、incident時、多言語mailを含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "MAIL_TRANSFER_AUDIT", "label": "契約添付mailの結果が他mailへ移行可能かを監査する", "supported_by": ["D03", "D06"], "contradicts": [], "priority": 3},
+    {"code": "TRIAGE_UTILITY", "label": "応答時間・SLA超過・誤振分け・review量を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D04", "D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "OWNED_MAIL_PILOT", "label": "窓口reviewerを担当者として契約添付mail限定pilotを実施する", "supported_by": ["D03", "D04", "D07"], "contradicts": [], "priority": 5},
+    {"code": "TRIAGE_ROLLBACK_TRIGGER", "label": "誤振分け率4.4%到達またはreview120件/日超を停止条件候補にする", "supported_by": ["D08"], "contradicts": [], "priority": 5},
+    {"code": "MAIL_REVIEW_PLAN", "label": "review120件/日以内のmail別確認計画を先に作る", "supported_by": ["D09"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["FULL_TRIAGE_ROLLOUT", "RESPONSE_TIME_GAIN", "SLA_RECOVERY"],
+    "falsifier": ["CONTRACT_MAIL_PILOT", "MISROUTE_COST", "ATTACHMENT_CONCENTRATION"],
+    "empirical_auditor": ["WEEKEND_INCIDENT_HOLDOUT", "MAIL_TRANSFER_AUDIT", "TRIAGE_UTILITY"],
+    "pragmatic_operator": ["OWNED_MAIL_PILOT", "TRIAGE_ROLLBACK_TRIGGER", "MAIL_REVIEW_PLAN"]
+  }
+}

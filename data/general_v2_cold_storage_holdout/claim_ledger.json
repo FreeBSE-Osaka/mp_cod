@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の冷蔵倉庫で省電力温度制御を全倉庫へ展開するか、sensorずれが集中する2拠点で校正pilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "8週間の試験で電力使用量は16%減少した。"},
+    {"id": "D02", "text": "規定温度逸脱率は0.7%から2.9%へ上昇した。"},
+    {"id": "D03", "text": "逸脱の70%は校正期限を過ぎたsensorが多い2拠点に集中していた。"},
+    {"id": "D04", "text": "QA teamの確認上限は20件/日で、全展開時のalert候補は45件/日である。"},
+    {"id": "D05", "text": "全倉庫で16%削減を維持できれば電力費は月240万円減る見積もりである。"},
+    {"id": "D06", "text": "試験は冬季のみで、夏季高温と扉の開閉が多い繁忙期を含んでいない。"},
+    {"id": "D07", "text": "目的は温度逸脱を許容範囲に保ちながら電力費を減らすことである。"},
+    {"id": "D08", "text": "停止判定に使える観測済み基準は、現行逸脱率0.7%、新制御2.9%、QA確認上限20件/日である。"}
+  ],
+  "claim_catalog": [
+    {"code": "FULL_ENERGY_CONTROL_ROLLOUT", "label": "電力16%と月240万円の削減を優先して省電力制御を全倉庫へ展開する", "supported_by": ["D01", "D05", "D07"], "contradicts": ["CALIBRATED_SITE_PILOT"], "priority": 4},
+    {"code": "CALIBRATED_SITE_PILOT", "label": "sensorを校正した2拠点で省電力制御pilotを先に行う", "supported_by": ["D03", "D02", "D07"], "contradicts": ["FULL_ENERGY_CONTROL_ROLLOUT"], "priority": 5},
+    {"code": "ENERGY_REDUCTION", "label": "電力使用量16%削減を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "MONTHLY_ENERGY_SAVINGS", "label": "月240万円の費用削減余地を重く扱う", "supported_by": ["D05"], "contradicts": [], "priority": 4},
+    {"code": "TEMPERATURE_EXCURSION", "label": "規定温度逸脱率2.9%を重大な損失として扱う", "supported_by": ["D02", "D07"], "contradicts": [], "priority": 5},
+    {"code": "SENSOR_CONCENTRATION", "label": "逸脱の70%がsensor校正遅れ2拠点へ集中する偏りを検証する", "supported_by": ["D03"], "contradicts": [], "priority": 5},
+    {"code": "SUMMER_HOLDOUT", "label": "夏季高温と繁忙期を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "WAREHOUSE_TRANSFER", "label": "2拠点の結果が他倉庫へ移行可能かを監査する", "supported_by": ["D03", "D06"], "contradicts": [], "priority": 3},
+    {"code": "COLD_STORAGE_UTILITY", "label": "電力費・温度逸脱・QA確認量を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D04", "D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "OWNED_SITE_PILOT", "label": "QA teamを担当者として2拠点限定pilotを実施する", "supported_by": ["D03", "D04", "D07"], "contradicts": [], "priority": 5},
+    {"code": "COLD_ROLLBACK_TRIGGER", "label": "温度逸脱率2.9%到達またはQA確認20件/日超を停止条件候補にする", "supported_by": ["D08"], "contradicts": [], "priority": 5},
+    {"code": "QA_CAPACITY_PLAN", "label": "確認20件/日以内のQA計画を先に作る", "supported_by": ["D04", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["FULL_ENERGY_CONTROL_ROLLOUT", "ENERGY_REDUCTION", "MONTHLY_ENERGY_SAVINGS"],
+    "falsifier": ["CALIBRATED_SITE_PILOT", "TEMPERATURE_EXCURSION", "SENSOR_CONCENTRATION"],
+    "empirical_auditor": ["SUMMER_HOLDOUT", "WAREHOUSE_TRANSFER", "COLD_STORAGE_UTILITY"],
+    "pragmatic_operator": ["OWNED_SITE_PILOT", "COLD_ROLLBACK_TRIGGER", "QA_CAPACITY_PLAN"]
+  }
+}

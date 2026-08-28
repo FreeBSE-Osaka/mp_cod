@@ -99,7 +99,7 @@ Ollama backendも同じD番号検証、raw保存、ラウンド、hard gateを�
 仮説構築者: 考え直しました。今回はpilot案を支持します。
 ```
 
-`--prompt-profile` は `baseline`、`orthogonal`、`orthogonal_fewshot` から選べます。既定値は目的関数と1件の形式例を使う `orthogonal_fewshot` です。
+`--prompt-profile` は `baseline`、`orthogonal`、`orthogonal_bare`、`orthogonal_fewshot` から選べます。既定値は目的関数と1件の形式例を使う `orthogonal_fewshot` です。`orthogonal_bare`はWeight評価用で、人格別speech例とfew-shotを外します。
 
 Generalは既存台帳では従来の3人格を保ちます。`role_preferences`に`pragmatic_operator`を含むv2台帳だけ、4人目の「実行設計者」が参加します。4人時の合意閾値は3票です。
 
@@ -165,7 +165,7 @@ python3.11 cod_model.py export-dialogue \
 
 2026-08-28のDialogue v1凍結snapshotは3domain合計154件で、Generalは実証監査31件、批判的設計者34件、仮説構築者30件でした。3人格とも時系列valid/testを持ち、最低30件へ到達しています。このsnapshotで人格別LoRAを学習しましたが、未学習transfer台帳で自然会話がBaseから改善しなかったため非昇格です。
 
-v2では`「現時点では」`、`「可能性を重く見ています」`、`「確かに、見落としていました」`等を機械文として除外し、人格別speech例、対案必須の異議、複数のagree / maintain / revise、任意4人目を導入しました。v1 Adapterへの継ぎ足し学習は行わず、v2会話を別snapshotとして集め直します。
+v2では`「現時点では」`、`「可能性を重く見ています」`、`「確かに、見落としていました」`等を機械文として除外し、人格別speech例、対案必須の異議、複数のagree / maintain / revise、任意4人目を導入しました。承認済み8runから実証監査33、批判的設計33、仮説構築33、実行設計32件を凍結し、4人格の個別LoRAを新規学習しました。全人格で凍結test lossは改善しましたが、未学習payloadの`utterance`生成はBaseと同値で不合格だったため、v2 Weightも非昇格です。
 
 ## 軽量Weight実験
 
@@ -187,6 +187,8 @@ python3.11 cod_model.py curriculum --count 240 --out data/auditor_curriculum
 Adapter WeightはこのGitリポジトリに含めていません。再現条件と評価値は [実験記録](docs/weight_experiment_20260825.md)、ハッシュと運用境界は [昇格記録](promotions/qwen3-1.7b-auditor-r1-step8.json) にあります。
 
 General Dialogue v1の人格別LoRAは全て凍結test lossを改善しましたが、自然会話transferが同値だったため非昇格です。設定、loss、SHA、停止理由は [General Dialogue Weight v1実験記録](docs/general_dialogue_weight_v1_20260828.md) にあります。
+
+General Dialogue v2も4人格のLoRA Weight本体は作成済みです。凍結loss、未学習transfer 0/4、実行設計者step16追加学習の停止理由、全SHAは [General Dialogue Weight v2実験記録](docs/general_dialogue_weight_v2_20260828.md) にあります。現行運用はBase + v2 prompt / sanitizer / hard gateです。
 
 ## bounded RSI shadow
 

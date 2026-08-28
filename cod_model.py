@@ -24,7 +24,7 @@ DEFAULT_MODEL = "qwen3.5:4b"
 DEFAULT_API_URL = "http://127.0.0.1:11434/api/chat"
 PROFILE_PATH = Path(__file__).with_name("personas.json")
 STANCES = ["主案", "対案", "条件付き", "保留"]
-EVENT_PROMPT_PROFILES = ("baseline", "orthogonal", "orthogonal_fewshot")
+EVENT_PROMPT_PROFILES = ("baseline", "orthogonal", "orthogonal_bare", "orthogonal_fewshot")
 MECHANICAL_UTTERANCE_PHRASES = (
     "この点を今後の判断の軸",
     "現時点では、",
@@ -33,6 +33,7 @@ MECHANICAL_UTTERANCE_PHRASES = (
     "という選択も検討中",
     "と判断します。根拠は",
     "という点を見落としていました。見方を改めます",
+    "ことが判断です",
 )
 MODEL_UTTERANCE_ORIGINS = {
     "model",
@@ -1000,6 +1001,8 @@ def validate_public_statement(statement: object, data_ids: list[str]) -> tuple[s
     normalized = re.sub(r"\s+", " ", statement).strip()
     if not 8 <= len(normalized) <= 240:
         return None, "statement must be 8 to 240 characters"
+    if any(mark in normalized for mark in ("空文字", "JSONキー", "changed=true", "allowed_data_ids")):
+        return None, "statement exposes internal protocol"
     references = set(re.findall(r"D\d{2,}", normalized))
     if not references:
         return None, "statement must cite at least one D id"
@@ -1126,6 +1129,7 @@ def sanitize_dialogue_move(utterance: object, move: str) -> str | None:
     visible = utterance.split("根拠", 1)[0]
     visible = re.sub(r"\[?D\d{2,}\]?", "", visible).strip(" 、,。.[]")
     visible = re.sub(r"([。！？])の(結果|データ)", r"\1その\2", visible)
+    visible = re.sub(r"^の(結果|データ)", r"その\1", visible)
     if not visible:
         return None
     visible = f"{visible}。"
@@ -1743,8 +1747,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 "3件で同じ書き出しを繰り返さず、『現時点では』『可能性を重く見ています』を使わない。"
                 "labelをそのまま復唱するだけで終えず、選んだdataの要点を可能なら一つ自分の言葉で加える。"
             ),
-            "speech_style_examples": speech_examples,
         }
+        if args.prompt_profile != "orthogonal_bare":
+            prompt_payload["speech_style_examples"] = speech_examples
         if args.prompt_profile == "orthogonal_fewshot" and available_catalog:
             prompt_payload["format_example"] = {
                 "claims": [

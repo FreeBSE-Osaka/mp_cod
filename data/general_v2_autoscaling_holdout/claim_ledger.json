@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空のWeb serviceで予測autoscalingを全workloadへ展開するか、scale eventが集中するbatch jobを分離してpilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "8週間の再生で応答遅延p95は320msから180msへ改善した。"},
+    {"id": "D02", "text": "cloud費は41%増加した。"},
+    {"id": "D03", "text": "scale eventの69%は毎時実行する一つのbatch jobに集中していた。"},
+    {"id": "D04", "text": "運用予算の許容増は20%までで、全展開の41%増は上限を超える。"},
+    {"id": "D05", "text": "request error率は1.6%から0.9%へ低下した。"},
+    {"id": "D06", "text": "再生は通常週のみで、holiday peakとregion failureを含んでいない。"},
+    {"id": "D07", "text": "目的は遅延とerrorを減らしつつ、cloud費を予算上限内に保つことである。"},
+    {"id": "D08", "text": "停止判定に使える観測済み基準は、cloud費の許容増20%、現行error率1.6%、autoscaling時0.9%である。"}
+  ],
+  "claim_catalog": [
+    {"code": "FULL_AUTOSCALING_ROLLOUT", "label": "遅延とerror改善を優先して予測autoscalingを全workloadへ展開する", "supported_by": ["D01", "D05", "D07"], "contradicts": ["BATCH_ISOLATION_PILOT"], "priority": 4},
+    {"code": "BATCH_ISOLATION_PILOT", "label": "scale eventが集中するbatch jobを分離してautoscaling pilotを先に行う", "supported_by": ["D03", "D02", "D07"], "contradicts": ["FULL_AUTOSCALING_ROLLOUT"], "priority": 5},
+    {"code": "LATENCY_GAIN", "label": "p95遅延320msから180msへの改善を実質的な効果として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "ERROR_REDUCTION", "label": "error率1.6%から0.9%への低下を重く扱う", "supported_by": ["D05"], "contradicts": [], "priority": 4},
+    {"code": "CLOUD_COST_BREACH", "label": "cloud費41%増が予算上限20%を超える事実を重大視する", "supported_by": ["D04"], "contradicts": [], "priority": 5},
+    {"code": "BATCH_CONCENTRATION", "label": "scale eventの69%が一つのbatch jobへ集中する偏りを検証する", "supported_by": ["D03"], "contradicts": [], "priority": 5},
+    {"code": "PEAK_FAILURE_HOLDOUT", "label": "holiday peakとregion failureを含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "WORKLOAD_TRANSFER", "label": "batch jobの結果が他workloadへ移行可能かを監査する", "supported_by": ["D03", "D06"], "contradicts": [], "priority": 3},
+    {"code": "SCALING_UTILITY", "label": "遅延・error・cloud費・scale eventを統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D03", "D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "OWNED_SCALING_PILOT", "label": "運用担当を置いてbatch分離pilotを実施する", "supported_by": ["D03", "D04", "D07"], "contradicts": [], "priority": 5},
+    {"code": "SCALING_ROLLBACK_TRIGGER", "label": "cloud費20%増またはerror率1.6%を超えた時点を停止条件候補にする", "supported_by": ["D08"], "contradicts": [], "priority": 5},
+    {"code": "BUDGET_CAPACITY_PLAN", "label": "cloud費20%増以内のcapacity planを先に作る", "supported_by": ["D04", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["FULL_AUTOSCALING_ROLLOUT", "LATENCY_GAIN", "ERROR_REDUCTION"],
+    "falsifier": ["BATCH_ISOLATION_PILOT", "CLOUD_COST_BREACH", "BATCH_CONCENTRATION"],
+    "empirical_auditor": ["PEAK_FAILURE_HOLDOUT", "WORKLOAD_TRANSFER", "SCALING_UTILITY"],
+    "pragmatic_operator": ["OWNED_SCALING_PILOT", "SCALING_ROLLBACK_TRIGGER", "BUDGET_CAPACITY_PLAN"]
+  }
+}

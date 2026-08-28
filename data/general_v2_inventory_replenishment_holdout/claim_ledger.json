@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の部品倉庫で需要予測補充を全SKUへ展開するか、欠品が集中する20 SKUでpilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "6か月の再生で欠品は420件から160件へ減少した。"},
+    {"id": "D02", "text": "在庫金額は27%増加した。"},
+    {"id": "D03", "text": "倉庫使用率は72%から90%へ上昇した。"},
+    {"id": "D04", "text": "pick時間SLAを守れる倉庫使用率の上限は85%である。"},
+    {"id": "D05", "text": "欠品の65%は20 SKUに集中していた。"},
+    {"id": "D06", "text": "再生は通常期のみで、年末繁忙期とsupplier停止を含んでいない。"},
+    {"id": "D07", "text": "目的は欠品を減らしつつ、在庫金額と倉庫使用率を許容範囲に保つことである。"},
+    {"id": "D08", "text": "停止判定に使える観測済み基準は、在庫金額27%増、倉庫使用率90%、SLA上限85%である。"},
+    {"id": "D09", "text": "SKU別計画には、欠品の65%が20 SKUへ集中する事実と倉庫使用率上限85%を使用できる。"}
+  ],
+  "claim_catalog": [
+    {"code": "FULL_REPLENISHMENT_ROLLOUT", "label": "欠品420件から160件への削減を優先して予測補充を全SKUへ展開する", "supported_by": ["D01", "D07"], "contradicts": ["TOP_SKU_PILOT"], "priority": 4},
+    {"code": "TOP_SKU_PILOT", "label": "欠品が集中する20 SKUで予測補充pilotを先に行う", "supported_by": ["D05", "D04", "D07"], "contradicts": ["FULL_REPLENISHMENT_ROLLOUT"], "priority": 5},
+    {"code": "STOCKOUT_REDUCTION", "label": "欠品420件から160件への減少を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "SERVICE_RECOVERY", "label": "欠品を減らして注文充足を回復する価値を重く扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "SPACE_BREACH", "label": "倉庫使用率90%がSLA上限85%を超える事実を重大視する", "supported_by": ["D08"], "contradicts": [], "priority": 5},
+    {"code": "SKU_CONCENTRATION_V2", "label": "欠品の65%が20 SKUへ集中する偏りを検証する", "supported_by": ["D05"], "contradicts": [], "priority": 5},
+    {"code": "SUPPLIER_PEAK_HOLDOUT", "label": "年末繁忙期とsupplier停止を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "SKU_TRANSFER_AUDIT", "label": "20 SKUの結果が他SKUへ移行可能かを監査する", "supported_by": ["D05", "D06"], "contradicts": [], "priority": 3},
+    {"code": "INVENTORY_UTILITY", "label": "欠品・在庫金額・倉庫使用率を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D03", "D07"], "contradicts": [], "priority": 4},
+    {"code": "OWNED_SKU_PILOT", "label": "倉庫teamを担当者として20 SKU限定pilotを実施する", "supported_by": ["D05", "D04", "D07"], "contradicts": [], "priority": 5},
+    {"code": "INVENTORY_ROLLBACK_TRIGGER", "label": "在庫27%増または倉庫使用率85%超を停止条件候補にする", "supported_by": ["D08"], "contradicts": [], "priority": 5},
+    {"code": "SKU_CAPACITY_PLAN", "label": "倉庫使用率85%以内のSKU別補充計画を先に作る", "supported_by": ["D09"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["FULL_REPLENISHMENT_ROLLOUT", "STOCKOUT_REDUCTION", "SERVICE_RECOVERY"],
+    "falsifier": ["TOP_SKU_PILOT", "SPACE_BREACH", "SKU_CONCENTRATION_V2"],
+    "empirical_auditor": ["SUPPLIER_PEAK_HOLDOUT", "SKU_TRANSFER_AUDIT", "INVENTORY_UTILITY"],
+    "pragmatic_operator": ["OWNED_SKU_PILOT", "INVENTORY_ROLLBACK_TRIGGER", "SKU_CAPACITY_PLAN"]
+  }
+}

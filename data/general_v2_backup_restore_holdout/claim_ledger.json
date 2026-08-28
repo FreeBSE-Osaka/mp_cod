@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の組織でimmutable backupを全datasetへ展開するか、障害が集中するcritical datasetで復旧pilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "12か月の再生でimmutable backupは復旧不能incidentを18件から5件へ減らした。"},
+    {"id": "D02", "text": "同じ再生でbackup storage費は32%増加した。"},
+    {"id": "D03", "text": "復旧drillの中央値は47分から19分へ短縮した。"},
+    {"id": "D04", "text": "teamが検証できるのは週40 datasetで、全展開には週75 datasetの検証が必要である。"},
+    {"id": "D05", "text": "過去incidentの68%は12のcritical datasetに集中していた。"},
+    {"id": "D06", "text": "再生は通常障害だけで、ransomwareとregion全停止を含んでいない。"},
+    {"id": "D07", "text": "目的は復旧不能とRTOを減らしつつ、storage費と検証量を許容範囲に保つことである。"}
+  ],
+  "claim_catalog": [
+    {"code": "FULL_IMMUTABLE_ROLLOUT", "label": "復旧不能とRTOの削減を優先してimmutable backupを全datasetへ展開する", "supported_by": ["D01", "D03", "D07"], "contradicts": ["CRITICAL_DATASET_PILOT"], "priority": 4},
+    {"code": "CRITICAL_DATASET_PILOT", "label": "incidentが集中する12のcritical datasetで復旧pilotを先に行う", "supported_by": ["D05", "D04", "D07"], "contradicts": ["FULL_IMMUTABLE_ROLLOUT"], "priority": 5},
+    {"code": "INCIDENT_REDUCTION", "label": "復旧不能incident 18件から5件への減少を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "RESTORE_SPEED", "label": "復旧drill 47分から19分への短縮を重く扱う", "supported_by": ["D03"], "contradicts": [], "priority": 4},
+    {"code": "VERIFY_OVERLOAD", "label": "必要75 datasetが検証上限40 datasetを超える事実を重大視する", "supported_by": ["D04"], "contradicts": [], "priority": 5},
+    {"code": "INCIDENT_CONCENTRATION", "label": "incidentの68%が12 datasetへ集中する偏りを検証する", "supported_by": ["D05"], "contradicts": [], "priority": 5},
+    {"code": "RANSOMWARE_HOLDOUT", "label": "ransomwareとregion全停止を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "DATASET_TRANSFER", "label": "critical datasetの結果が他datasetへ移行可能かを監査する", "supported_by": ["D05", "D06"], "contradicts": [], "priority": 3},
+    {"code": "RESTORE_UTILITY", "label": "復旧不能・RTO・storage費・検証量を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D03", "D04", "D07"], "contradicts": [], "priority": 4},
+    {"code": "OWNED_RESTORE_PILOT", "label": "backup teamを担当者として12 dataset限定pilotを実施する", "supported_by": ["D04", "D05", "D07"], "contradicts": [], "priority": 5},
+    {"code": "BACKUP_ROLLBACK_TRIGGER", "label": "storage費32%増または週40件超を停止条件にする", "supported_by": ["D02", "D04", "D07"], "contradicts": [], "priority": 5},
+    {"code": "VERIFY_CAPACITY_PLAN", "label": "週40 dataset以内の検証scheduleを先に作る", "supported_by": ["D04", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["FULL_IMMUTABLE_ROLLOUT", "INCIDENT_REDUCTION", "RESTORE_SPEED"],
+    "falsifier": ["CRITICAL_DATASET_PILOT", "VERIFY_OVERLOAD", "INCIDENT_CONCENTRATION"],
+    "empirical_auditor": ["RANSOMWARE_HOLDOUT", "DATASET_TRANSFER", "RESTORE_UTILITY"],
+    "pragmatic_operator": ["OWNED_RESTORE_PILOT", "BACKUP_ROLLBACK_TRIGGER", "VERIFY_CAPACITY_PLAN"]
+  }
+}

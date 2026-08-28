@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空のEV fleetでsmart chargingを全車両へ展開するか、朝の利用不能が集中する寒冷depotでpilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "8週間の再生で充電電力費は18%減少した。"},
+    {"id": "D02", "text": "始業時に利用不能な車両は2%から9%へ増加した。"},
+    {"id": "D03", "text": "利用不能車両の67%は気温が低い一つのdepotに集中していた。"},
+    {"id": "D04", "text": "grid受電上限は600kWで、全展開時の同時充電需要は820kWである。"},
+    {"id": "D05", "text": "時間帯別電源構成を考慮したCO2排出量は11%減少した。"},
+    {"id": "D06", "text": "再生は温暖な8週間のみで、厳冬期と緊急出動の連続発生を含んでいない。"},
+    {"id": "D07", "text": "目的は始業時の車両可用性を保ちながら電力費とCO2を減らすことである。"},
+    {"id": "D08", "text": "停止判定に使える観測済み基準は、利用不能率9%、grid上限600kW、全展開需要820kWである。"},
+    {"id": "D09", "text": "depot別計画には、利用不能の67%が一拠点へ集中する事実とgrid上限600kWを使用できる。"}
+  ],
+  "claim_catalog": [
+    {"code": "FULL_SMART_CHARGING_ROLLOUT", "label": "電力費18%とCO2 11%の削減を優先してsmart chargingを全車両へ展開する", "supported_by": ["D01", "D05", "D07"], "contradicts": ["COLD_DEPOT_PILOT"], "priority": 4},
+    {"code": "COLD_DEPOT_PILOT", "label": "利用不能が集中する寒冷depotでsmart charging pilotを先に行う", "supported_by": ["D03", "D02", "D07"], "contradicts": ["FULL_SMART_CHARGING_ROLLOUT"], "priority": 5},
+    {"code": "ENERGY_COST_GAIN", "label": "充電電力費18%削減を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "CARBON_REDUCTION", "label": "CO2排出量11%削減を価値として重く扱う", "supported_by": ["D05"], "contradicts": [], "priority": 4},
+    {"code": "VEHICLE_UNAVAILABILITY", "label": "始業時の利用不能率9%を重大な損失として扱う", "supported_by": ["D02", "D07"], "contradicts": [], "priority": 5},
+    {"code": "DEPOT_CONCENTRATION", "label": "利用不能の67%が寒冷depotへ集中する偏りを検証する", "supported_by": ["D03"], "contradicts": [], "priority": 5},
+    {"code": "WINTER_EMERGENCY_HOLDOUT", "label": "厳冬期と緊急出動連続を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "DEPOT_TRANSFER_AUDIT", "label": "寒冷depotの結果が他depotへ移行可能かを監査する", "supported_by": ["D03", "D06"], "contradicts": [], "priority": 3},
+    {"code": "CHARGING_UTILITY", "label": "車両可用性・電力費・CO2・受電量を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D04", "D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "OWNED_DEPOT_PILOT", "label": "fleet運用担当を置いて寒冷depot限定pilotを実施する", "supported_by": ["D03", "D04", "D07"], "contradicts": [], "priority": 5},
+    {"code": "CHARGING_ROLLBACK_TRIGGER", "label": "利用不能率9%到達または受電600kW超を停止条件候補にする", "supported_by": ["D08"], "contradicts": [], "priority": 5},
+    {"code": "DEPOT_CAPACITY_PLAN", "label": "受電600kW以内のdepot別充電計画を先に作る", "supported_by": ["D09"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["FULL_SMART_CHARGING_ROLLOUT", "ENERGY_COST_GAIN", "CARBON_REDUCTION"],
+    "falsifier": ["COLD_DEPOT_PILOT", "VEHICLE_UNAVAILABILITY", "DEPOT_CONCENTRATION"],
+    "empirical_auditor": ["WINTER_EMERGENCY_HOLDOUT", "DEPOT_TRANSFER_AUDIT", "CHARGING_UTILITY"],
+    "pragmatic_operator": ["OWNED_DEPOT_PILOT", "CHARGING_ROLLBACK_TRIGGER", "DEPOT_CAPACITY_PLAN"]
+  }
+}

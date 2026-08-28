@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の経理部門でinvoice OCRを全vendorへ展開するか、誤抽出が集中する手書き帳票vendorでpilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "6週間の試験で処理時間中央値は14時間から3時間へ短縮した。"},
+    {"id": "D02", "text": "金額・口座の誤抽出率は0.9%から3.7%へ上昇した。"},
+    {"id": "D03", "text": "誤抽出の76%は手書き欄を持つ18 vendorの帳票に集中していた。"},
+    {"id": "D04", "text": "人手確認上限は500件/日で、全展開時の候補は920件/日である。"},
+    {"id": "D05", "text": "支払期限超過は月140件から45件へ減少した。"},
+    {"id": "D06", "text": "試験は通常月のみで、年度末締めと多言語invoiceを含んでいない。"},
+    {"id": "D07", "text": "目的は処理時間と期限超過を減らしつつ、誤抽出と確認量を許容範囲に保つことである。"},
+    {"id": "D08", "text": "停止判定に使える観測済み基準は、現行誤抽出率0.9%、OCR試験3.7%、人手確認上限500件/日である。"},
+    {"id": "D09", "text": "vendor別review計画には、誤抽出の76%が18 vendorへ集中する事実と人手確認上限500件/日を使用できる。"}
+  ],
+  "claim_catalog": [
+    {"code": "FULL_OCR_ROLLOUT", "label": "処理時間と期限超過の削減を優先してinvoice OCRを全vendorへ展開する", "supported_by": ["D01", "D05", "D07"], "contradicts": ["HANDWRITTEN_VENDOR_PILOT"], "priority": 4},
+    {"code": "HANDWRITTEN_VENDOR_PILOT", "label": "誤抽出が集中する手書き帳票vendorでOCR pilotを先に行う", "supported_by": ["D03", "D02", "D07"], "contradicts": ["FULL_OCR_ROLLOUT"], "priority": 5},
+    {"code": "PROCESS_TIME_GAIN", "label": "処理時間14時間から3時間への短縮を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "LATE_PAYMENT_REDUCTION", "label": "期限超過140件から45件への減少を重く扱う", "supported_by": ["D05"], "contradicts": [], "priority": 4},
+    {"code": "EXTRACTION_ERROR", "label": "金額・口座の誤抽出率3.7%を重大視する", "supported_by": ["D02", "D07"], "contradicts": [], "priority": 5},
+    {"code": "HANDWRITING_CONCENTRATION", "label": "誤抽出の76%が手書き帳票18 vendorへ集中する偏りを検証する", "supported_by": ["D03"], "contradicts": [], "priority": 5},
+    {"code": "FISCAL_CLOSE_HOLDOUT", "label": "年度末締めと多言語invoiceを含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "VENDOR_TRANSFER", "label": "18 vendorの結果が他vendorへ移行可能かを監査する", "supported_by": ["D03", "D06"], "contradicts": [], "priority": 3},
+    {"code": "OCR_UTILITY", "label": "処理時間・期限超過・誤抽出・確認量を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D04", "D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "OWNED_OCR_PILOT", "label": "経理QAを担当者として18 vendor限定pilotを実施する", "supported_by": ["D03", "D04", "D07"], "contradicts": [], "priority": 5},
+    {"code": "OCR_ROLLBACK_TRIGGER", "label": "誤抽出率3.7%到達または確認500件/日超を停止条件候補にする", "supported_by": ["D08"], "contradicts": [], "priority": 5},
+    {"code": "OCR_REVIEW_PLAN", "label": "確認500件/日以内のvendor別review計画を先に作る", "supported_by": ["D09"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["FULL_OCR_ROLLOUT", "PROCESS_TIME_GAIN", "LATE_PAYMENT_REDUCTION"],
+    "falsifier": ["HANDWRITTEN_VENDOR_PILOT", "EXTRACTION_ERROR", "HANDWRITING_CONCENTRATION"],
+    "empirical_auditor": ["FISCAL_CLOSE_HOLDOUT", "VENDOR_TRANSFER", "OCR_UTILITY"],
+    "pragmatic_operator": ["OWNED_OCR_PILOT", "OCR_ROLLBACK_TRIGGER", "OCR_REVIEW_PLAN"]
+  }
+}

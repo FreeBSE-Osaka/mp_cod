@@ -40,6 +40,7 @@ class CodModelTest(unittest.TestCase):
         self.assertTrue(ledger["fixture"])
         self.assertTrue(cod_model.is_mechanical_utterance("この点を今後の判断の軸にしたいです。"))
         self.assertTrue(cod_model.is_mechanical_utterance("現時点では、この案が有力です。"))
+        self.assertTrue(cod_model.is_mechanical_utterance("全vendorへ展開することが判断です。"))
         self.assertFalse(cod_model.is_mechanical_utterance("8週間の期限を考えるとSwift先行が現実的です。"))
 
     def test_collection_ledgers_match_domain_personas(self):
@@ -62,6 +63,14 @@ class CodModelTest(unittest.TestCase):
             ("data/general_irrigation_policy_holdout/claim_ledger.json", "general"),
             ("data/general_weight_transfer_holdout/claim_ledger.json", "general"),
             ("data/general_conversation_v2_holdout/claim_ledger.json", "general"),
+            ("data/general_v2_backup_restore_holdout/claim_ledger.json", "general"),
+            ("data/general_v2_reply_assist_holdout/claim_ledger.json", "general"),
+            ("data/general_v2_cold_storage_holdout/claim_ledger.json", "general"),
+            ("data/general_v2_invoice_ocr_holdout/claim_ledger.json", "general"),
+            ("data/general_v2_autoscaling_holdout/claim_ledger.json", "general"),
+            ("data/general_v2_inventory_replenishment_holdout/claim_ledger.json", "general"),
+            ("data/general_v2_email_triage_holdout/claim_ledger.json", "general"),
+            ("data/general_v2_weight_transfer_holdout/claim_ledger.json", "general"),
         ):
             ledger = cod_model.load_claim_ledger(Path(path))
             persona_ids = {persona["id"] for persona in domains[domain]["personas"]}
@@ -288,6 +297,11 @@ class CodModelTest(unittest.TestCase):
         statement, reason = cod_model.validate_public_statement("根拠は[D99]です。", ["D01"])
         self.assertIsNone(statement)
         self.assertIn("unselected", reason)
+        statement, reason = cod_model.validate_public_statement(
+            "変えていない時は空文字です。根拠は[D01]です。", ["D01"]
+        )
+        self.assertIsNone(statement)
+        self.assertIn("internal protocol", reason)
         sanitized = cod_model.sanitize_model_statement(
             "北東転向外れを独立シナリオとして残す。根拠は[D08]です。",
             ["D09"],
@@ -365,6 +379,11 @@ class CodModelTest(unittest.TestCase):
         repaired = cod_model.sanitize_dialogue_move(
             "結論を維持します。[D01]のデータに基づき、全networkへ展開します。",
             "maintain",
+        )
+        self.assertIn("。そのデータに基づき", repaired)
+        repaired = cod_model.sanitize_dialogue_move(
+            "D01のデータに基づき、全倉庫へ展開することを決定します。",
+            "agree",
         )
         self.assertIn("。そのデータに基づき", repaired)
         self.assertEqual(
@@ -453,10 +472,13 @@ class CodModelTest(unittest.TestCase):
                 "ollama",
                 "--ollama-model",
                 "qwen3.5:4b",
+                "--prompt-profile",
+                "orthogonal_bare",
             ]
         )
         self.assertEqual(args.backend, "ollama")
         self.assertEqual(args.ollama_model, "qwen3.5:4b")
+        self.assertEqual(args.prompt_profile, "orthogonal_bare")
         self.assertIsNone(args.model_path)
 
     def test_objection_speaks_before_new_topic(self):

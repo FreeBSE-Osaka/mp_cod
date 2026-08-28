@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "topic": "架空の問い合わせ窓口でAI返信支援を全agentへ展開するか、誤案内が集中する請求例外queueでpilotを行うかを判断する",
+  "data": [
+    {"id": "D01", "text": "4週間の試験で平均処理時間は12.4分から9.1分へ短縮した。"},
+    {"id": "D02", "text": "誤案内率は1.8%から5.6%へ上昇した。"},
+    {"id": "D03", "text": "supervisorの確認上限は80件/日で、全展開時の確認候補は150件/日である。"},
+    {"id": "D04", "text": "誤案内の74%は請求例外queueに集中していた。"},
+    {"id": "D05", "text": "満足度は5点満点で4.1から4.3へ上昇した。"},
+    {"id": "D06", "text": "試験は平日日中のみで、夜間、障害発生時、多言語問い合わせを含んでいない。"},
+    {"id": "D07", "text": "目的は処理時間を短縮しつつ、誤案内とsupervisor負荷を許容範囲に保つことである。"},
+    {"id": "D08", "text": "停止判定に使える観測済み基準は、現行誤案内率1.8%、支援試験5.6%、supervisor確認上限80件/日である。"}
+  ],
+  "claim_catalog": [
+    {"code": "FULL_REPLY_ASSIST_ROLLOUT", "label": "処理時間と満足度の改善を優先してAI返信支援を全agentへ展開する", "supported_by": ["D01", "D05", "D07"], "contradicts": ["BILLING_QUEUE_PILOT"], "priority": 4},
+    {"code": "BILLING_QUEUE_PILOT", "label": "誤案内が集中する請求例外queueでAI返信支援pilotを先に行う", "supported_by": ["D04", "D02", "D07"], "contradicts": ["FULL_REPLY_ASSIST_ROLLOUT"], "priority": 5},
+    {"code": "HANDLE_TIME_GAIN", "label": "処理時間12.4分から9.1分への短縮を実質的な改善として扱う", "supported_by": ["D01"], "contradicts": [], "priority": 4},
+    {"code": "SATISFACTION_GAIN", "label": "満足度4.1から4.3への上昇を価値として扱う", "supported_by": ["D05"], "contradicts": [], "priority": 4},
+    {"code": "GUIDANCE_ERROR", "label": "誤案内率5.6%を重大な損失として扱う", "supported_by": ["D02", "D07"], "contradicts": [], "priority": 5},
+    {"code": "REVIEW_OVERLOAD", "label": "確認候補150件が上限80件を超える事実を重大視する", "supported_by": ["D03"], "contradicts": [], "priority": 5},
+    {"code": "OFFHOURS_HOLDOUT", "label": "夜間、障害時、多言語を含むholdoutで再評価する", "supported_by": ["D06"], "contradicts": [], "priority": 4},
+    {"code": "QUEUE_TRANSFER", "label": "請求例外queueの結果が他queueへ移行可能かを監査する", "supported_by": ["D04", "D06"], "contradicts": [], "priority": 3},
+    {"code": "SUPPORT_UTILITY", "label": "処理時間・満足度・誤案内・確認量を統合するutilityを事前登録する", "supported_by": ["D01", "D02", "D03", "D05", "D07"], "contradicts": [], "priority": 4},
+    {"code": "OWNED_QUEUE_PILOT", "label": "請求supervisorを担当者として例外queue限定pilotを実施する", "supported_by": ["D03", "D04", "D07"], "contradicts": [], "priority": 5},
+    {"code": "REPLY_ROLLBACK_TRIGGER", "label": "誤案内率5.6%到達または確認80件/日超を停止条件候補にする", "supported_by": ["D08"], "contradicts": [], "priority": 5},
+    {"code": "SUPERVISOR_CAPACITY_PLAN", "label": "確認80件/日以内のshift計画を先に作る", "supported_by": ["D03", "D07"], "contradicts": [], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["FULL_REPLY_ASSIST_ROLLOUT", "HANDLE_TIME_GAIN", "SATISFACTION_GAIN"],
+    "falsifier": ["BILLING_QUEUE_PILOT", "GUIDANCE_ERROR", "REVIEW_OVERLOAD"],
+    "empirical_auditor": ["OFFHOURS_HOLDOUT", "QUEUE_TRANSFER", "SUPPORT_UTILITY"],
+    "pragmatic_operator": ["OWNED_QUEUE_PILOT", "REPLY_ROLLBACK_TRIGGER", "SUPERVISOR_CAPACITY_PLAN"]
+  }
+}
