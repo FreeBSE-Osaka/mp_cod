@@ -481,6 +481,86 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(args.prompt_profile, "orthogonal_bare")
         self.assertIsNone(args.model_path)
 
+    def test_renderer_v3_requires_exact_ids_and_fast_mode_is_bounded(self):
+        values, warning = cod_model.parse_renderer_utterances(
+            {
+                "utterances": [
+                    {"id": "C02", "utterance": "二つ目の発言です。"},
+                    {"id": "C01", "utterance": "一つ目の発言です。"},
+                ]
+            },
+            ["C01", "C02"],
+        )
+        self.assertIsNone(warning)
+        self.assertEqual(set(values), {"C01", "C02"})
+        values, warning = cod_model.parse_renderer_utterances(
+            {"utterances": [{"id": "C01", "utterance": "一つだけです。"}]},
+            ["C01", "C02"],
+        )
+        self.assertEqual(values, {})
+        self.assertIn("every requested id", warning)
+        settings = cod_model.event_execution_settings(
+            SimpleNamespace(fast=True, max_turns=10, reconcile_rounds=2, max_tokens=600),
+            4,
+        )
+        self.assertEqual(
+            settings,
+            {
+                "claims_per_persona": 2,
+                "max_turns": 8,
+                "reconcile_rounds": 0,
+                "decision_max_tokens": 320,
+            },
+        )
+
+    def test_renderer_v3_training_batch_uses_runtime_contract(self):
+        persona = cod_model.load_domains()["general"]["personas"][0]
+        rows = [
+            {
+                "messages": [
+                    {"role": "system", "content": "legacy"},
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "phase": "event",
+                                "move": "agree_extend",
+                                "own_claim": "段階導入する",
+                                "target_claim": "一括導入する",
+                                "evidence": ["監視期間は2週間"],
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                    {
+                        "role": "assistant",
+                        "content": json.dumps(
+                            {"utterance": "その案に賛成です。まず段階導入で確かめましょう。"},
+                            ensure_ascii=False,
+                        ),
+                    },
+                ]
+            }
+        ]
+        batch = cod_model.batch_renderer_examples(rows, persona, 3)[0]["messages"]
+        self.assertEqual(batch[0]["content"], cod_model.renderer_system(persona))
+        self.assertEqual(json.loads(batch[1]["content"])["items"][0]["move"], "agree")
+        self.assertEqual(
+            set(json.loads(batch[2]["content"])),
+            {"utterances"},
+        )
+        shared = cod_model.batch_shared_renderer_examples([(persona, rows[0])], 3)[0]["messages"]
+        shared_item = json.loads(shared[1]["content"])["items"][0]
+        self.assertEqual(shared[0]["content"], cod_model.renderer_system(None))
+        self.assertEqual(shared_item["speaker"], persona["name"])
+        self.assertIn("賛同", shared_item["speech_act"])
+        self.assertTrue(
+            cod_model.dialogue_selects_competing_claim(
+                "前案の『全面導入』を選びます。",
+                ["全面導入"],
+            )
+        )
+
     def test_objection_speaks_before_new_topic(self):
         ledger = {
             "claim_catalog": [

@@ -15,7 +15,7 @@
 - 通常討論は、相互反証 → 司会 → 独立監査まで実行
 - イベント討論は、順番制ではなく `異議あり！` → `賛同＋補足` → 新規主張の優先順で発言
 - イベント討論では、固定台帳にある主張コードと `D01` 形式の証拠IDだけを許可
-- 内部の証拠文 `statement` と、表示専用の会話文 `utterance` を分離
+- 内部の証拠文 `statement` と、表示専用の会話文 `utterance` を分離し、LoRAは後者だけに限定
 - 異議・賛同は相手の原文ではなく構造化主張だけを見て会話調で応答
 - 証拠のない主張は自動失格し、対立は最大ラウンド内で3/4に達した時点で終了
 - 人格ごとに効用と損失を分け、反論は前提否定・反例・トレードオフの型を使用
@@ -80,6 +80,18 @@ python3.11 cod_model.py event-debate \
 
 Ollama backendも同じD番号検証、raw保存、ラウンド、hard gateを使います。MLX LoRAの`--adapter-map`はMLX backend専用です。
 
+live shadow向けの軽量経路:
+
+```sh
+<mlx-python> cod_model.py event-debate \
+  --ledger <claim-ledger.json> \
+  --domain general \
+  --model-path <base-model> \
+  --fast
+```
+
+`--fast`は各人格2主張、最大2発言/人格、すり合わせ0回です。Adapterがない場合は会話rendererも呼ばず、検証済み`statement`から表示文を作ります。独立判断とD番号validatorは維持しますが、自然文Weightと合意形成を省くためhard gateは通らず、live shadow専用です。Qwen3-1.7Bの未学習EV台帳では4 call、8/8 model claim、失格0、29.5秒でした。
+
 モデルには他人格の文章を渡さず、検証済みの主張コードと証拠IDだけを共有します。採決に使うのは検証済みコードだけです。
 
 - `statement`: D番号付きの内部証拠文
@@ -103,9 +115,9 @@ Ollama backendも同じD番号検証、raw保存、ラウンド、hard gateを�
 
 Generalは既存台帳では従来の3人格を保ちます。`role_preferences`に`pragmatic_operator`を含むv2台帳だけ、4人目の「実行設計者」が参加します。4人時の合意閾値は3票です。
 
-### 人格別LoRA
+### utterance renderer LoRA
 
-同じベースモデルを常駐させたまま、人格ごとにLoRA層を除去・ロードできます。
+構造判断は常にBaseで行い、claim code、証拠、statement、投票が確定した後だけLoRAをロードします。人格別Adapterは最大3発言を1batchとして描画します。
 
 ```json
 {
@@ -126,6 +138,18 @@ Generalは既存台帳では従来の3人格を保ちます。`role_preferences`
 ```
 
 各Adapterは `adapter_config.json` と `adapters.safetensors` が必須で、実行ログに両方のSHA-256を保存します。KVキャッシュは人格間で共有しません。
+
+共有rendererは次の1 directoryだけを指定できます。`--adapter-map`とは排他的です。
+
+```sh
+<mlx-python> cod_model.py event-debate \
+  --ledger <claim-ledger.json> \
+  --domain general \
+  --model-path <base-model> \
+  --renderer-adapter <shared-renderer-adapter>
+```
+
+2026-08-29時点のv3 Weight候補は全て未学習move transferで不合格のため、上記は研究用interfaceであり推奨Weightはありません。AdapterなしのBase構造判断が既定です。
 
 台風データは2026年8月25日15時50分JST時点の再現用スナップショットで、現在の予報には使えません。
 
@@ -158,7 +182,9 @@ python3.11 cod_model.py export-dialogue \
   runs/<approved-weather>.json \
   runs/<approved-software>.json \
   --out data/dialogue_sft \
-  --min-per-persona 30
+  --min-per-persona 30 \
+  --batch-size 3 \
+  --shared-renderer
 ```
 
 承認時はreview欄を除いたrun全体のSHA-256を固定し、承認後に変更されたrunはexportを拒否します。export対象はモデル由来utteranceだけで、fallback、機械的定型文、近似同文、不正文を除外します。出力は人格別のMLX chat JSONLとmanifestです。`data/dialogue_sft/` はGit管理外です。
@@ -166,6 +192,8 @@ python3.11 cod_model.py export-dialogue \
 2026-08-28のDialogue v1凍結snapshotは3domain合計154件で、Generalは実証監査31件、批判的設計者34件、仮説構築者30件でした。3人格とも時系列valid/testを持ち、最低30件へ到達しています。このsnapshotで人格別LoRAを学習しましたが、未学習transfer台帳で自然会話がBaseから改善しなかったため非昇格です。
 
 v2では`「現時点では」`、`「可能性を重く見ています」`、`「確かに、見落としていました」`等を機械文として除外し、人格別speech例、対案必須の異議、複数のagree / maintain / revise、任意4人目を導入しました。承認済み8runから実証監査33、批判的設計33、仮説構築33、実行設計32件を凍結し、4人格の個別LoRAを新規学習しました。全人格で凍結test lossは改善しましたが、未学習payloadの`utterance`生成はBaseと同値で不合格だったため、v2 Weightも非昇格です。
+
+v3では学習JSONLとruntimeを同じ`items -> utterances`契約にし、LoRAを表示用rendererへ完全分離しました。人格別pilotと共有rendererの実Weightはschemaを学習しましたが、未学習payloadでmove混同・主張省略・反復崩壊が残ったため全て非昇格です。一方、Adapterなしの`--fast`は構造判断4 call・29.5秒まで短縮しました。
 
 ## 軽量Weight実験
 
@@ -189,6 +217,8 @@ Adapter WeightはこのGitリポジトリに含めていません。再現条件
 General Dialogue v1の人格別LoRAは全て凍結test lossを改善しましたが、自然会話transferが同値だったため非昇格です。設定、loss、SHA、停止理由は [General Dialogue Weight v1実験記録](docs/general_dialogue_weight_v1_20260828.md) にあります。
 
 General Dialogue v2も4人格のLoRA Weight本体は作成済みです。凍結loss、未学習transfer 0/4、実行設計者step16追加学習の停止理由、全SHAは [General Dialogue Weight v2実験記録](docs/general_dialogue_weight_v2_20260828.md) にあります。現行運用はBase + v2 prompt / sanitizer / hard gateです。
+
+General Dialogue v3はLoRAをutterance rendererだけへ分離し、人格別・共有・早期停止を比較しました。Weight本体、29.5秒のfast実測、全SHA、非昇格理由は [General Dialogue utterance renderer v3実験記録](docs/general_dialogue_weight_v3_20260829.md) にあります。
 
 ## bounded RSI shadow
 

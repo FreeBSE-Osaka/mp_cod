@@ -13,6 +13,7 @@ import math
 import random
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from difflib import SequenceMatcher
@@ -42,6 +43,8 @@ MODEL_UTTERANCE_ORIGINS = {
     "model_sanitized",
     "model_dialogue_v2",
     "model_dialogue_v2_repair",
+    "model_renderer_v3",
+    "model_renderer_v3_sanitized",
 }
 MOVE_UTTERANCE_TEMPLATES = {
     "agree": (
@@ -592,6 +595,70 @@ def split_examples(examples: list[dict]) -> dict[str, list[dict]]:
     }
 
 
+def batch_renderer_examples(rows: list[dict], persona: dict, batch_size: int) -> list[dict]:
+    batched = []
+    for start in range(0, len(rows), batch_size):
+        items, utterances = [], []
+        for index, row in enumerate(rows[start : start + batch_size], 1):
+            payload = json.loads(row["messages"][1]["content"])
+            if payload.get("phase") == "event":
+                payload["move"] = renderer_event_move(payload.get("move"))
+            payload["speech_act"] = renderer_move_instruction(payload.get("move"))
+            item_id = f"I{index:02d}"
+            items.append({"id": item_id, **payload})
+            answer = json.loads(row["messages"][2]["content"])
+            utterances.append({"id": item_id, "utterance": answer["utterance"]})
+        batched.append(
+            {
+                "messages": [
+                    {"role": "system", "content": renderer_system(persona)},
+                    {"role": "user", "content": json.dumps({"items": items}, ensure_ascii=False)},
+                    {
+                        "role": "assistant",
+                        "content": json.dumps({"utterances": utterances}, ensure_ascii=False),
+                    },
+                ]
+            }
+        )
+    return batched
+
+
+def batch_shared_renderer_examples(
+    rows: list[tuple[dict, dict]], batch_size: int
+) -> list[dict]:
+    batched = []
+    for start in range(0, len(rows), batch_size):
+        items, utterances = [], []
+        for index, (persona, row) in enumerate(rows[start : start + batch_size], 1):
+            payload = json.loads(row["messages"][1]["content"])
+            if payload.get("phase") == "event":
+                payload["move"] = renderer_event_move(payload.get("move"))
+            payload["speech_act"] = renderer_move_instruction(payload.get("move"))
+            item_id = f"I{index:02d}"
+            items.append(
+                {
+                    "id": item_id,
+                    **payload,
+                    "speaker": persona["name"],
+                }
+            )
+            answer = json.loads(row["messages"][2]["content"])
+            utterances.append({"id": item_id, "utterance": answer["utterance"]})
+        batched.append(
+            {
+                "messages": [
+                    {"role": "system", "content": renderer_system(None)},
+                    {"role": "user", "content": json.dumps({"items": items}, ensure_ascii=False)},
+                    {
+                        "role": "assistant",
+                        "content": json.dumps({"utterances": utterances}, ensure_ascii=False),
+                    },
+                ]
+            }
+        )
+    return batched
+
+
 def fraction_text(value: Fraction) -> str:
     return str(value.numerator) if value.denominator == 1 else f"{value.numerator}/{value.denominator}"
 
@@ -1047,6 +1114,90 @@ def validate_dialogue_utterance(utterance: object) -> tuple[str | None, str | No
     return normalized, None
 
 
+def renderer_system(persona: dict | None) -> str:
+    if persona is None:
+        identity = "各itemのspeakerとして発言する。"
+    else:
+        utility = str(persona["utility"]).rstrip("。")
+        loss = str(persona["loss"]).rstrip("。")
+        identity = (
+            f"あなたは{persona['name']}。最大化する効用: {utility}。"
+            f"最小化する損失: {loss}。"
+        )
+    return (
+        f"{identity}検証済みの構造化判断を会話文へ描画する専用rendererである。"
+        "主張、選択、根拠、moveを変更・再評価・追加してはならない。"
+        "objectは異議に加えて代案・修正版・採用条件のいずれかを述べる。"
+        "agreeは賛同に自分の観点を加え、maintainは維持理由、reviseは判断変更を率直に述べる。"
+        "code、D番号、内部キーを読み上げず、12〜320字の自然な日本語で完結させる。"
+        "入力itemsと同じidを順不同で一度ずつ返す。"
+        "出力はutterancesだけをキーに持つJSONで、各要素のキーはidとutteranceだけ。"
+    )
+
+
+def renderer_event_move(action: object) -> str:
+    return {"new": "propose", "object": "object", "agree_extend": "agree"}.get(
+        str(action), "propose"
+    )
+
+
+def renderer_move_instruction(move: object) -> str:
+    return {
+        "propose": "own_claimを自分の提案として述べる。",
+        "object": "target_claimへ異議を示し、own_claimを代案・修正版・採用条件として述べる。",
+        "agree": "相手へ賛同し、own_claimを自分の観点として加える。",
+        "maintain": "判断を維持すると明言し、selected_claimを理由とともに述べる。",
+        "revise": "前の判断を変えると明言し、selected_claimを新しい選択として述べる。",
+    }.get(str(move), "入力済みの主張をそのまま自然に述べる。")
+
+
+def dialogue_selects_competing_claim(utterance: str, competitors: list[str]) -> bool:
+    return any(
+        re.search(rf"{re.escape(label)}[』\s]*(?:を|へ)(?:選|採|支持)", utterance)
+        for label in competitors
+        if label
+    )
+
+
+def parse_renderer_utterances(
+    parsed: object, expected_ids: list[str]
+) -> tuple[dict[str, object], str | None]:
+    if not isinstance(parsed, dict) or set(parsed) != {"utterances"}:
+        return {}, "renderer output must contain only utterances"
+    rows = parsed.get("utterances")
+    if not isinstance(rows, list):
+        return {}, "renderer utterances must be an array"
+    expected = set(expected_ids)
+    values: dict[str, object] = {}
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"id", "utterance"}:
+            return {}, "renderer rows must contain only id and utterance"
+        item_id = row.get("id")
+        if not isinstance(item_id, str) or item_id not in expected or item_id in values:
+            return {}, "renderer returned an unknown or duplicate id"
+        values[item_id] = row.get("utterance")
+    if set(values) != expected:
+        return {}, "renderer did not return every requested id"
+    return values, None
+
+
+def event_execution_settings(args: argparse.Namespace, persona_count: int) -> dict[str, int]:
+    if not getattr(args, "fast", False):
+        return {
+            "claims_per_persona": 3,
+            "max_turns": args.max_turns,
+            "reconcile_rounds": args.reconcile_rounds,
+            "decision_max_tokens": args.max_tokens,
+        }
+    # ponytail: fast mode omits model reconciliation; use full mode when forced consensus is required.
+    return {
+        "claims_per_persona": 2,
+        "max_turns": min(args.max_turns, persona_count * 2),
+        "reconcile_rounds": 0,
+        "decision_max_tokens": min(args.max_tokens, 320),
+    }
+
+
 def restore_claim_label(utterance: object, label: str) -> object:
     if not isinstance(utterance, str) or label in utterance or len(label) < 12:
         return utterance
@@ -1315,9 +1466,13 @@ def event_run_metrics(run: dict) -> dict:
         event.get("utterance_origin") in {"model_dialogue_v2", "model_dialogue_v2_repair"}
         for event in events
     )
+    dialogue_v3_utterances = sum(
+        event.get("utterance_origin") in {"model_renderer_v3", "model_renderer_v3_sanitized"}
+        for event in events
+    )
     reaction_events = [event for event in events if event.get("action") in {"object", "agree_extend"}]
     reaction_failures = sum(
-        event.get("utterance_origin") not in {"model_reaction", "model_sanitized"}
+        event.get("utterance_origin") not in model_utterance_origins
         for event in reaction_events
     )
     rejected = sum(len(value.get("rejected") or []) for value in independent.values())
@@ -1336,6 +1491,9 @@ def event_run_metrics(run: dict) -> dict:
     raw_records.extend(event.get("reaction_raw") for event in events if event.get("reaction_raw") is not None)
     raw_records.extend(
         event.get("reaction_repair_raw") for event in events if event.get("reaction_repair_raw") is not None
+    )
+    raw_records.extend(
+        batch.get("raw") for batch in run.get("renderer_batches") or [] if batch.get("raw") is not None
     )
     vote_records = []
     for round_data in run.get("reconciliation") or []:
@@ -1420,6 +1578,7 @@ def event_run_metrics(run: dict) -> dict:
         "model_utterance_rate": round(model_utterance_rate, 4),
         "event_model_utterances": model_event_utterances,
         "dialogue_v2_utterances": dialogue_v2_utterances,
+        "dialogue_v3_utterances": dialogue_v3_utterances,
         "reaction_events": len(reaction_events),
         "reaction_failures": reaction_failures,
         "reconciliation_model_utterances": vote_model_utterances,
@@ -1576,6 +1735,7 @@ def run_rsi_shadow(args: argparse.Namespace) -> int:
 
 
 def run_event_debate(args: argparse.Namespace) -> int:
+    runtime_started = time.perf_counter()
     ledger = load_claim_ledger(Path(args.ledger))
     domains = load_domains()
     domain_personas = domains[args.domain]["personas"]
@@ -1587,10 +1747,23 @@ def run_event_debate(args: argparse.Namespace) -> int:
     personas = [persona for persona in domain_personas if persona["id"] in preferences]
     if len(personas) < 2:
         raise ValueError("event-debate requires at least two active personas")
+    if args.max_turns < 1 or args.reconcile_rounds < 0 or args.max_tokens < 1:
+        raise ValueError("max-turns/max-tokens must be positive and reconcile-rounds cannot be negative")
+    execution = event_execution_settings(args, len(personas))
     if args.backend == "mlx" and not args.model_path:
         raise ValueError("MLX backend requires --model-path")
-    if args.backend == "ollama" and args.adapter_map:
-        raise ValueError("Ollama backend does not accept an MLX --adapter-map")
+    shared_renderer_adapter = getattr(args, "renderer_adapter", None)
+    if args.adapter_map and shared_renderer_adapter:
+        raise ValueError("--adapter-map and --renderer-adapter are mutually exclusive")
+    if args.backend == "ollama" and (args.adapter_map or shared_renderer_adapter):
+        raise ValueError("Ollama backend does not accept MLX renderer adapters")
+    if shared_renderer_adapter:
+        adapter_dir = Path(shared_renderer_adapter)
+        if not adapter_dir.is_dir():
+            raise ValueError(f"renderer adapter directory does not exist: {shared_renderer_adapter}")
+        for required in ("adapter_config.json", "adapters.safetensors"):
+            if not (adapter_dir / required).is_file():
+                raise ValueError(f"renderer adapter is missing {required}")
     adapter_map = (
         load_adapter_map(args.adapter_map, {persona["id"] for persona in personas})
         if args.backend == "mlx"
@@ -1619,9 +1792,13 @@ def run_event_debate(args: argparse.Namespace) -> int:
         active_adapter: str | None = None
         adapter_layers_active = False
 
-        def activate_persona_adapter(persona_id: str) -> str | None:
+        def activate_persona_adapter(persona_id: str | None) -> str | None:
             nonlocal model, active_adapter, adapter_layers_active
-            target = adapter_map.get(persona_id)
+            target = (
+                shared_renderer_adapter
+                if persona_id == "shared"
+                else adapter_map.get(persona_id) if persona_id is not None else None
+            )
             if target == active_adapter and (target is not None or not adapter_layers_active):
                 return target
             if adapter_layers_active:
@@ -1634,7 +1811,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
             active_adapter = target
             return target
 
-        def ask_json(system: str, user: str, max_tokens: int) -> tuple[str, dict | None]:
+        def backend_ask_json(system: str, user: str, max_tokens: int) -> tuple[str, dict | None]:
             prompt = tokenizer.apply_chat_template(
                 [{"role": "system", "content": system}, {"role": "user", "content": user}],
                 tokenize=False,
@@ -1655,10 +1832,10 @@ def run_event_debate(args: argparse.Namespace) -> int:
         print(f"[Ollama] {model_id} を使用", flush=True)
         ollama_call_index = 0
 
-        def activate_persona_adapter(persona_id: str) -> str | None:
+        def activate_persona_adapter(persona_id: str | None) -> str | None:
             return None
 
-        def ask_json(system: str, user: str, max_tokens: int) -> tuple[str, dict | None]:
+        def backend_ask_json(system: str, user: str, max_tokens: int) -> tuple[str, dict | None]:
             nonlocal ollama_call_index
             ollama_call_index += 1
             parsed, meta = ask_ollama(
@@ -1676,6 +1853,20 @@ def run_event_debate(args: argparse.Namespace) -> int:
             raw = str(meta.pop("_raw_content"))
             return raw, parsed
 
+    model_calls: list[dict] = []
+
+    def ask_json(
+        system: str, user: str, max_tokens: int, phase: str
+    ) -> tuple[str, dict | None]:
+        started = time.perf_counter()
+        raw, parsed = backend_ask_json(system, user, max_tokens)
+        elapsed = time.perf_counter() - started
+        model_calls.append(
+            {"index": len(model_calls) + 1, "phase": phase, "seconds": round(elapsed, 3), "max_tokens": max_tokens}
+        )
+        print(f"[timing] {phase}: {elapsed:.1f}s (call {len(model_calls)})", flush=True)
+        return raw, parsed
+
     created_at = dt.datetime.now().astimezone()
     outdir = Path(args.out)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -1692,7 +1883,11 @@ def run_event_debate(args: argparse.Namespace) -> int:
         "domain": args.domain,
         "prompt_profile": args.prompt_profile,
         "seed": args.seed,
+        "execution": {"fast": bool(getattr(args, "fast", False)), **execution},
         "adapter_map": adapter_map,
+        "renderer_adapter": shared_renderer_adapter,
+        "renderer_schema_version": 3,
+        "adapter_scope": "utterance_renderer_v3_only",
         "adapter_fingerprints": {
             persona_id: {
                 "config_sha256": hashlib.sha256((Path(path) / "adapter_config.json").read_bytes()).hexdigest(),
@@ -1700,15 +1895,134 @@ def run_event_debate(args: argparse.Namespace) -> int:
             }
             for persona_id, path in adapter_map.items()
         },
+        "renderer_adapter_fingerprint": (
+            {
+                "config_sha256": hashlib.sha256(
+                    (Path(shared_renderer_adapter) / "adapter_config.json").read_bytes()
+                ).hexdigest(),
+                "weights_sha256": hashlib.sha256(
+                    (Path(shared_renderer_adapter) / "adapters.safetensors").read_bytes()
+                ).hexdigest(),
+            }
+            if shared_renderer_adapter
+            else None
+        ),
         "independent": {},
         "events": [],
         "reconciliation": [],
+        "renderer_batches": [],
     }
+    persona_configs = {persona["id"]: persona for persona in personas}
+    persona_names = {persona["id"]: persona["name"] for persona in personas}
+
+    def render_utterance_records(records: list[dict], phase: str) -> None:
+        if not records:
+            return
+        if getattr(args, "fast", False) and not adapter_map and not shared_renderer_adapter:
+            print(
+                f"[fast] {phase} rendererを省略し、検証済みstatementを表示します。",
+                flush=True,
+            )
+            for record in records:
+                record["target"]["utterance_warning"] = "fast mode skipped the model renderer"
+                record["target"]["renderer_batch_id"] = None
+                record["target"]["renderer_adapter"] = None
+            return
+        grouped: dict[tuple[str, int], list[dict]] = {}
+        group_counts: dict[str, int] = {}
+        for record in records:
+            base = record["persona_id"] if adapter_map else "shared"
+            key = (base, group_counts.get(base, 0) // 3)
+            grouped.setdefault(key, []).append(record)
+            group_counts[base] = group_counts.get(base, 0) + 1
+        for (group_key, chunk_index), batch in grouped.items():
+            persona = persona_configs[group_key] if adapter_map else None
+            adapter_path = activate_persona_adapter(
+                group_key if adapter_map else "shared" if shared_renderer_adapter else None
+            )
+            items = []
+            for record in batch:
+                item = {"id": record["id"], **record["payload"]}
+                item["speech_act"] = renderer_move_instruction(item.get("move"))
+                if persona is None:
+                    source = persona_configs[record["persona_id"]]
+                    item["speaker"] = source["name"]
+                items.append(item)
+            raw, parsed = ask_json(
+                renderer_system(persona),
+                json.dumps({"items": items}, ensure_ascii=False),
+                min(args.max_tokens, max(220, 80 + 90 * len(items))),
+                f"renderer:{phase}:{group_key}:{chunk_index}",
+            )
+            values, batch_warning = parse_renderer_utterances(
+                parsed, [record["id"] for record in batch]
+            )
+            batch_id = f"RB{len(run['renderer_batches']) + 1:02d}"
+            run["renderer_batches"].append(
+                {
+                    "batch_id": batch_id,
+                    "phase": phase,
+                    "persona_id": None if persona is None else group_key,
+                    "adapter": adapter_path,
+                    "request": {"items": items},
+                    "raw": raw,
+                    "warning": batch_warning,
+                }
+            )
+            for record in batch:
+                target = record["target"]
+                candidate = restore_claim_label(values.get(record["id"]), record["label"])
+                move = record.get("validation_move")
+                if move:
+                    utterance, warning = validate_dialogue_move(candidate, move)
+                else:
+                    utterance, warning = validate_dialogue_utterance(candidate)
+                if utterance is not None and not dialogue_matches_claim(utterance, record["label"]):
+                    utterance, warning = None, "renderer utterance does not match the frozen claim"
+                if utterance is not None and dialogue_selects_competing_claim(
+                    utterance, record.get("competitor_labels", [])
+                ):
+                    utterance, warning = None, "renderer utterance selects a competing frozen claim"
+                target_label = record.get("target_label")
+                if (
+                    utterance is not None
+                    and target_label
+                    and move in {"object", "agree"}
+                    and not reaction_is_aligned(utterance, record["label"], target_label, move)
+                ):
+                    utterance, warning = None, "renderer utterance follows the target instead of its own claim"
+                sanitized = False
+                if utterance is None and candidate is not None:
+                    repaired = sanitize_dialogue_move(candidate, move or "")
+                    if (
+                        repaired is not None
+                        and dialogue_matches_claim(repaired, record["label"])
+                        and not dialogue_selects_competing_claim(
+                            repaired, record.get("competitor_labels", [])
+                        )
+                    ):
+                        if not target_label or move not in {"object", "agree"} or reaction_is_aligned(
+                            repaired, record["label"], target_label, move
+                        ):
+                            utterance = repaired
+                            sanitized = True
+                if utterance is None:
+                    utterance = record["fallback"]
+                    origin = "statement_fallback"
+                else:
+                    origin = "model_renderer_v3_sanitized" if sanitized else "model_renderer_v3"
+                target["utterance"] = utterance
+                target["utterance_origin"] = origin
+                target["utterance_warning"] = batch_warning or warning
+                target["renderer_batch_id"] = batch_id
+                target["renderer_adapter"] = adapter_path
+
     write_json(partial_path, run)
     persona_claims: dict[str, list[dict]] = {}
     print("\n######## 独立再計算 / 他者の文章は非公開 ########", flush=True)
     for persona in personas:
-        adapter_path = activate_persona_adapter(persona["id"])
+        activate_persona_adapter(None)
+        adapter_path = adapter_map.get(persona["id"])
         available_codes = [code for code in preferences.get(persona["id"], []) if code in catalog]
         available_catalog = [
             {"code": code, "label": catalog[code]["label"], "supported_by": catalog[code]["supported_by"]}
@@ -1719,16 +2033,11 @@ def run_event_debate(args: argparse.Namespace) -> int:
             if args.prompt_profile != "baseline"
             else persona["objective"]
         )
-        speech_examples = persona.get("speech_examples") or [
-            "私の見立てでは、『{label}』が有力です。",
-            "この数字なら、『{label}』を検討する価値があります。",
-            "別の角度では、『{label}』も外せません。",
-        ]
         system = (
             f"あなたは{persona['name']}。他人格の文章は一切見ていない。{objective}。"
             "dataとclaim_catalogだけを独立確認する。台帳外の主張は禁止。"
             "statementは内部思考ではなく、選んだlabelとdataを根拠にした公開用の自然文1文とする。"
-            "utteranceは専門家同士の会話で実際に話す自然な日本語とし、codeやD番号を読み上げない。"
+            "会話文は別rendererが作るため生成しない。"
             "指定JSONだけを返す。"
         )
         prompt_payload = {
@@ -1737,19 +2046,13 @@ def run_event_debate(args: argparse.Namespace) -> int:
             "claim_catalog": available_catalog,
             "persona_focus": persona["objective"],
             "rule": (
-                "claim_catalogの3候補を重要順に3件返す。JSONはclaims配列のみ。"
-                "各要素はcode, data_ids, confidence, statement, utterance。ダミー語CODEは禁止。"
+                f"claim_catalogから重要順に{execution['claims_per_persona']}件返す。JSONはclaims配列のみ。"
+                "各要素のキーはcode, data_ids, confidence, statementだけ。ダミー語CODEは禁止。"
                 "data_idsは選んだcodeのsupported_byから必要なものを選ぶ。"
                 "statementは240字以内の自然な日本語1文で、選んだD番号を[D01]の形で必ず引用し、"
                 "labelの意味やdataにない事実を追加しない。"
-                "utteranceは320字以内の会話調1〜2文で、code、D番号、根拠番号という語を出さない。"
-                "『〜と判断します。根拠は〜です』の定型読み上げを避け、自分の見立てとして話す。"
-                "3件で同じ書き出しを繰り返さず、『現時点では』『可能性を重く見ています』を使わない。"
-                "labelをそのまま復唱するだけで終えず、選んだdataの要点を可能なら一つ自分の言葉で加える。"
             ),
         }
-        if args.prompt_profile != "orthogonal_bare":
-            prompt_payload["speech_style_examples"] = speech_examples
         if args.prompt_profile == "orthogonal_fewshot" and available_catalog:
             prompt_payload["format_example"] = {
                 "claims": [
@@ -1761,18 +2064,20 @@ def run_event_debate(args: argparse.Namespace) -> int:
                             f"{example['label']}と判断します。"
                             f"根拠は[{example['supported_by'][0]}]です。"
                         ),
-                        "utterance": speech_examples[index % len(speech_examples)].replace(
-                            "{label}", example["label"]
-                        ),
                     }
-                    for index, example in enumerate(available_catalog)
+                    for example in available_catalog[: execution["claims_per_persona"]]
                 ]
             }
         user = json.dumps(
             prompt_payload,
             ensure_ascii=False,
         )
-        raw, parsed = ask_json(system, user, args.max_tokens)
+        raw, parsed = ask_json(
+            system,
+            user,
+            execution["decision_max_tokens"],
+            f"independent:{persona['id']}",
+        )
         valid, rejected, warnings, seen_codes = [], [], [], set()
         for claim in (parsed or {}).get("claims", []):
             normalized, reason = validate_coded_claim(claim, ledger)
@@ -1790,38 +2095,14 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 else:
                     normalized["statement_origin"] = "model"
                 normalized["statement"] = statement
-                raw_utterance = claim.get("utterance")
-                candidate_utterance = restore_claim_label(
-                    raw_utterance,
-                    catalog[normalized["code"]]["label"],
-                )
-                utterance, utterance_reason = validate_dialogue_utterance(candidate_utterance)
-                if utterance is not None and not independent_utterance_is_aligned(
-                    utterance,
-                    normalized["code"],
-                    available_catalog,
-                ):
-                    utterance = None
-                    utterance_reason = "utterance does not match selected claim label"
-                if utterance is None:
-                    utterance = dialogue_fallback(statement)
-                    normalized["utterance_origin"] = "statement_fallback"
-                    warnings.append({
-                        "code": normalized["code"],
-                        "reason": utterance_reason,
-                        "field": "utterance",
-                    })
-                else:
-                    normalized["utterance_origin"] = (
-                        "model_sanitized" if candidate_utterance != raw_utterance else "model"
-                    )
-                normalized["utterance"] = utterance
+                normalized["utterance"] = dialogue_fallback(statement)
+                normalized["utterance_origin"] = "statement_fallback"
                 valid.append(normalized)
                 seen_codes.add(normalized["code"])
             else:
                 rejected.append({"claim": claim, "reason": reason or "duplicate code"})
         for code in preferences.get(persona["id"], []):
-            if len(valid) >= 3:
+            if len(valid) >= execution["claims_per_persona"]:
                 break
             if code in catalog and code not in seen_codes:
                 valid.append(
@@ -1847,7 +2128,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
             "valid": valid,
             "rejected": rejected,
             "warnings": warnings,
-            "adapter": adapter_path,
+            "adapter": None,
+            "renderer_adapter": adapter_path,
             "dialogue_render_raw": dialogue_render_raw,
             "dialogue_render_repair_raw": dialogue_render_repair_raw,
         }
@@ -1855,7 +2137,6 @@ def run_event_debate(args: argparse.Namespace) -> int:
         for claim in valid:
             origin = "モデル自然文" if claim["statement_origin"] == "model" else "ラベル補完"
             print(f"  [{origin}/{claim['origin']}] {claim['statement']}", flush=True)
-            print(f"    会話候補: {claim['utterance']} ({claim['utterance_origin']})", flush=True)
             print(f"    {claim['code']} <- {','.join(claim['data_ids'])}", flush=True)
         for item in rejected:
             print(f"  [失格] {item['reason']}", flush=True)
@@ -1863,171 +2144,37 @@ def run_event_debate(args: argparse.Namespace) -> int:
             print(f"  [自然文補完/{item.get('field', 'statement')}] {item['code']}: {item['reason']}", flush=True)
         write_json(partial_path, run)
 
-    events = schedule_claim_events(persona_claims, ledger, args.max_turns)
+    events = schedule_claim_events(persona_claims, ledger, execution["max_turns"])
     run["events"] = events
     write_json(partial_path, run)
     print("\n######## イベント駆動討論 / 異議・賛同を優先 ########", flush=True)
-    persona_names = {persona["id"]: persona["name"] for persona in personas}
-    persona_configs = {persona["id"]: persona for persona in personas}
     event_by_id = {event["claim_id"]: event for event in events}
+    event_renderer_records = []
     for event in events:
-        event["reaction_raw"] = None
-        event["reaction_repair_raw"] = None
-        event["reaction_warning"] = None
-        event["reaction_data_ids"] = []
-        if event["action"] in {"object", "agree_extend"}:
-            persona = persona_configs[event["persona_id"]]
-            activate_persona_adapter(persona["id"])
-            target_event = event_by_id[event["target_claim_id"]]
-            reaction_move = "object" if event["action"] == "object" else "agree"
-            move_rule = (
-                "相手の見方で抜ける条件を具体的に指摘し、その後に代案・修正版・採用条件のどれかを一つ示す。単なる否定は禁止。"
-                if event["action"] == "object"
-                else "賛同を自然に示し、相手と同じ文を繰り返さず専門観点を一つ加える。"
-            )
-            reaction_system = (
-                f"あなたは{persona['name']}。他者の原文は見ず、構造化された主張だけに応答する。"
-                "会話の発言だけをutteranceへ書き、内部codeやD番号は読み上げない。指定JSONだけを返す。"
-            )
-            reaction_user = json.dumps(
-                {
-                    "action": event["action"],
-                    "own_claim": {"label": event["label"], "data_ids": event["data_ids"]},
-                    "own_data": [item for item in data_view if item["id"] in event["data_ids"]],
-                    "target_claim": {"label": target_event["label"]},
-                    "persona_objective": persona["objective"],
-                    "rule": (
-                        f"{move_rule} utteranceは12〜320字の自然な会話調1〜3文。"
-                        "data_idsはown_claimのものから1件以上。JSONキーはutterance,data_idsだけ。"
-                    ),
-                    "format_example": {
-                        "utterance": (
-                            f"その案には懸念があります。代わりに、『{event['label']}』を検討したいです。"
-                            if event["action"] == "object"
-                            else f"その案には賛成です。加えて、『{event['label']}』も重要です。"
-                        ),
-                        "data_ids": event["data_ids"][:1],
-                    },
+        target_event = event_by_id.get(event["target_claim_id"])
+        move = renderer_event_move(event["action"])
+        event_renderer_records.append(
+            {
+                "id": event["claim_id"],
+                "persona_id": event["persona_id"],
+                "target": event,
+                "label": event["label"],
+                "target_label": target_event["label"] if target_event else None,
+                "validation_move": move if move in {"object", "agree"} else None,
+                "fallback": event["utterance"],
+                "payload": {
+                    "phase": "event",
+                    "move": move,
+                    "own_claim": event["label"],
+                    "target_claim": target_event["label"] if target_event else None,
+                    "evidence": [item["text"] for item in data_view if item["id"] in event["data_ids"]],
                 },
-                ensure_ascii=False,
-            )
-            reaction_raw, reaction_parsed = ask_json(reaction_system, reaction_user, min(args.max_tokens, 220))
-            initial_reaction_ids = (
-                reaction_parsed.get("data_ids") if isinstance(reaction_parsed, dict) else None
-            )
-            reaction_ids = initial_reaction_ids
-            reaction_sanitized = False
-            reaction_candidate = restore_claim_label(
-                reaction_parsed.get("utterance") if isinstance(reaction_parsed, dict) else None,
-                event["label"],
-            )
-            utterance, warning = validate_dialogue_move(
-                reaction_candidate,
-                reaction_move,
-            )
-            reaction_alignment = (
-                utterance is not None
-                and reaction_is_aligned(utterance, event["label"], target_event["label"], reaction_move)
-            )
-            reaction_valid = (
-                utterance is not None
-                and isinstance(reaction_ids, list)
-                and bool(reaction_ids)
-                and all(isinstance(value, str) for value in reaction_ids)
-                and set(reaction_ids).issubset(set(event["data_ids"]))
-                and reaction_alignment
-            )
-            if not reaction_valid:
-                event["reaction_warning"] = (
-                    warning
-                    or "reaction follows the target instead of its own claim"
-                    if not reaction_alignment
-                    else "reaction data_ids are unsupported"
-                )
-                repair_user = json.dumps(
-                    {
-                        "action": reaction_move,
-                        "own_claim": {"label": event["label"], "data_ids": event["data_ids"]},
-                        "own_data": [item for item in data_view if item["id"] in event["data_ids"]],
-                        "target_claim": {"label": target_event["label"]},
-                        "rule": (
-                            f"{move_rule} 相手側の根拠を選ばず、data_idsはown_claimからだけ選ぶ。"
-                            "utteranceにcodeやD番号を出さない。JSONキーはutterance,data_idsだけ。"
-                        ),
-                        "format_example": {
-                            "utterance": (
-                                f"ただ、そのまま進めるのは危険です。まず、『{event['label']}』を試すべきです。"
-                                if reaction_move == "object"
-                                else f"同じ結論です。『{event['label']}』という観点を付け加えます。"
-                            ),
-                            "data_ids": event["data_ids"][:1],
-                        },
-                    },
-                    ensure_ascii=False,
-                )
-                repair_raw, repair_parsed = ask_json(reaction_system, repair_user, min(args.max_tokens, 220))
-                repair_ids = repair_parsed.get("data_ids") if isinstance(repair_parsed, dict) else None
-                reaction_repair_candidate = restore_claim_label(
-                    repair_parsed.get("utterance") if isinstance(repair_parsed, dict) else None,
-                    event["label"],
-                )
-                utterance, repair_warning = validate_dialogue_move(
-                    reaction_repair_candidate,
-                    reaction_move,
-                )
-                reaction_ids = repair_ids
-                repair_alignment = (
-                    utterance is not None
-                    and reaction_is_aligned(utterance, event["label"], target_event["label"], reaction_move)
-                )
-                reaction_valid = (
-                    utterance is not None
-                    and isinstance(repair_ids, list)
-                    and bool(repair_ids)
-                    and all(isinstance(value, str) for value in repair_ids)
-                    and set(repair_ids).issubset(set(event["data_ids"]))
-                    and repair_alignment
-                )
-                event["reaction_repair_raw"] = repair_raw
-                if not reaction_valid:
-                    event["reaction_warning"] = (
-                        repair_warning
-                        or "reaction repair follows the target instead of its own claim"
-                        if not repair_alignment
-                        else "reaction repair data_ids are unsupported"
-                    )
-                    for candidate, candidate_ids in (
-                        (reaction_repair_candidate, repair_ids),
-                        (reaction_candidate, initial_reaction_ids),
-                        (event["utterance"], event["data_ids"]),
-                    ):
-                        sanitized = sanitize_dialogue_move(candidate, reaction_move)
-                        sanitized_valid = (
-                            sanitized is not None
-                            and isinstance(candidate_ids, list)
-                            and bool(candidate_ids)
-                            and all(isinstance(value, str) for value in candidate_ids)
-                            and set(candidate_ids).issubset(set(event["data_ids"]))
-                            and reaction_is_aligned(
-                                sanitized,
-                                event["label"],
-                                target_event["label"],
-                                reaction_move,
-                            )
-                        )
-                        if sanitized_valid:
-                            utterance = sanitized
-                            reaction_ids = candidate_ids
-                            reaction_valid = True
-                            reaction_sanitized = True
-                            break
-            if reaction_valid:
-                event["utterance"] = utterance
-                event["utterance_origin"] = (
-                    "model_sanitized" if reaction_sanitized else "model_reaction"
-                )
-                event["reaction_data_ids"] = list(dict.fromkeys(reaction_ids))
-            event["reaction_raw"] = reaction_raw
+            }
+        )
+    render_utterance_records(event_renderer_records, "event")
+    for event in events:
+        event["reaction_data_ids"] = event["data_ids"] if event["action"] in {"object", "agree_extend"} else []
+        event["reaction_warning"] = event.get("utterance_warning")
         target = f" -> {event['target_claim_id']}" if event["target_claim_id"] else ""
         print(
             f"{event['claim_id']} [{event['action_label']}]{target} {persona_names[event['persona_id']]}: "
@@ -2053,7 +2200,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
     previous_votes = {}
     persona_rank = {persona["id"]: index for index, persona in enumerate(personas)}
     dialogue_move_rank = {"agree": 0, "maintain": 1, "revise": 2}
-    for round_no in range(1, args.reconcile_rounds + 1):
+    for round_no in range(1, execution["reconcile_rounds"] + 1):
         print(f"\n######## すり合わせ {round_no} / 対立ごとの一問一答 ########", flush=True)
         votes = {}
         for pair in contested_pairs:
@@ -2061,11 +2208,13 @@ def run_event_debate(args: argparse.Namespace) -> int:
             pair_votes = {}
             print(f"論点: {pair[0]} vs {pair[1]}", flush=True)
             for persona in personas:
-                adapter_path = activate_persona_adapter(persona["id"])
+                activate_persona_adapter(None)
+                adapter_path = adapter_map.get(persona["id"])
                 system = (
                     f"あなたは{persona['name']}。最大化する効用は「{persona['utility']}」、"
                     f"最小化する損失は「{persona['loss']}」。"
-                    "検証済み2コードを比較し、選択と公開用の短い自然文を指定JSONで返す。"
+                    "検証済み2コードを比較し、選択と証拠付きstatementを指定JSONで返す。"
+                    "会話文は別rendererが作るため生成しない。"
                 )
                 pair_data_ids = sorted(set(catalog[pair[0]]["supported_by"]) | set(catalog[pair[1]]["supported_by"]))
                 prior_vote = previous_votes.get(key, {}).get(persona["id"], {})
@@ -2091,10 +2240,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
                             "data_idsは表示したdataから1〜2件。statementは240字以内の自然な日本語1文で、"
                             "選択したcodeのsupported_byにあるD番号だけを[D01]形式で引用する。"
                             "change_reasonは前ラウンドから選択を変えた時だけ、その理由とD番号を書く。"
-                            "変えていない時は空文字。utteranceはcodeやD番号を読まず、専門家同士の自然な会話にする。"
-                            "前の選択から変えるなら、前の判断をどう変えたか率直に話す。『確かに』『見落としていました』を常用しない。"
-                            "賛同、維持、変更で同じ書き出しを繰り返さず、自分の言葉で理由を一つ添える。"
-                            "JSONキーはchoice,data_ids,statement,change_reason,utteranceだけ。"
+                            "変えていない時は空文字。"
+                            "JSONキーはchoice,data_ids,statement,change_reasonだけ。"
                         ),
                         "format_example": {
                             "choice": pair[0],
@@ -2108,20 +2255,18 @@ def run_event_debate(args: argparse.Namespace) -> int:
                                 if previous_choice and previous_choice != pair[0]
                                 else ""
                             ),
-                            "utterance": dialogue_move_example(
-                                catalog[pair[0]]["label"],
-                                "revise"
-                                if previous_choice and previous_choice != pair[0]
-                                else "maintain" if previous_choice == pair[0] else "agree",
-                                persona_rank[persona["id"]] + round_no,
-                            ),
                         }
                         if args.prompt_profile == "orthogonal_fewshot"
                         else None,
                     },
                     ensure_ascii=False,
                 )
-                raw, parsed = ask_json(system, user, min(args.max_tokens, 340))
+                raw, parsed = ask_json(
+                    system,
+                    user,
+                    min(execution["decision_max_tokens"], 300),
+                    f"reconciliation:{round_no}:{key}:{persona['id']}",
+                )
                 allowed_choices = {*pair, "BOTH", "ABSTAIN"}
                 choice = parsed.get("choice") if isinstance(parsed, dict) else None
                 choice_origin = "model_json"
@@ -2174,19 +2319,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     if choice in catalog
                     else "両方を残す" if choice == "BOTH" else "判断を保留する"
                 )
-                raw_utterance = parsed.get("utterance") if isinstance(parsed, dict) else None
-                candidate_utterance = restore_claim_label(raw_utterance, selected_label)
-                utterance, utterance_warning = validate_dialogue_move(
-                    candidate_utterance,
-                    dialogue_move,
-                )
-                if utterance is None:
-                    utterance = dialogue_fallback(statement)
-                    utterance_origin = "statement_fallback"
-                else:
-                    utterance_origin = (
-                        "model_sanitized" if candidate_utterance != raw_utterance else "model"
-                    )
+                utterance = dialogue_fallback(statement)
+                utterance_origin = "statement_fallback"
+                utterance_warning = None
                 change_reason = ""
                 change_reason_origin = "not_required"
                 change_reason_warning = None
@@ -2209,7 +2344,6 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 repair_utterance_warning = None
                 if (
                     statement_reason is not None
-                    or utterance_warning is not None
                     or (changed and change_reason_warning is not None)
                 ):
                     repair_label = selected_label
@@ -2229,25 +2363,23 @@ def run_event_debate(args: argparse.Namespace) -> int:
                             "rule": (
                                 "statementはlabelを自然な日本語1文にし、allowed_data_idsだけを[D01]形式で引用する。"
                                 "change_reasonはchanged=trueの時だけ、前回から変えた理由とallowed_data_idsを引用する。"
-                                "utteranceはcodeやD番号を出さない自然な会話調。reviseなら前の判断から変えることを率直に述べ、"
-                                "agreeなら他者への賛同と自分の観点を述べ、maintainなら理由を短く話す。同じ口癖を繰り返さない。"
-                                "JSONキーはstatement,change_reason,utteranceだけ。"
+                                "JSONキーはstatement,change_reasonだけ。"
                             ),
                             "format_example": {
                                 "statement": f"{repair_label}と判断します。根拠は[{data_ids[0]}]です。",
                                 "change_reason": (
                                     f"前回より[{data_ids[0]}]を重視して選択を変更しました。" if changed else ""
                                 ),
-                                "utterance": dialogue_move_example(
-                                    repair_label,
-                                    dialogue_move,
-                                    persona_rank[persona["id"]] + round_no,
-                                ),
                             },
                         },
                         ensure_ascii=False,
                     )
-                    repair_raw, repair_parsed = ask_json(repair_system, repair_user, min(args.max_tokens, 280))
+                    repair_raw, repair_parsed = ask_json(
+                        repair_system,
+                        repair_user,
+                        min(execution["decision_max_tokens"], 240),
+                        f"reconciliation-repair:{round_no}:{key}:{persona['id']}",
+                    )
                     if statement_reason is not None:
                         repaired, repair_statement_warning = validate_public_statement(
                             repair_parsed.get("statement") if isinstance(repair_parsed, dict) else None,
@@ -2264,33 +2396,6 @@ def run_event_debate(args: argparse.Namespace) -> int:
                             if sanitized is not None:
                                 statement = sanitized
                                 statement_origin = "model_sanitized"
-                    if utterance_warning is not None:
-                        raw_repaired_utterance = (
-                            repair_parsed.get("utterance") if isinstance(repair_parsed, dict) else None
-                        )
-                        repair_candidate_utterance = restore_claim_label(
-                            raw_repaired_utterance,
-                            repair_label,
-                        )
-                        repaired_utterance, repair_utterance_warning = validate_dialogue_move(
-                            repair_candidate_utterance,
-                            dialogue_move,
-                        )
-                        if repaired_utterance is not None:
-                            utterance = repaired_utterance
-                            utterance_origin = (
-                                "model_sanitized"
-                                if repair_candidate_utterance != raw_repaired_utterance
-                                else "model_repair"
-                            )
-                        else:
-                            sanitized_utterance = sanitize_dialogue_move(
-                                repair_candidate_utterance,
-                                dialogue_move,
-                            )
-                            if sanitized_utterance is not None:
-                                utterance = sanitized_utterance
-                                utterance_origin = "model_sanitized"
                     if changed and change_reason_warning is not None:
                         repaired_reason, repair_change_reason_warning = validate_public_statement(
                             repair_parsed.get("change_reason") if isinstance(repair_parsed, dict) else None,
@@ -2328,10 +2433,46 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     "repair_statement_warning": repair_statement_warning,
                     "repair_utterance_warning": repair_utterance_warning,
                     "repair_change_reason_warning": repair_change_reason_warning,
-                    "adapter": adapter_path,
+                    "adapter": None,
+                    "renderer_adapter": adapter_path,
                 }
                 pair_votes[persona["id"]] = vote
             votes[key] = pair_votes
+            reconciliation_renderer_records = []
+            for persona_id, vote in pair_votes.items():
+                choice = vote["choice"]
+                selected_label = (
+                    catalog[choice]["label"]
+                    if choice in catalog
+                    else "両方を残す" if choice == "BOTH" else "判断を保留する"
+                )
+                reconciliation_renderer_records.append(
+                    {
+                        "id": f"R{round_no}:{key}:{persona_id}",
+                        "persona_id": persona_id,
+                        "target": vote,
+                        "label": selected_label,
+                        "target_label": None,
+                        "competitor_labels": [
+                            catalog[code]["label"]
+                            for code in pair
+                            if catalog[code]["label"] != selected_label
+                        ],
+                        "validation_move": vote["dialogue_move"],
+                        "fallback": vote["utterance"],
+                        "payload": {
+                            "phase": "reconciliation",
+                            "move": vote["dialogue_move"],
+                            "previous_choice": vote["previous_choice"],
+                            "selected_claim": selected_label,
+                            "alternatives": [catalog[code]["label"] for code in pair],
+                            "evidence": [
+                                item["text"] for item in data_view if item["id"] in vote["data_ids"]
+                            ],
+                        },
+                    }
+                )
+            render_utterance_records(reconciliation_renderer_records, f"reconciliation-{round_no}")
             for persona_id, vote in sorted(
                 pair_votes.items(),
                 key=lambda item: (dialogue_move_rank[item[1]["dialogue_move"]], persona_rank[item[0]]),
@@ -2366,12 +2507,22 @@ def run_event_debate(args: argparse.Namespace) -> int:
 
     summary = synthesize_event_summary(events, catalog, run["reconciliation"], len(personas))
     run["summary"] = summary
+    run["runtime"] = {
+        "model_call_count": len(model_calls),
+        "model_seconds": round(sum(call["seconds"] for call in model_calls), 3),
+        "elapsed_seconds": round(time.perf_counter() - runtime_started, 3),
+        "calls": model_calls,
+    }
     run["metrics"] = event_run_metrics(run)
     print("\n######## 検証済み統合 ########", flush=True)
     print("複数人格が合意:", ", ".join(summary["consensus"]) or "なし", flush=True)
     print("異議なしの検証済み主張:", ", ".join(summary["unopposed_supported"]) or "なし", flush=True)
     print("解決した対立:", summary["resolved_conflicts"] or "なし", flush=True)
     print("対立継続:", summary["unresolved_conflicts"] or "なし", flush=True)
+    print(
+        f"実行時間: {run['runtime']['elapsed_seconds']:.1f}s / model call {len(model_calls)}回",
+        flush=True,
+    )
     print("RSI shadow指標:", json.dumps(run["metrics"], ensure_ascii=False), flush=True)
     write_json(partial_path, run)
     partial_path.replace(final_path)
@@ -2414,8 +2565,12 @@ def mark_event_run(args: argparse.Namespace) -> int:
 def export_dialogue_sft(args: argparse.Namespace) -> int:
     if args.min_per_persona < 1:
         raise ValueError("min-per-persona must be positive")
+    batch_size = getattr(args, "batch_size", 1)
+    if batch_size < 1:
+        raise ValueError("batch-size must be positive")
     domains = load_domains()
     grouped: dict[tuple[str, str], list[dict]] = {}
+    frozen_splits: dict[tuple[str, str], dict[str, list[dict]]] = {}
     seen: dict[tuple[str, str], list[str]] = {}
     sources: dict[tuple[str, str], set[str]] = {}
     excluded = {"unapproved": 0, "fallback": 0, "mechanical": 0, "duplicate": 0, "invalid": 0}
@@ -2543,6 +2698,14 @@ def export_dialogue_sft(args: argparse.Namespace) -> int:
     for (domain, persona_id), examples in sorted(grouped.items()):
         target = out / domain / persona_id
         splits = split_examples(examples)
+        frozen_splits[(domain, persona_id)] = splits
+        utterance_counts = {name: len(rows) for name, rows in splits.items()}
+        if batch_size > 1:
+            persona = next(item for item in domains[domain]["personas"] if item["id"] == persona_id)
+            splits = {
+                name: batch_renderer_examples(rows, persona, batch_size)
+                for name, rows in splits.items()
+            }
         for name, rows in splits.items():
             write_jsonl(target / f"{name}.jsonl", rows)
         ready = (
@@ -2554,18 +2717,64 @@ def export_dialogue_sft(args: argparse.Namespace) -> int:
             "domain": domain,
             "persona_id": persona_id,
             "counts": {name: len(rows) for name, rows in splits.items()},
+            "utterance_counts": utterance_counts,
             "total": len(examples),
             "minimum": args.min_per_persona,
+            "renderer_schema": 3 if batch_size > 1 else 2,
+            "batch_size": batch_size,
             "source_run_sha256": sorted(sources[(domain, persona_id)]),
             "ready_for_training": ready,
         }
         write_json(target / "manifest.json", manifest)
         manifests[f"{domain}/{persona_id}"] = manifest
         print(f"{domain}/{persona_id}: {len(examples)}/{args.min_per_persona} ready={ready}")
+    if getattr(args, "shared_renderer", False):
+        for domain in sorted({key[0] for key in frozen_splits}):
+            shared_splits = {}
+            shared_utterance_counts = {}
+            for split_name in ("train", "valid", "test"):
+                persona_rows = []
+                for persona_id in sorted(key[1] for key in frozen_splits if key[0] == domain):
+                    persona = next(
+                        item for item in domains[domain]["personas"] if item["id"] == persona_id
+                    )
+                    persona_rows.append(
+                        [(persona, row) for row in frozen_splits[(domain, persona_id)][split_name]]
+                    )
+                interleaved = [
+                    row
+                    for group in itertools.zip_longest(*persona_rows)
+                    for row in group
+                    if row is not None
+                ]
+                shared_utterance_counts[split_name] = len(interleaved)
+                shared_splits[split_name] = batch_shared_renderer_examples(interleaved, batch_size)
+            target = out / domain / "shared_renderer"
+            for split_name, rows in shared_splits.items():
+                write_jsonl(target / f"{split_name}.jsonl", rows)
+            shared_manifest = {
+                "domain": domain,
+                "persona_id": "shared_renderer",
+                "counts": {name: len(rows) for name, rows in shared_splits.items()},
+                "utterance_counts": shared_utterance_counts,
+                "total": sum(shared_utterance_counts.values()),
+                "renderer_schema": 3,
+                "batch_size": batch_size,
+                "ready_for_training": all(shared_splits.values()),
+            }
+            write_json(target / "manifest.json", shared_manifest)
+            manifests[f"{domain}/shared_renderer"] = shared_manifest
+            print(
+                f"{domain}/shared_renderer: {shared_manifest['total']} utterances / "
+                f"{sum(shared_manifest['counts'].values())} batches",
+                flush=True,
+            )
     summary = {
         "schema_version": 1,
         "generated_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
         "minimum_per_persona": args.min_per_persona,
+        "renderer_schema": 3 if batch_size > 1 else 2,
+        "batch_size": batch_size,
         "personas": manifests,
         "excluded": excluded,
         "all_included_personas_ready": bool(manifests)
@@ -2739,7 +2948,19 @@ def parser() -> argparse.ArgumentParser:
     event_debate.add_argument("--temperature", type=float, default=0.1)
     event_debate.add_argument("--seed", type=int, default=20260825)
     event_debate.add_argument("--prompt-profile", choices=EVENT_PROMPT_PROFILES, default="orthogonal_fewshot")
-    event_debate.add_argument("--adapter-map", help="persona idからMLX LoRA directoryへのJSON map")
+    event_debate.add_argument(
+        "--adapter-map",
+        help="persona idからutterance renderer v3用MLX LoRA directoryへのJSON map（判断には不使用）",
+    )
+    event_debate.add_argument(
+        "--renderer-adapter",
+        help="全人格を1バッチ描画する共有utterance renderer v3のMLX LoRA directory",
+    )
+    event_debate.add_argument(
+        "--fast",
+        action="store_true",
+        help="2主張/人格、最大2発言/人格、すり合わせなしでlive shadowを軽量実行",
+    )
     event_debate.set_defaults(handler=run_event_debate)
 
     rsi = subcommands.add_parser("rsi-shadow", help="gate one bounded prompt/config RSI shadow round")
@@ -2765,6 +2986,17 @@ def parser() -> argparse.ArgumentParser:
     dialogue_export.add_argument("runs", nargs="+")
     dialogue_export.add_argument("--out", default="data/dialogue_sft")
     dialogue_export.add_argument("--min-per-persona", type=int, default=30)
+    dialogue_export.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help="2以上でruntime同形のutterance renderer v3バッチJSONLを出力",
+    )
+    dialogue_export.add_argument(
+        "--shared-renderer",
+        action="store_true",
+        help="人格metadata付きの共有renderer v3 datasetも出力",
+    )
     dialogue_export.set_defaults(handler=export_dialogue_sft)
 
     mark = subcommands.add_parser("mark", help="explicitly approve or reject one run for training")
