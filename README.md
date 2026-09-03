@@ -17,6 +17,7 @@
 - イベント討論では、固定台帳にある主張コードと `D01` 形式の証拠IDだけを許可
 - 内部の証拠文 `statement` と、表示専用の会話文 `utterance` を分離し、LoRAは後者だけに限定
 - 異議・賛同は相手の原文ではなく構造化主張だけを見て会話調で応答
+- renderer失敗時も、異議・賛同・維持・変更ごとの複数templateをローテーションして自然文表示
 - 証拠のない主張は自動失格し、対立は最大ラウンド内で3/4に達した時点で終了
 - 人格ごとに効用と損失を分け、反論は前提否定・反例・トレードオフの型を使用
 - prompt/configだけを比較するbounded RSI shadow gateを同梱
@@ -90,7 +91,7 @@ live shadow向けの軽量経路:
   --fast
 ```
 
-`--fast`は各人格2主張、最大2発言/人格、すり合わせ0回です。Adapterがない場合は会話rendererも呼ばず、検証済み`statement`から表示文を作ります。独立判断とD番号validatorは維持しますが、自然文Weightと合意形成を省くためhard gateは通らず、live shadow専用です。Qwen3-1.7Bの未学習EV台帳では4 call、8/8 model claim、失格0、29.5秒でした。
+`--fast`は各人格2主張、最大2発言/人格、すり合わせ0回です。Adapterがない場合は会話rendererも呼ばず、検証済み`statement`またはmove別templateから表示文を作ります。独立判断とD番号validatorは維持しますが、自然文Weightと合意形成を省くためhard gateは通らず、live shadow専用です。Qwen3-1.7Bの未学習EV台帳では8 eventが4 call・29.5秒、4 eventのv4再実測が4 call・23.2秒でした。
 
 モデルには他人格の文章を渡さず、検証済みの主張コードと証拠IDだけを共有します。採決に使うのは検証済みコードだけです。
 
@@ -117,7 +118,7 @@ Generalは既存台帳では従来の3人格を保ちます。`role_preferences`
 
 ### utterance renderer LoRA
 
-構造判断は常にBaseで行い、claim code、証拠、statement、投票が確定した後だけLoRAをロードします。人格別Adapterは最大3発言を1batchとして描画します。
+構造判断は常にBaseで行い、claim code、証拠、statement、投票が確定した後だけLoRAをロードします。現在のAdapter学習分布に合わせ、Adapter使用時は1発言ずつ描画します。AdapterなしのBase rendererだけ最大3発言をまとめます。
 
 ```json
 {
@@ -149,7 +150,7 @@ Generalは既存台帳では従来の3人格を保ちます。`role_preferences`
   --renderer-adapter <shared-renderer-adapter>
 ```
 
-2026-08-29時点のv3 Weight候補は全て未学習move transferで不合格のため、上記は研究用interfaceであり推奨Weightはありません。AdapterなしのBase構造判断が既定です。
+2026-09-03時点のv4を含むWeight候補は、別topicの直接valid率が昇格水準に届かないため、上記は研究用interfaceであり推奨Weightはありません。AdapterなしのBase構造判断が既定です。
 
 台風データは2026年8月25日15時50分JST時点の再現用スナップショットで、現在の予報には使えません。
 
@@ -195,6 +196,8 @@ v2では`「現時点では」`、`「可能性を重く見ています」`、`�
 
 v3では学習JSONLとruntimeを同じ`items -> utterances`契約にし、LoRAを表示用rendererへ完全分離しました。人格別pilotと共有rendererの実Weightはschemaを学習しましたが、未学習payloadでmove混同・主張省略・反復崩壊が残ったため全て非昇格です。一方、Adapterなしの`--fast`は構造判断4 call・29.5秒まで短縮しました。
 
+v4では6 train topicとemail/EV holdoutを分離し、scheduler上で到達可能なpersona×moveを最低6件へ均等化しました。共有step160はEVでBase 0/18から14/18へ改善しましたが、emailは5/16、実走Weight由来1/4に留まったため非昇格です。無効な会話文はmove別templateへ安全に戻し、Adapterなしfastは4 call・23.2秒で自然な異議文を表示しました。
+
 ## 軽量Weight実験
 
 Pythonが正解を厳密生成する有限集合カリキュラムを作れます。
@@ -219,6 +222,8 @@ General Dialogue v1の人格別LoRAは全て凍結test lossを改善しました
 General Dialogue v2も4人格のLoRA Weight本体は作成済みです。凍結loss、未学習transfer 0/4、実行設計者step16追加学習の停止理由、全SHAは [General Dialogue Weight v2実験記録](docs/general_dialogue_weight_v2_20260828.md) にあります。現行運用はBase + v2 prompt / sanitizer / hard gateです。
 
 General Dialogue v3はLoRAをutterance rendererだけへ分離し、人格別・共有・早期停止を比較しました。Weight本体、29.5秒のfast実測、全SHA、非昇格理由は [General Dialogue utterance renderer v3実験記録](docs/general_dialogue_weight_v3_20260829.md) にあります。
+
+General Dialogue v4はvalidatorの誤失格修正、到達可能moveの均等化、共有・move均衡・人格別Weightを比較しました。全評価、23.2秒のfast実測、SHA、停止理由は [General Dialogue utterance renderer v4実験記録](docs/general_dialogue_weight_v4_20260903.md) にあります。
 
 ## bounded RSI shadow
 

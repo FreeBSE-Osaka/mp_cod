@@ -336,6 +336,15 @@ class CodModelTest(unittest.TestCase):
         )
         self.assertIsNone(reason)
         self.assertIn("見方を改めます", utterance)
+        proposal, reason = cod_model.validate_dialogue_move(
+            "私の見立てでは、対象を絞ったpilotから始めるのが妥当です。", "propose"
+        )
+        self.assertIsNone(reason)
+        proposal, reason = cod_model.validate_dialogue_move(
+            "その案には賛成です。対象を絞ったpilotから始めます。", "propose"
+        )
+        self.assertIsNone(proposal)
+        self.assertIn("must not pretend", reason)
         objection, reason = cod_model.validate_dialogue_move(
             "ただ、その案では処理上限を超えます。", "object"
         )
@@ -347,14 +356,39 @@ class CodModelTest(unittest.TestCase):
         )
         self.assertIsNone(reason)
         self.assertIn("代わりに", objection)
+        objection, reason = cod_model.validate_dialogue_move(
+            "全展開では予算超過を避けるには不十分です。batch job限定pilotを代案にします。",
+            "object",
+        )
+        self.assertIsNone(reason)
+        agreement, reason = cod_model.validate_dialogue_move(
+            "予算超過を重大視する提案には賛同します。", "agree"
+        )
+        self.assertIsNone(reason)
+        self.assertIn("賛同", agreement)
         objection = cod_model.sanitize_dialogue_move(
             "私の見立てでは、全networkへ展開する案が有力です。",
             "object",
         )
         self.assertTrue(objection.startswith("その案には懸念があります。代わりに、"))
-        for move in ("agree", "maintain", "revise"):
-            examples = [cod_model.dialogue_move_example("対象を絞ったpilotを行う", move, index) for index in range(3)]
-            self.assertEqual(len(set(examples)), 3)
+        self.assertIsNone(
+            cod_model.sanitize_dialogue_move(
+                "その案には賛成です。代案として対象を絞ったpilotを試します。",
+                "object",
+            )
+        )
+        rewritten = cod_model.sanitize_dialogue_move(
+            "その案には、『対象を絞ったpilotを行う』という観点も外せません。",
+            "object",
+        )
+        self.assertNotIn("代わりに、その案には", rewritten)
+        self.assertIsNone(cod_model.sanitize_dialogue_move("その案には賛成です。", "agree"))
+        for move in ("object", "agree", "maintain", "revise"):
+            examples = [
+                cod_model.dialogue_move_example("対象を絞ったpilotを行う", move, index)
+                for index in range(len(cod_model.MOVE_UTTERANCE_TEMPLATES[move]))
+            ]
+            self.assertEqual(len(set(examples)), len(examples))
             self.assertTrue(all("確かに" not in example for example in examples))
         self.assertEqual(
             cod_model.sanitize_dialogue_move(
@@ -422,6 +456,34 @@ class CodModelTest(unittest.TestCase):
             cod_model.dialogue_matches_claim(
                 "都市部depotの道路工事map未更新を遅延の交絡候補として検証します。",
                 "道路工事mapを更新した都市部depotでpilotを先に行う",
+            )
+        )
+        self.assertTrue(
+            cod_model.dialogue_matches_claim(
+                "運用予算は20%までですが、全展開では41%増えています。この超過を重大視します。",
+                "cloud費41%増が予算上限20%を超える事実を重大視する",
+            )
+        )
+        self.assertTrue(
+            cod_model.reaction_is_aligned(
+                "全workload展開では予算を守るには不十分です。batch jobを分離したautoscaling pilotを代案にします。",
+                "batch jobを分離してautoscaling pilotを先に行う",
+                "予測autoscalingを全workloadへ展開する",
+                "object",
+            )
+        )
+        self.assertTrue(
+            cod_model.dialogue_is_aligned(
+                "その案には賛成です。満足度が上がり、処理時間も短縮できることがポイントです。",
+                "処理時間と満足度の改善を優先してAI返信支援を全agentへ展開する",
+                ["誤案内が集中する請求例外queueでAI返信支援pilotを先に行う"],
+            )
+        )
+        self.assertFalse(
+            cod_model.dialogue_is_aligned(
+                "その案には賛成です。",
+                "処理時間と満足度の改善を優先してAI返信支援を全agentへ展開する",
+                ["誤案内が集中する請求例外queueでAI返信支援pilotを先に行う"],
             )
         )
         claims = [

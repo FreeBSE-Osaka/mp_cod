@@ -47,6 +47,12 @@ MODEL_UTTERANCE_ORIGINS = {
     "model_renderer_v3_sanitized",
 }
 MOVE_UTTERANCE_TEMPLATES = {
+    "object": (
+        "ただ、その案には懸念があります。代わりに、『{label}』を先に試すべきです。",
+        "その結論には異議があります。まず『{label}』で条件を確かめる案を提案します。",
+        "そのまま広げるのは危険です。『{label}』を採用条件として先に検証したいです。",
+        "問題を避けるなら、一度『{label}』へ修正して進めるべきです。",
+    ),
     "agree": (
         "その案には賛成です。私としては、『{label}』という点も大事だと思います。",
         "同じ結論です。『{label}』を理由に加えたいです。",
@@ -1230,11 +1236,23 @@ def validate_dialogue_move(utterance: object, move: str) -> tuple[str | None, st
     normalized, reason = validate_dialogue_utterance(utterance)
     if normalized is None:
         return None, reason
+    if move == "propose" and any(
+        marker in normalized
+        for marker in (
+            "その案", "賛成", "賛同", "同意", "同感", "前の見方", "判断を変え", "結論を維持",
+        )
+    ):
+        return None, "propose must not pretend to answer or revise another claim"
     markers = {
-        "object": ("いえ", "ただ", "しかし", "その見方", "見落と", "抜け", "懸念"),
-        "agree": ("賛成", "同意", "私も", "同じ見方", "同じ結論"),
-        "maintain": ("維持", "引き続き", "変わりません", "見方です"),
-        "revise": ("確かに", "見落と", "改め", "修正", "考え直", "結論を変え"),
+        "object": (
+            "いえ", "ただ", "しかし", "その見方", "見落と", "抜け", "懸念",
+            "不十分", "問題", "欠陥", "反対", "異議", "危険", "難しい", "許容範囲を超え",
+        ),
+        "agree": ("賛成", "賛同", "同意", "同感", "支持", "私も", "同じ見方", "同じ結論"),
+        "maintain": (
+            "維持", "引き続き", "変わりません", "変えません", "同じ判断", "見方です", "見方は同じ",
+        ),
+        "revise": ("確かに", "見落と", "改め", "修正", "変更", "切り替え", "考え直", "結論を変え"),
     }
     required = markers.get(move)
     if required and not any(marker in normalized for marker in required):
@@ -1252,15 +1270,35 @@ def is_mechanical_utterance(utterance: str) -> bool:
 
 
 def reaction_is_aligned(utterance: str, own_label: str, target_label: str, action: str) -> bool:
-    if not dialogue_matches_claim(utterance, own_label):
+    if not dialogue_is_aligned(utterance, own_label, [target_label]):
         return False
     if action != "object":
         return True
-    return similarity(utterance, own_label) >= similarity(utterance, target_label)
+    return not dialogue_selects_competing_claim(utterance, [target_label])
 
 
 def dialogue_matches_claim(utterance: str, label: str) -> bool:
-    return label in utterance or similarity(utterance, label) >= 0.3
+    if label in utterance or similarity(utterance, label) >= 0.3:
+        return True
+    utterance_ngrams = normalized_ngrams(utterance)
+    label_ngrams = normalized_ngrams(label)
+    directional_coverage = (
+        len(utterance_ngrams & label_ngrams) / len(label_ngrams) if label_ngrams else 0.0
+    )
+    if directional_coverage >= 0.45:
+        return True
+    salient = set(re.findall(r"[a-z][a-z0-9._+-]*|\d+(?:\.\d+)?%?", label.casefold()))
+    numeric = {token for token in salient if any(character.isdigit() for character in token)}
+    matched = {token for token in salient if token in utterance.casefold()}
+    return bool(numeric) and len(matched) >= 2 and len(matched) / len(salient) >= 0.6
+
+
+def dialogue_is_aligned(utterance: str, label: str, competitors: list[str]) -> bool:
+    if dialogue_matches_claim(utterance, label):
+        return True
+    selected = similarity(utterance, label)
+    competing = max((similarity(utterance, value) for value in competitors), default=0.0)
+    return selected >= 0.04 and selected >= competing + 0.02
 
 
 def independent_utterance_is_aligned(utterance: str, code: str, claims: list[dict]) -> bool:
@@ -1287,6 +1325,16 @@ def sanitize_dialogue_move(utterance: object, move: str) -> str | None:
     normalized, _ = validate_dialogue_move(visible, move)
     if normalized is not None:
         return normalized
+    if move == "object" and visible.startswith("その案には、"):
+        visible = visible.removeprefix("その案には、")
+    if move == "object" and any(
+        marker in visible for marker in ("賛成", "賛同", "同意", "同感", "支持")
+    ) and not any(marker in visible for marker in ("ただ", "しかし", "懸念", "異議", "不十分")):
+        return None
+    if move == "agree" and any(
+        marker in visible for marker in ("賛成", "賛同", "同意", "同感", "支持")
+    ):
+        return None
     prefixes = {
         "object": "その案には懸念があります。代わりに、",
         "agree": "その案に賛成です。",
@@ -1924,15 +1972,19 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 flush=True,
             )
             for record in records:
-                record["target"]["utterance_warning"] = "fast mode skipped the model renderer"
-                record["target"]["renderer_batch_id"] = None
-                record["target"]["renderer_adapter"] = None
+                target = record["target"]
+                target["utterance"] = record["fallback"]
+                target["utterance_origin"] = record.get("fallback_origin", "statement_fallback")
+                target["utterance_warning"] = "fast mode skipped the model renderer"
+                target["renderer_batch_id"] = None
+                target["renderer_adapter"] = None
             return
         grouped: dict[tuple[str, int], list[dict]] = {}
         group_counts: dict[str, int] = {}
+        batch_limit = 1 if shared_renderer_adapter or adapter_map else 3
         for record in records:
             base = record["persona_id"] if adapter_map else "shared"
-            key = (base, group_counts.get(base, 0) // 3)
+            key = (base, group_counts.get(base, 0) // batch_limit)
             grouped.setdefault(key, []).append(record)
             group_counts[base] = group_counts.get(base, 0) + 1
         for (group_key, chunk_index), batch in grouped.items():
@@ -1977,7 +2029,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     utterance, warning = validate_dialogue_move(candidate, move)
                 else:
                     utterance, warning = validate_dialogue_utterance(candidate)
-                if utterance is not None and not dialogue_matches_claim(utterance, record["label"]):
+                if utterance is not None and not dialogue_is_aligned(
+                    utterance, record["label"], record.get("competitor_labels", [])
+                ):
                     utterance, warning = None, "renderer utterance does not match the frozen claim"
                 if utterance is not None and dialogue_selects_competing_claim(
                     utterance, record.get("competitor_labels", [])
@@ -1996,7 +2050,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     repaired = sanitize_dialogue_move(candidate, move or "")
                     if (
                         repaired is not None
-                        and dialogue_matches_claim(repaired, record["label"])
+                        and dialogue_is_aligned(
+                            repaired, record["label"], record.get("competitor_labels", [])
+                        )
                         and not dialogue_selects_competing_claim(
                             repaired, record.get("competitor_labels", [])
                         )
@@ -2008,7 +2064,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                             sanitized = True
                 if utterance is None:
                     utterance = record["fallback"]
-                    origin = "statement_fallback"
+                    origin = record.get("fallback_origin", "statement_fallback")
                 else:
                     origin = "model_renderer_v3_sanitized" if sanitized else "model_renderer_v3"
                 target["utterance"] = utterance
@@ -2150,9 +2206,14 @@ def run_event_debate(args: argparse.Namespace) -> int:
     print("\n######## イベント駆動討論 / 異議・賛同を優先 ########", flush=True)
     event_by_id = {event["claim_id"]: event for event in events}
     event_renderer_records = []
-    for event in events:
+    for event_index, event in enumerate(events):
         target_event = event_by_id.get(event["target_claim_id"])
         move = renderer_event_move(event["action"])
+        move_fallback = (
+            dialogue_move_example(event["label"], move, event_index)
+            if move in MOVE_UTTERANCE_TEMPLATES
+            else event["utterance"]
+        )
         event_renderer_records.append(
             {
                 "id": event["claim_id"],
@@ -2160,8 +2221,11 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 "target": event,
                 "label": event["label"],
                 "target_label": target_event["label"] if target_event else None,
-                "validation_move": move if move in {"object", "agree"} else None,
-                "fallback": event["utterance"],
+                "validation_move": move,
+                "fallback": move_fallback,
+                "fallback_origin": (
+                    "template_fallback" if move in MOVE_UTTERANCE_TEMPLATES else "statement_fallback"
+                ),
                 "payload": {
                     "phase": "event",
                     "move": move,
@@ -2459,7 +2523,12 @@ def run_event_debate(args: argparse.Namespace) -> int:
                             if catalog[code]["label"] != selected_label
                         ],
                         "validation_move": vote["dialogue_move"],
-                        "fallback": vote["utterance"],
+                        "fallback": dialogue_move_example(
+                            selected_label,
+                            vote["dialogue_move"],
+                            persona_rank[persona_id] + round_no,
+                        ),
+                        "fallback_origin": "template_fallback",
                         "payload": {
                             "phase": "reconciliation",
                             "move": vote["dialogue_move"],
