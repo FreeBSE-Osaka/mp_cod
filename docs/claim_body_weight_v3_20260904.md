@@ -130,6 +130,22 @@ EVの公開発言は次のとおり。
 
 4人格の投票はBaseが独立生成し、Weightは確定後の本文しか見ていない。
 
+## Validated claim cache
+
+同じclaimがeventとreconciliationで繰り返されても、本文は同じでmoveだけが異なる。valid済み本文をclaim label単位でrun内cacheし、ラウンドではコード側のagree / maintain / revise prefixだけを付け直すようにした。不合格本文はcacheしない。
+
+同じEV 2 event / 1 roundを変更前後で比較した。
+
+| Metric | Before | Cached | Change |
+|---|---:|---:|---:|
+| Body model calls | 6 | 2 | -66.7% |
+| Total model calls | 14 | 10 | -28.6% |
+| Elapsed | 52.5秒 | 41.9秒 | -20.2% |
+| Weight utterances | 6/6 | 6/6 | unchanged |
+| Hard gate | pass | pass | unchanged |
+
+event発言、4人格の投票、表示文、変更理由、最終summaryは旧runと完全一致した。`renderer_batches.record_ids`へ全再利用先、各発言の`renderer_cached`、metricsへ`body_renderer_model_calls / body_renderer_cache_hits`を保存する。
+
 ## v4 stop result
 
 runtimeと完全一致するclaim-only datasetでv3から[`configs/claim-body-v4.yaml`](../configs/claim-body-v4.yaml)を使って32 step追加学習した。v4 step160は外部valid `15/15`を維持したが、exact politeが`14/15`から`13/15`へ下がったため非昇格とした。loss低下だけでは親を置換しない。
@@ -159,6 +175,7 @@ external 15 cases    8491a38789a22444eeb0942b9f5969a21fb3cf3ae5411757dc981173345
 email runtime        9178d81a2be5ba218b8694fc252e39b281c7e952e7d0487e5b4957baf38dac03
 EV runtime           fb3b2cc3b94226ebb4bb7b19c63d26b90722ed2c94fa3d58a0ec64a0b5b5a89c
 Bike runtime         3424c66152ab6a225a7ca8ea304af7ab4a516a0362cd337525b5ff3bc9a90f1a
+EV cached runtime    a56a7d06d2b2edb054f9c536d27adc11535caf5808747e80de3a66631641f87e
 v4 dataset manifest  bc978b4d7ada314395c050cdba4121727465fc2841ff2966c109a2365a0a1376
 v4 training config   5e8f1ff7e12d558c1b7d22df2a0d7fb5808ab54be0d38c00bd2c5447136a700f
 v4 adapter weights   749b80dc2666061246f55d1b5a59012c6291da4646127bca1f750a16a354b9e9

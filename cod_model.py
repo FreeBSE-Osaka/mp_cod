@@ -1783,6 +1783,12 @@ def event_run_metrics(run: dict) -> dict:
         if public_statement_total
         else 0.0
     )
+    public_records = events + vote_records
+    body_renderer_batches = [
+        batch
+        for batch in run.get("renderer_batches") or []
+        if batch.get("renderer_kind") in {"claim_body_v1", "claim_body_v2"}
+    ]
     dialogue_records = [(event.get("utterance", ""), event.get("code")) for event in events] + [
         (vote.get("utterance", ""), vote.get("choice")) for vote in vote_records
     ]
@@ -1833,9 +1839,11 @@ def event_run_metrics(run: dict) -> dict:
         "event_model_utterances": model_event_utterances,
         "body_model_utterance_rate": round(body_utterance_rate, 4),
         "body_model_utterances": body_event_utterances + body_vote_utterances,
+        "body_renderer_model_calls": len(body_renderer_batches),
+        "body_renderer_cache_hits": sum(bool(record.get("renderer_cached")) for record in public_records),
         "body_schema_repairs": sum(
             text.get("utterance_origin") in {"model_body_v1_schema_repair", "model_body_v2_schema_repair"}
-            for text in events + vote_records
+            for text in public_records
         ),
         "dialogue_v2_utterances": dialogue_v2_utterances,
         "dialogue_v3_utterances": dialogue_v3_utterances,
@@ -2162,6 +2170,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
             "fast": bool(getattr(args, "fast", False)),
             "no_renderer": no_renderer,
             "body_temperature": 0.0 if body_renderer_adapter else None,
+            "body_cache": "claim_label" if body_renderer_adapter else None,
             **execution,
         },
         "adapter_map": adapter_map,
@@ -2208,40 +2217,73 @@ def run_event_debate(args: argparse.Namespace) -> int:
     }
     persona_configs = {persona["id"]: persona for persona in personas}
     persona_names = {persona["id"]: persona["name"] for persona in personas}
+    body_render_cache: dict[str, dict] = {}
 
     def render_utterance_records(records: list[dict], phase: str) -> None:
         if not records:
             return
         if body_renderer_adapter:
             for record_index, record in enumerate(records):
-                adapter_path = activate_persona_adapter("body")
-                batch_number = len(run["renderer_batches"]) + 1
-                batch_id = f"RB{batch_number:02d}"
-                renderer_id = "B01"
-                item = {
-                    "id": renderer_id,
-                    "speaker": persona_configs[record["persona_id"]]["name"],
-                    "claim": record["label"],
-                }
-                raw, parsed = ask_json(
-                    BODY_RENDERER_SYSTEM,
-                    json.dumps({"items": [item]}, ensure_ascii=False),
-                    min(args.max_tokens, 180),
-                    f"body-renderer:{phase}:{record['id']}",
-                    deterministic=True,
-                )
-                values, schema_warning, schema_repaired = parse_renderer_bodies(
-                    parsed, [renderer_id]
-                )
-                body, body_warning = normalize_renderer_body(values.get(renderer_id))
-                if body is not None and not body_is_neutral(body):
-                    body, body_warning = None, "body renderer exposed a dialogue move"
-                if body is not None and not body_is_polite_sentence(body):
-                    body, body_warning = None, "body renderer did not return a polite complete sentence"
-                if body is not None and not body_matches_claim(body, record["label"]):
-                    body, body_warning = None, "body renderer does not match the frozen claim"
-                if body is not None and not dialogue_numbers_are_grounded(body, item):
-                    body, body_warning = None, "body renderer invents an ungrounded number"
+                cache_entry = body_render_cache.get(record["label"])
+                cache_hit = cache_entry is not None
+                if cache_entry is None:
+                    adapter_path = activate_persona_adapter("body")
+                    batch_number = len(run["renderer_batches"]) + 1
+                    batch_id = f"RB{batch_number:02d}"
+                    renderer_id = "B01"
+                    item = {
+                        "id": renderer_id,
+                        "speaker": persona_configs[record["persona_id"]]["name"],
+                        "claim": record["label"],
+                    }
+                    raw, parsed = ask_json(
+                        BODY_RENDERER_SYSTEM,
+                        json.dumps({"items": [item]}, ensure_ascii=False),
+                        min(args.max_tokens, 180),
+                        f"body-renderer:{phase}:{record['id']}",
+                        deterministic=True,
+                    )
+                    values, schema_warning, schema_repaired = parse_renderer_bodies(
+                        parsed, [renderer_id]
+                    )
+                    body, body_warning = normalize_renderer_body(values.get(renderer_id))
+                    if body is not None and not body_is_neutral(body):
+                        body, body_warning = None, "body renderer exposed a dialogue move"
+                    if body is not None and not body_is_polite_sentence(body):
+                        body, body_warning = None, "body renderer did not return a polite complete sentence"
+                    if body is not None and not body_matches_claim(body, record["label"]):
+                        body, body_warning = None, "body renderer does not match the frozen claim"
+                    if body is not None and not dialogue_numbers_are_grounded(body, item):
+                        body, body_warning = None, "body renderer invents an ungrounded number"
+                    warning = body_warning or schema_warning
+                    batch = {
+                        "batch_id": batch_id,
+                        "record_id": record["id"],
+                        "record_ids": [record["id"]],
+                        "cache_hits": 0,
+                        "phase": phase,
+                        "renderer_kind": "claim_body_v2",
+                        "persona_id": record["persona_id"],
+                        "adapter": adapter_path,
+                        "request": {"items": [item]},
+                        "raw": raw,
+                        "warning": warning,
+                    }
+                    run["renderer_batches"].append(batch)
+                    cache_entry = {
+                        "body": body,
+                        "schema_repaired": schema_repaired,
+                        "warning": warning,
+                        "batch": batch,
+                        "adapter": adapter_path,
+                    }
+                    if body is not None:
+                        body_render_cache[record["label"]] = cache_entry
+                else:
+                    cache_entry["batch"]["record_ids"].append(record["id"])
+                    cache_entry["batch"]["cache_hits"] += 1
+                body = cache_entry["body"]
+                body_warning = cache_entry["warning"]
                 if body is not None and dialogue_selects_competing_claim(
                     body, record.get("competitor_labels", [])
                 ):
@@ -2261,25 +2303,17 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     utterance = record["fallback"]
                     origin = record.get("fallback_origin", "statement_fallback")
                 else:
-                    origin = "model_body_v2_schema_repair" if schema_repaired else "model_body_v2"
-                run["renderer_batches"].append(
-                    {
-                        "batch_id": batch_id,
-                        "record_id": record["id"],
-                        "phase": phase,
-                        "renderer_kind": "claim_body_v2",
-                        "persona_id": record["persona_id"],
-                        "adapter": adapter_path,
-                        "request": {"items": [item]},
-                        "raw": raw,
-                        "warning": body_warning or schema_warning,
-                    }
-                )
+                    origin = (
+                        "model_body_v2_schema_repair"
+                        if cache_entry["schema_repaired"]
+                        else "model_body_v2"
+                    )
                 target["utterance"] = utterance
                 target["utterance_origin"] = origin
-                target["utterance_warning"] = body_warning or schema_warning
-                target["renderer_batch_id"] = batch_id
-                target["renderer_adapter"] = adapter_path
+                target["utterance_warning"] = body_warning
+                target["renderer_batch_id"] = cache_entry["batch"]["batch_id"]
+                target["renderer_adapter"] = cache_entry["adapter"]
+                target["renderer_cached"] = cache_hit
             return
         if no_renderer or (
             getattr(args, "fast", False)

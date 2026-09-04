@@ -176,7 +176,7 @@ Generalは既存台帳では従来の3人格を保ちます。`role_preferences`
   --body-adapter <claim-body-v3-step128-adapter>
 ```
 
-`--body-adapter`は1発言ずつ本文だけをtemperature 0で生成します。入力は固定ID`B01`、話者名、凍結claimだけで、evidenceをrendererへ渡しません。証拠と投票はAdapterを外したBaseが担当し、D番号付きログへ保持します。object / agree / maintain / reviseはコード合成します。本文はstrict schema、丁寧完全文、時制、制限、数字、競合claimを検査し、不合格ならstatementへ戻します。`--adapter-map`、`--renderer-adapter`、`--no-renderer`とは排他的です。
+`--body-adapter`は1発言ずつ本文だけをtemperature 0で生成します。入力は固定ID`B01`、話者名、凍結claimだけで、evidenceをrendererへ渡しません。証拠と投票はAdapterを外したBaseが担当し、D番号付きログへ保持します。object / agree / maintain / reviseはコード合成します。本文はstrict schema、丁寧完全文、時制、制限、数字、競合claimを検査し、不合格ならstatementへ戻します。valid本文はclaim単位でrun内cacheし、同じclaimを選んだラウンド発言へ再利用します。`--adapter-map`、`--renderer-adapter`、`--no-renderer`とは排他的です。
 
 台風データは2026年8月25日15時50分JST時点の再現用スナップショットで、現在の予報には使えません。
 
@@ -264,6 +264,8 @@ Natural specialists v6では12の異なるtopicから仮説object 12件・実行
 Claim Body v1は後の監査で、提案を完了事実へ変える文と名詞断片を通していたためsupersededにしました。[v1記録](docs/claim_body_weight_v1_20260904.md)と[旧昇格記録](promotions/qwen3-1.7b-claim-body-v1-step64.json)は履歴として残しています。
 
 現行のClaim Body v3 step128は、17 train topic・585件のclean targetでBaseから学習しました。完全除外したemail / EV / bike 15ケースでcontract valid `15/15`、strict schema `15/15`、競合claim `0`です。3 topicの1 round実走はいずれも公開6発言全てがWeight由来、fallback 0、hard gate通過でした。設定、v2/v4停止理由、会話全文、SHAは [Claim Body Weight v3](docs/claim_body_weight_v3_20260904.md)、運用境界は [現行昇格記録](promotions/qwen3-1.7b-claim-body-v3-step128.json) にあります。
+
+同一claim本文のvalidated cacheにより、EV 2 event / 1 roundは公開内容を変えず、Body call `6→2`、総model call `14→10`、実行時間`52.5→41.9秒`へ短縮しました。
 
 Hugging Face向けには、ローカルpathを除いたAdapter設定、Model Card、Weight、SHA256SUMSだけのstaging packageを用意しています。公開前検証とupload境界は [Hugging Face release staging](docs/huggingface_release_claim_body_v3.md) を参照してください。
 

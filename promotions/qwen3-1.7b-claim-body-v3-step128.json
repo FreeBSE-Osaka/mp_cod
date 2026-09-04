@@ -43,6 +43,20 @@
     "strict_output": "bodies array with exactly id and body",
     "polite_complete_sentence_required": true
   },
+  "runtime_optimization": {
+    "cache_key": "validated claim label",
+    "invalid_outputs_cached": false,
+    "original_record_ids_retained": true,
+    "ev_body_calls_before": 6,
+    "ev_body_calls_after": 2,
+    "ev_total_calls_before": 14,
+    "ev_total_calls_after": 10,
+    "ev_elapsed_seconds_before": 52.5,
+    "ev_elapsed_seconds_after": 41.9,
+    "public_output_identical": true,
+    "hard_gate_pass": true,
+    "run_sha256": "a56a7d06d2b2edb054f9c536d27adc11535caf5808747e80de3a66631641f87e"
+  },
   "external_holdout_15": {
     "topics": ["email_triage", "ev_smart_charging", "bike_rebalancing"],
     "v1_contract_valid": "0/15",

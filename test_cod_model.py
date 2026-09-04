@@ -704,12 +704,16 @@ class CodModelTest(unittest.TestCase):
                         "statement_origin": "model",
                         "utterance": composed,
                         "utterance_origin": "model_body_v2_schema_repair",
+                        "renderer_cached": True,
                     }
                 ],
                 "independent": {},
+                "renderer_batches": [{"renderer_kind": "claim_body_v2", "raw": "raw"}],
             }
         )
         self.assertEqual(metrics["body_model_utterance_rate"], 1.0)
+        self.assertEqual(metrics["body_renderer_model_calls"], 1)
+        self.assertEqual(metrics["body_renderer_cache_hits"], 1)
         self.assertEqual(metrics["body_schema_repairs"], 1)
         self.assertEqual(metrics["model_utterance_rate"], 0.0)
 
