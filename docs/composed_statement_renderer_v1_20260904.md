@@ -60,4 +60,4 @@
 
 ## Boundary
 
-この経路はWeightモデルではない。生成LoRAの未学習transferが成立するまで、実用時の既定候補はBase構造判断 + `--no-renderer`、最小遅延が必要な時だけ`--fast`とする。
+この経路はWeightモデルではない。後続の[Claim Body Weight v3](claim_body_weight_v3_20260904.md)は未学習3 topicでtransferし、自然文が必要な時の条件付きWeightになった。低遅延を優先する場合は引き続きBase構造判断 + `--no-renderer`、最小遅延が必要な時だけ`--fast`とする。

@@ -1,7 +1,10 @@
 {
   "schema_version": 1,
-  "status": "conditional_claim_body_renderer",
+  "status": "superseded_claim_body_v1",
   "promoted_at": "2026-09-04",
+  "superseded_at": "2026-09-04",
+  "superseded_by": "promotions/qwen3-1.7b-claim-body-v3-step128.json",
+  "legacy_evaluation_note": "The original score did not reject proposal-to-completion modality changes or require a polite complete sentence.",
   "base_model": "mlx-community/Qwen3-1.7B-4bit",
   "adapter": "not bundled; planned as a separate Hugging Face artifact",
   "adapter_bytes": 2496303,
@@ -71,11 +74,12 @@
     "deterministic move-prefix composition",
     "validated statement fallback on every rejection"
   ],
-  "promotion_allowed": true,
+  "promotion_allowed": false,
+  "current_runtime_use_allowed": false,
   "promoted_scope": "claim_body_v1_only_behind_validator_and_fallback",
   "structural_use_allowed": false,
   "parent_replacement_allowed": false,
   "automatic_publish_allowed": false,
   "hard_gate_credit_for_schema_repair": false,
-  "decision": "Conditionally usable only as the claim-body renderer. It is not an utterance, reasoning, voting, or Base replacement Weight."
+  "decision": "Historical artifact only. Do not use for current runtime; claim-body v3 step128 replaces it under renderer contract v2."
 }

@@ -1,5 +1,7 @@
 # Claim Body Weight v1 — 2026-09-04
 
+> **Superseded:** 現行runtimeでは使用しない。後続の[Claim Body Weight v3](claim_body_weight_v3_20260904.md)が、時制保持・丁寧完全文・claim-only契約を追加して置き換えた。以下の`26/46 → 40/46`は当時のvalidatorによる履歴値で、提案から完了事実への変化と丁寧完全文を検査していなかった。
+
 ## Result
 
 発話行為まで学習させたv3〜v6を止め、LoRAの仕事を「検証済みclaimを自然な一文へする本文」だけに縮めた。Qwen3-1.7B-4bitへ64 iteration学習した実Weightは、学習に使っていない3 topic群の厳格claim一致でBaseの`26/46`から`40/46`へ改善した。

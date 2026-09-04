@@ -604,6 +604,8 @@ class CodModelTest(unittest.TestCase):
         )
 
     def test_claim_body_renderer_accepts_only_safe_single_id_compatibility(self):
+        self.assertIn("idをJSONキーにしてはならない", cod_model.BODY_RENDERER_SYSTEM)
+        self.assertIn("claimの時制と確実性を保つ", cod_model.BODY_RENDERER_SYSTEM)
         values, warning, repaired = cod_model.parse_renderer_bodies(
             {"bodies": [{"id": "C01", "body": "段階導入を先に試します。"}]},
             ["C01"],
@@ -638,6 +640,11 @@ class CodModelTest(unittest.TestCase):
         self.assertTrue(cod_model.body_is_neutral("契約案に同意します。"))
         self.assertFalse(cod_model.body_is_neutral("その案には賛成です。"))
         self.assertFalse(cod_model.body_is_neutral("その案には懸念があります。"))
+        self.assertFalse(cod_model.body_is_neutral("『段階導入する』を採ります。"))
+        self.assertTrue(cod_model.body_is_polite_sentence("段階導入を先に試します。"))
+        self.assertTrue(cod_model.body_is_polite_sentence("直ちには展開しません。"))
+        self.assertFalse(cod_model.body_is_polite_sentence("段階導入を先に試す。"))
+        self.assertFalse(cod_model.body_is_polite_sentence("削減を優先。"))
         self.assertTrue(
             cod_model.body_matches_claim(
                 "需要が集中する通勤station群でpilotを先に行います。",
@@ -648,6 +655,36 @@ class CodModelTest(unittest.TestCase):
             cod_model.body_matches_claim(
                 "貸出不能の71%が通勤stationへ集中していました。",
                 "需要が集中する通勤station群でpilotを先に行う",
+            )
+        )
+        self.assertFalse(
+            cod_model.body_matches_claim(
+                "応答時間の削減を優先して自動triageを全mailへ展開した。",
+                "応答時間の削減を優先して自動triageを全mailへ展開する",
+            )
+        )
+        self.assertFalse(
+            cod_model.body_matches_claim(
+                "自動triageを全mailへ展開することを検証済み。",
+                "自動triageを全mailへ展開する",
+            )
+        )
+        self.assertFalse(
+            cod_model.body_matches_claim(
+                "自動triageの全mail展開により応答時間削減が実現されています。",
+                "応答時間の削減を優先して自動triageを全mailへ展開する",
+            )
+        )
+        self.assertFalse(
+            cod_model.body_matches_claim(
+                "自動triageを全mailへ展開することを提案。",
+                "自動triageを全mailへ展開する",
+            )
+        )
+        self.assertTrue(
+            cod_model.body_matches_claim(
+                "応答時間の削減を優先して自動triageを全mailへ展開します。",
+                "応答時間の削減を優先して自動triageを全mailへ展開する",
             )
         )
         composed = cod_model.compose_dialogue_body(
@@ -666,7 +703,7 @@ class CodModelTest(unittest.TestCase):
                         "statement": "段階導入を先に試します。根拠は[D01]です。",
                         "statement_origin": "model",
                         "utterance": composed,
-                        "utterance_origin": "model_body_v1_schema_repair",
+                        "utterance_origin": "model_body_v2_schema_repair",
                     }
                 ],
                 "independent": {},

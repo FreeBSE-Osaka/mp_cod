@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "status": "promoted_claim_body_renderer_v2",
+  "promoted_at": "2026-09-04",
+  "base_model": "mlx-community/Qwen3-1.7B-4bit",
+  "adapter": "not bundled; planned as a separate Hugging Face artifact",
+  "local_adapter_path": "/Volumes/data4/cod_model_weight/adapters/claim-body-v3/shared_step128",
+  "adapter_bytes": 2496303,
+  "adapter_config_sha256": "c5263707f55c583bfa98e15d169d9199d30f57ebf343ba6b1e9784d7b4fbcea6",
+  "adapter_weights_sha256": "4ce21e64af220f0ee309599e189fd136e10c4c5cd11440c3d60fd306749a9a92",
+  "training_config": "configs/claim-body-v3.yaml",
+  "training_config_sha256": "5a00d99bfd9fac51f530c17630f01bf1e874c107f50e694e21cf9a9a3d6521e9",
+  "dataset_manifest_sha256": "cdf48fbf221fa6f5cfd380a71ce99e2d89bd886a0f131ba47c685f3b66850a89",
+  "dataset_counts": {
+    "train": 585,
+    "valid": 27,
+    "test": 27
+  },
+  "topic_counts": {
+    "train": 17,
+    "valid": 1,
+    "test": 1,
+    "external_holdout": 3
+  },
+  "training": {
+    "initial_valid_loss": 1.739,
+    "step_32_valid_loss": 1.082,
+    "step_64_valid_loss": 0.236,
+    "step_96_valid_loss": 0.073,
+    "step_128_valid_loss": 0.039,
+    "final_train_loss": 0.019,
+    "test_loss": 0.062,
+    "test_perplexity": 1.064,
+    "peak_memory_gb": 2.087
+  },
+  "renderer_contract": {
+    "version": 2,
+    "input_keys": ["id", "speaker", "claim"],
+    "transport_id": "B01",
+    "temperature": 0.0,
+    "evidence_visible_to_renderer": false,
+    "evidence_retained_by_base_and_audit_log": true,
+    "strict_output": "bodies array with exactly id and body",
+    "polite_complete_sentence_required": true
+  },
+  "external_holdout_15": {
+    "topics": ["email_triage", "ev_smart_charging", "bike_rebalancing"],
+    "v1_contract_valid": "0/15",
+    "v3_contract_valid": "15/15",
+    "v3_exact_polite": "14/15",
+    "v3_strict_schema": "15/15",
+    "v3_competing_claim_selections": 0,
+    "evaluation_sha256": "8491a38789a22444eeb0942b9f5969a21fb3cf3ae5411757dc981173345e36cf"
+  },
+  "runtime_smokes": {
+    "email_triage": {
+      "public_utterances": 6,
+      "strict_weight_utterances": 6,
+      "schema_repairs": 0,
+      "fallbacks": 0,
+      "model_calls": 18,
+      "elapsed_seconds": 58.0,
+      "hard_gate_pass": true,
+      "run_sha256": "9178d81a2be5ba218b8694fc252e39b281c7e952e7d0487e5b4957baf38dac03"
+    },
+    "ev_smart_charging": {
+      "public_utterances": 6,
+      "strict_weight_utterances": 6,
+      "schema_repairs": 0,
+      "fallbacks": 0,
+      "model_calls": 14,
+      "elapsed_seconds": 52.5,
+      "hard_gate_pass": true,
+      "run_sha256": "fb3b2cc3b94226ebb4bb7b19c63d26b90722ed2c94fa3d58a0ec64a0b5b5a89c"
+    },
+    "bike_rebalancing": {
+      "public_utterances": 6,
+      "strict_weight_utterances": 6,
+      "schema_repairs": 0,
+      "fallbacks": 0,
+      "model_calls": 14,
+      "elapsed_seconds": 46.6,
+      "hard_gate_pass": true,
+      "run_sha256": "3424c66152ab6a225a7ca8ea304af7ab4a516a0362cd337525b5ff3bc9a90f1a"
+    }
+  },
+  "non_promoted_followup": {
+    "candidate": "claim-body-v4 step160",
+    "reason": "Runtime-exact continuation kept validity at 15/15 but reduced exact polite transfer from 14/15 to 13/15.",
+    "evaluation_sha256": "44a5bb52fa52b0495af0735855c6a26aed65bd1426e5a49854df9c66fe8f95b0"
+  },
+  "required_guards": [
+    "Base-only claim, evidence, confidence, vote, and change-reason generation",
+    "one claim-only item per renderer call with fixed transport id B01",
+    "deterministic body generation at temperature 0",
+    "strict schema or safe single-id compatibility parsing",
+    "polite sentence, neutral body, frozen-claim, modality, restriction, number, and competing-claim validation",
+    "deterministic move-prefix composition",
+    "validated statement fallback on every rejection"
+  ],
+  "promotion_allowed": true,
+  "promoted_scope": "claim_body_renderer_v2_only_behind_validator_and_fallback",
+  "structural_use_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "hard_gate_credit_for_schema_repair": false,
+  "decision": "Promoted for the claim-body renderer only. It must never select claims, evidence, votes, or replace the Base model."
+}

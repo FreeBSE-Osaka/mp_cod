@@ -47,6 +47,7 @@ MODEL_UTTERANCE_ORIGINS = {
     "model_renderer_v3",
     "model_renderer_v3_sanitized",
     "model_body_v1",
+    "model_body_v2",
 }
 MOVE_UTTERANCE_TEMPLATES = {
     "object": (
@@ -96,14 +97,25 @@ MOVE_UTTERANCE_PREFIXES = {
 }
 BODY_RENDERER_SYSTEM = (
     "各itemのspeakerとして、検証済みclaimを自然な日本語一文で述べる本文renderer。"
-    "claim、根拠、数字を変更・追加せず、moveや賛否は表現しない。"
+    "claimの内容、時制、数字を変更・追加せず、moveや賛否は表現しない。"
     "入力itemsと同じidを一度ずつ返す。"
     "出力はbodiesだけをキーに持つJSONで、各要素のキーはidとbodyだけ。"
+    "必ず {\"bodies\":[{\"id\":\"入力id\",\"body\":\"本文\"}]} の形で返し、"
+    "idをJSONキーにしてはならない。"
+    "提案や計画を実現済み・検証済み等の完了事実へ変えず、claimの時制と確実性を保つ。"
 )
 BODY_MOVE_MARKERS = (
     "その案には賛成", "その案に賛成", "私も賛同", "私も同意", "その結論には異議",
     "その案には異議", "その案には懸念", "結論を維持", "見方を修正", "考え直しました",
-    "結論を変え",
+    "結論を変え", "を採ります", "を選びます",
+)
+BODY_MODALITY_SHIFT_MARKERS = (
+    "検証済み", "実現", "完了", "達成", "導入済み", "展開済み", "実施済み",
+    "展開した", "実施した", "導入した", "開始した", "作成した", "提案した",
+    "検討している", "予定している", "推定され", "見込まれ",
+)
+BODY_FRAGMENT_ENDINGS = (
+    "ことを提案。", "ことを検討。", "ことを監査。", "ことを評価。",
 )
 
 
@@ -1323,11 +1335,17 @@ def body_is_neutral(body: str) -> bool:
     return not any(marker in body for marker in BODY_MOVE_MARKERS)
 
 
+def body_is_polite_sentence(body: str) -> bool:
+    return body.rstrip("。！？!?").endswith(("です", "ます", "ません", "でした", "ました"))
+
+
 def body_matches_claim(body: str, label: str) -> bool:
     return (
         dialogue_matches_claim(body, label)
         and not dialogue_reverses_restriction(body, label)
         and dialogue_preserves_restriction(body, label)
+        and not any(marker in body and marker not in label for marker in BODY_MODALITY_SHIFT_MARKERS)
+        and not body.endswith(BODY_FRAGMENT_ENDINGS)
     )
 
 
@@ -1683,7 +1701,10 @@ def event_run_metrics(run: dict) -> dict:
     fallbacks = sum(event.get("origin") == "validated_fallback" for event in events)
     model_statement_origins = {"model", "model_repair", "model_sanitized"}
     model_utterance_origins = MODEL_UTTERANCE_ORIGINS
-    body_utterance_origins = {"model_body_v1", "model_body_v1_schema_repair"}
+    body_utterance_origins = {
+        "model_body_v1", "model_body_v1_schema_repair",
+        "model_body_v2", "model_body_v2_schema_repair",
+    }
     model_statements = sum(event.get("statement_origin") in model_statement_origins for event in events)
     model_event_utterances = sum(event.get("utterance_origin") in model_utterance_origins for event in events)
     body_event_utterances = sum(event.get("utterance_origin") in body_utterance_origins for event in events)
@@ -1813,7 +1834,7 @@ def event_run_metrics(run: dict) -> dict:
         "body_model_utterance_rate": round(body_utterance_rate, 4),
         "body_model_utterances": body_event_utterances + body_vote_utterances,
         "body_schema_repairs": sum(
-            text.get("utterance_origin") == "model_body_v1_schema_repair"
+            text.get("utterance_origin") in {"model_body_v1_schema_repair", "model_body_v2_schema_repair"}
             for text in events + vote_records
         ),
         "dialogue_v2_utterances": dialogue_v2_utterances,
@@ -2037,6 +2058,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
         model.eval()
         mx.random.seed(args.seed)
         sampler = make_sampler(temp=args.temperature, top_p=0.85)
+        body_sampler = make_sampler(temp=0.0)
         active_adapter: str | None = None
         adapter_layers_active = False
 
@@ -2060,7 +2082,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
             active_adapter = target
             return target
 
-        def backend_ask_json(system: str, user: str, max_tokens: int) -> tuple[str, dict | None]:
+        def backend_ask_json(
+            system: str, user: str, max_tokens: int, deterministic: bool = False
+        ) -> tuple[str, dict | None]:
             prompt = tokenizer.apply_chat_template(
                 [{"role": "system", "content": system}, {"role": "user", "content": user}],
                 tokenize=False,
@@ -2072,7 +2096,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 tokenizer,
                 prompt=prompt,
                 max_tokens=max_tokens,
-                sampler=sampler,
+                sampler=body_sampler if deterministic else sampler,
                 verbose=False,
             ).strip()
             return raw, parse_json_object(raw)
@@ -2084,7 +2108,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
         def activate_persona_adapter(persona_id: str | None) -> str | None:
             return None
 
-        def backend_ask_json(system: str, user: str, max_tokens: int) -> tuple[str, dict | None]:
+        def backend_ask_json(
+            system: str, user: str, max_tokens: int, deterministic: bool = False
+        ) -> tuple[str, dict | None]:
             nonlocal ollama_call_index
             ollama_call_index += 1
             parsed, meta = ask_ollama(
@@ -2095,7 +2121,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 api_url=args.api_url,
                 timeout=args.timeout,
                 num_predict=max_tokens,
-                temperature=args.temperature,
+                temperature=0.0 if deterministic else args.temperature,
                 seed=args.seed + ollama_call_index,
                 include_raw=True,
             )
@@ -2105,10 +2131,10 @@ def run_event_debate(args: argparse.Namespace) -> int:
     model_calls: list[dict] = []
 
     def ask_json(
-        system: str, user: str, max_tokens: int, phase: str
+        system: str, user: str, max_tokens: int, phase: str, deterministic: bool = False
     ) -> tuple[str, dict | None]:
         started = time.perf_counter()
-        raw, parsed = backend_ask_json(system, user, max_tokens)
+        raw, parsed = backend_ask_json(system, user, max_tokens, deterministic)
         elapsed = time.perf_counter() - started
         model_calls.append(
             {"index": len(model_calls) + 1, "phase": phase, "seconds": round(elapsed, 3), "max_tokens": max_tokens}
@@ -2132,13 +2158,18 @@ def run_event_debate(args: argparse.Namespace) -> int:
         "domain": args.domain,
         "prompt_profile": args.prompt_profile,
         "seed": args.seed,
-        "execution": {"fast": bool(getattr(args, "fast", False)), "no_renderer": no_renderer, **execution},
+        "execution": {
+            "fast": bool(getattr(args, "fast", False)),
+            "no_renderer": no_renderer,
+            "body_temperature": 0.0 if body_renderer_adapter else None,
+            **execution,
+        },
         "adapter_map": adapter_map,
         "renderer_adapter": shared_renderer_adapter,
         "body_adapter": body_renderer_adapter,
         "renderer_schema_version": 3,
-        "body_renderer_schema_version": 1 if body_renderer_adapter else None,
-        "adapter_scope": "claim_body_v1_only" if body_renderer_adapter else "utterance_renderer_v3_only",
+        "body_renderer_schema_version": 2 if body_renderer_adapter else None,
+        "adapter_scope": "claim_body_v2_only" if body_renderer_adapter else "utterance_renderer_v3_only",
         "adapter_fingerprints": {
             persona_id: {
                 "config_sha256": hashlib.sha256((Path(path) / "adapter_config.json").read_bytes()).hexdigest(),
@@ -2186,18 +2217,18 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 adapter_path = activate_persona_adapter("body")
                 batch_number = len(run["renderer_batches"]) + 1
                 batch_id = f"RB{batch_number:02d}"
-                renderer_id = f"B{batch_number:02d}"
+                renderer_id = "B01"
                 item = {
                     "id": renderer_id,
                     "speaker": persona_configs[record["persona_id"]]["name"],
                     "claim": record["label"],
-                    "evidence": record["payload"]["evidence"],
                 }
                 raw, parsed = ask_json(
                     BODY_RENDERER_SYSTEM,
                     json.dumps({"items": [item]}, ensure_ascii=False),
                     min(args.max_tokens, 180),
                     f"body-renderer:{phase}:{record['id']}",
+                    deterministic=True,
                 )
                 values, schema_warning, schema_repaired = parse_renderer_bodies(
                     parsed, [renderer_id]
@@ -2205,6 +2236,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 body, body_warning = normalize_renderer_body(values.get(renderer_id))
                 if body is not None and not body_is_neutral(body):
                     body, body_warning = None, "body renderer exposed a dialogue move"
+                if body is not None and not body_is_polite_sentence(body):
+                    body, body_warning = None, "body renderer did not return a polite complete sentence"
                 if body is not None and not body_matches_claim(body, record["label"]):
                     body, body_warning = None, "body renderer does not match the frozen claim"
                 if body is not None and not dialogue_numbers_are_grounded(body, item):
@@ -2228,13 +2261,13 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     utterance = record["fallback"]
                     origin = record.get("fallback_origin", "statement_fallback")
                 else:
-                    origin = "model_body_v1_schema_repair" if schema_repaired else "model_body_v1"
+                    origin = "model_body_v2_schema_repair" if schema_repaired else "model_body_v2"
                 run["renderer_batches"].append(
                     {
                         "batch_id": batch_id,
                         "record_id": record["id"],
                         "phase": phase,
-                        "renderer_kind": "claim_body_v1",
+                        "renderer_kind": "claim_body_v2",
                         "persona_id": record["persona_id"],
                         "adapter": adapter_path,
                         "request": {"items": [item]},
@@ -3318,7 +3351,7 @@ def parser() -> argparse.ArgumentParser:
     )
     event_debate.add_argument(
         "--body-adapter",
-        help="検証済みclaim本文だけを生成し、moveをコード合成するclaim-body v1 MLX LoRA directory",
+        help="検証済みclaim本文だけを生成し、moveをコード合成するclaim-body v2 MLX LoRA directory",
     )
     event_debate.add_argument(
         "--fast",

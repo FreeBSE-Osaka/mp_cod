@@ -166,17 +166,17 @@ Generalは既存台帳では従来の3人格を保ちます。`role_preferences`
   --renderer-adapter <shared-renderer-adapter>
 ```
 
-全文を作るv3〜v6のrenderer Weightは引き続き研究用です。2026-09-04のclaim-body v1だけは、検証済みclaim本文に限定し、validatorとfallbackを必須にした条件付きWeightとして利用できます。
+全文を作るv3〜v6のrenderer Weightは引き続き研究用です。現行のClaim Body v3 step128だけは、検証済みclaim本文に限定し、validatorとfallbackを必須にした条件付きWeightとして利用できます。
 
 ```sh
 <mlx-python> cod_model.py event-debate \
   --ledger <claim-ledger.json> \
   --domain general \
   --model-path <base-model> \
-  --body-adapter <claim-body-v1-adapter>
+  --body-adapter <claim-body-v3-step128-adapter>
 ```
 
-`--body-adapter`は1発言ずつ本文だけを生成します。claim、証拠、投票はAdapterを外したBaseが担当し、object / agree / maintain / reviseはコード合成します。`--adapter-map`、`--renderer-adapter`、`--no-renderer`とは排他的です。安全なsingle-ID schema補正を使った発言は`model_body_v1_schema_repair`として保存し、hard gate通過には数えません。
+`--body-adapter`は1発言ずつ本文だけをtemperature 0で生成します。入力は固定ID`B01`、話者名、凍結claimだけで、evidenceをrendererへ渡しません。証拠と投票はAdapterを外したBaseが担当し、D番号付きログへ保持します。object / agree / maintain / reviseはコード合成します。本文はstrict schema、丁寧完全文、時制、制限、数字、競合claimを検査し、不合格ならstatementへ戻します。`--adapter-map`、`--renderer-adapter`、`--no-renderer`とは排他的です。
 
 台風データは2026年8月25日15時50分JST時点の再現用スナップショットで、現在の予報には使えません。
 
@@ -261,7 +261,9 @@ Natural specialists v6では12の異なるtopicから仮説object 12件・実行
 
 発話行為をコードで確定し、検証済みstatement本文だけを接続する`--no-renderer`経路は、4人格のすり合わせを残したまま39.2秒へ短縮しました。設計、実測、会話全文は [Composed statement renderer v1](docs/composed_statement_renderer_v1_20260904.md) にあります。
 
-Claim Body v1はLoRAを本文生成だけへさらに限定し、未学習3 topic群の厳格claim一致をBase `26/46`からWeight `40/46`へ改善しました。1 round実走では公開6発言中5件をWeightから採用し、証拠だけを返した1件は安全にfallbackしています。長い討論IDは短いtransport IDへ置換し、元IDを監査ログへ残します。同じEV 2 event / 1 roundで46.3秒（従来全文renderer 68.8秒、`--no-renderer` 39.2秒）でした。これは本文専用の条件付き昇格で、Base・投票・全文rendererの置換ではありません。設定、全評価、発言全文、SHAは [Claim Body Weight v1](docs/claim_body_weight_v1_20260904.md)、運用境界は [昇格記録](promotions/qwen3-1.7b-claim-body-v1-step64.json) にあります。
+Claim Body v1は後の監査で、提案を完了事実へ変える文と名詞断片を通していたためsupersededにしました。[v1記録](docs/claim_body_weight_v1_20260904.md)と[旧昇格記録](promotions/qwen3-1.7b-claim-body-v1-step64.json)は履歴として残しています。
+
+現行のClaim Body v3 step128は、17 train topic・585件のclean targetでBaseから学習しました。完全除外したemail / EV / bike 15ケースでcontract valid `15/15`、strict schema `15/15`、競合claim `0`です。3 topicの1 round実走はいずれも公開6発言全てがWeight由来、fallback 0、hard gate通過でした。設定、v2/v4停止理由、会話全文、SHAは [Claim Body Weight v3](docs/claim_body_weight_v3_20260904.md)、運用境界は [現行昇格記録](promotions/qwen3-1.7b-claim-body-v3-step128.json) にあります。
 
 ## bounded RSI shadow
 
