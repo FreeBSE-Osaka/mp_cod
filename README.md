@@ -279,6 +279,8 @@ EV 8 event / 最大2 roundは16 model call・54.2秒で完走しました。Weig
 
 その後、物理A15内で`Qwen3-0.6B`の盲検claim/evidence選択、異論側だけの再投票、`Qwen3-1.7B`の変更理由、Claim Body v3由来本文による1 round Native CoDを実行しました。架空の均衡fixtureで初期3案、異議・変更・賛同、最終2対2の未解決保持まで17.245秒、永続cache直接再読込でも18.771秒、thermal fair、hard gate passです。2回の会話・票・結論は完全一致し、repeat peakは1,318.144 MiBでした。Weight本文は同じ実機で生成・検証済みのSHA付き永続cacheを再検証して7件再利用しました。[実測・全HOLD・会話全文](docs/iphone13_a15_native_cod_20260904.md)
 
+実データshadowの次段階として、台風18号の2026-08-25 15:50 JST固定packetを、source URL・観測/有効時刻付きの[歴史的replay ledger](data/typhoon18_20260825/native_cod_replay_ledger.json)へ縮約しました。ledger validator、0.6B盲検final 4/4、Claim Body v3 6/6までMacで通過していますが、物理iPhone replayは未実施です。
+
 Hugging Face向けには、ローカルpathを除いたAdapter設定、Model Card、Weight、SHA256SUMSだけのstaging packageを用意しています。公開前検証とupload境界は [Hugging Face release staging](docs/huggingface_release_claim_body_v3.md) を参照してください。
 
 ## bounded RSI shadow

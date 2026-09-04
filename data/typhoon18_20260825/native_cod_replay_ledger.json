@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "scenario_id": "typhoon18_20260825_historical_replay",
+  "fixture_kind": "historical_real_data_snapshot",
+  "historical_replay": true,
+  "cutoff": "2026-08-25T15:50:00+09:00",
+  "topic": "2026年8月25日15時50分JSTまでの固定資料だけで、台風18号SAUDELの主経路、少数シナリオ、短期影響、更新時の不確実性を歴史的に再評価する",
+  "provenance": {
+    "live_retrieval": false,
+    "parent_ledger": "data/typhoon18_20260825/claim_ledger.json",
+    "parent_ledger_sha256": "c4c94d78879def93462a4fa6df86d54dae5c0b2a2510f8856ed5d44abf872c4b",
+    "data_packet": "data/typhoon18_20260825/data_packet.md",
+    "data_packet_sha256": "69204f541e94f13716d81ea95fa3e4b1a2303d6f59d657d9b5b8cdc912031fb1"
+  },
+  "sources": [
+    {
+      "id": "S01",
+      "name": "Yahoo!天気・災害 台風18号ページ（JMA情報の二次表示）",
+      "url": "https://typhoon.yahoo.co.jp/weather/jp/typhoon/2618.html",
+      "authority": "secondary_jma_display"
+    },
+    {
+      "id": "S02",
+      "name": "ジョルダン 台風18号ページ（JMA情報の二次表示）",
+      "url": "https://next.jorudan.co.jp/weather/?mode=typh&ti=2618",
+      "authority": "secondary_jma_display"
+    },
+    {
+      "id": "S03",
+      "name": "JTWC Prognostic Reasoning 17W",
+      "url": "https://www.metoc.navy.mil/jtwc/products/wp1726prog.txt",
+      "authority": "official_jtwc"
+    },
+    {
+      "id": "S04",
+      "name": "JTWC Warning 17W",
+      "url": "https://www.metoc.navy.mil/jtwc/products/wp1726web.txt",
+      "authority": "official_jtwc"
+    },
+    {
+      "id": "S05",
+      "name": "UCAR Tropical Cyclone Guidance 17W",
+      "url": "https://hurricanes.ral.ucar.edu/realtime/plots/northwestpacific/2026/wp172026/",
+      "authority": "research_guidance_archive"
+    }
+  ],
+  "data": [
+    {
+      "id": "D01",
+      "text": "JMA 25日15時解析は26.7N 130.1E、沖永良部島の東南東約160km、西北西20km/h、950hPa、最大風速40m/s、最大瞬間風速60m/s。26日から29日の予報は東シナ海を西寄りに進み華南へ向かう系列だった。",
+      "source_ids": ["S01", "S02"],
+      "observed_at": "2026-08-25T15:00:00+09:00",
+      "valid_until": "2026-08-29T15:00:00+09:00"
+    },
+    {
+      "id": "D02",
+      "text": "JMA防災情報では25日夜から26日朝に強い勢力で奄美・沖縄本島へかなり接近し、暴風・高波、奄美の土砂災害を最優先で警戒する内容だった。",
+      "source_ids": ["S01", "S02"],
+      "observed_at": "2026-08-25T15:00:00+09:00",
+      "valid_until": "2026-08-27T00:00:00+09:00"
+    },
+    {
+      "id": "D03",
+      "text": "JTWC 25日00UTC cycleは亜熱帯高気圧の南西縁を進み、24から48時間は操舵場の弱まりで減速し、その後は中国東部側の高気圧で南西進するとした。",
+      "source_ids": ["S03", "S04"],
+      "observed_at": "2026-08-25T00:00:00Z",
+      "valid_until": "2026-08-29T00:00:00Z"
+    },
+    {
+      "id": "D04",
+      "text": "JTWCは乾燥空気と鉛直シアにより上陸前は緩やかに弱化し、進路・強度の信頼度は72時間までHigh、72時間以後は陸地相互作用によりMediumとした。",
+      "source_ids": ["S03", "S04"],
+      "observed_at": "2026-08-25T00:00:00Z",
+      "valid_until": "2026-08-29T00:00:00Z"
+    },
+    {
+      "id": "D05",
+      "text": "UCARの25日00Zガイダンスでは西から南西進して中国東岸へ向かう主群が優勢だった一方、北東へ転向する少数外れメンバーも存在した。線数は公式確率ではない。",
+      "source_ids": ["S05"],
+      "observed_at": "2026-08-25T00:00:00Z",
+      "valid_until": "2026-08-29T00:00:00Z"
+    },
+    {
+      "id": "D06",
+      "text": "比較制約としてJMA最大風速は10分平均、JTWCは1分平均で直接比較せず、有効時刻の異なる位置も直接比較しない。EPSの線数を発生確率として扱わない。",
+      "source_ids": ["S01", "S03", "S05"],
+      "observed_at": "2026-08-25T15:50:00+09:00",
+      "valid_until": "2026-08-29T15:00:00+09:00"
+    }
+  ],
+  "claims": [
+    {
+      "code": "TRACK_MAIN_WSW",
+      "label": "主経路は琉球から東シナ海を西から南西へ進み中国東岸方向とする",
+      "supported_by": ["D01", "D03", "D05"],
+      "contradicts": [],
+      "required_terms": ["主経路", "琉球", "東シナ海", "西", "南西", "中国東岸"]
+    },
+    {
+      "code": "NORTH_OUTLIER_MATERIAL",
+      "label": "北東転向外れを意思決定上の独立シナリオとして残す",
+      "supported_by": ["D05", "D06"],
+      "contradicts": ["NORTH_OUTLIER_LOW_PRIORITY"],
+      "required_terms": ["北東転向", "独立シナリオ", "残す"]
+    },
+    {
+      "code": "NORTH_OUTLIER_LOW_PRIORITY",
+      "label": "72時間の主判断では北東転向外れを低位に扱う",
+      "supported_by": ["D04", "D05", "D06"],
+      "contradicts": ["NORTH_OUTLIER_MATERIAL"],
+      "required_terms": ["72時間", "北東転向", "低位"]
+    },
+    {
+      "code": "SHORT_TERM_IMPACT_CRITICAL",
+      "label": "25日夜から26日朝の奄美と沖縄の暴風高波を最優先する",
+      "supported_by": ["D01", "D02"],
+      "contradicts": [],
+      "required_terms": ["25日夜", "26日朝", "奄美", "沖縄", "暴風高波", "最優先"]
+    },
+    {
+      "code": "INTENSITY_GRADUAL_WEAKEN",
+      "label": "上陸前は乾燥空気と鉛直シアで緩やかに弱化する",
+      "supported_by": ["D01", "D03", "D04"],
+      "contradicts": [],
+      "required_terms": ["上陸前", "乾燥空気", "鉛直シア", "緩やか", "弱化"]
+    },
+    {
+      "code": "LONG_RANGE_MEDIUM_CONF",
+      "label": "72時間以後の位置と弱化速度は中程度の信頼に留める",
+      "supported_by": ["D04", "D05", "D06"],
+      "contradicts": [],
+      "required_terms": ["72時間以後", "位置", "弱化速度", "中程度", "信頼"]
+    }
+  ],
+  "personas": [
+    {
+      "name": "力学モデル研究者",
+      "objective": "総観場と時間発展の力学整合性を最大化し、単一モデル依存を最小化する。"
+    },
+    {
+      "name": "アンサンブル確率予報者",
+      "objective": "複数シナリオの被覆と確率校正を最大化し、少数だが重大な外れの見落としを最小化する。"
+    },
+    {
+      "name": "観測・ナウキャスト専門家",
+      "objective": "最新観測との整合性を最大化し、古い初期値と観測範囲外への外挿を最小化する。"
+    },
+    {
+      "name": "影響・リスク予報者",
+      "objective": "意思決定期限内の被害低減を最大化し、最頻経路だけによる手遅れを最小化する。"
+    }
+  ],
+  "role_preferences": {
+    "力学モデル研究者": ["TRACK_MAIN_WSW", "NORTH_OUTLIER_LOW_PRIORITY", "LONG_RANGE_MEDIUM_CONF"],
+    "アンサンブル確率予報者": ["NORTH_OUTLIER_MATERIAL", "LONG_RANGE_MEDIUM_CONF", "TRACK_MAIN_WSW"],
+    "観測・ナウキャスト専門家": ["INTENSITY_GRADUAL_WEAKEN", "TRACK_MAIN_WSW", "LONG_RANGE_MEDIUM_CONF"],
+    "影響・リスク予報者": ["SHORT_TERM_IMPACT_CRITICAL", "NORTH_OUTLIER_MATERIAL", "LONG_RANGE_MEDIUM_CONF"]
+  }
+}

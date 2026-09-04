@@ -222,6 +222,27 @@
     "real_project_integration_allowed": false,
     "documentation": "docs/iphone13_a15_native_cod_20260904.md"
   },
+  "typhoon18_historical_replay_readiness": {
+    "scope": "mac_preflight_before_physical_iphone",
+    "historical_replay": true,
+    "cutoff": "2026-08-25T15:50:00+09:00",
+    "ledger": "data/typhoon18_20260825/native_cod_replay_ledger.json",
+    "ledger_sha256": "7f5f0f5032158ae448f97976bfd3ec1f336507a79a5634f554f23cce243825eb",
+    "sources": 5,
+    "data_items": 6,
+    "claims": 6,
+    "personas": 4,
+    "structure_direct_valid": "3/4",
+    "structure_repairs": 1,
+    "structure_final_valid": "4/4",
+    "body_contract_valid": "6/6",
+    "body_politeness_sanitizations": 3,
+    "body_fallbacks": 0,
+    "readiness_sha256": "8fa2662a6a602202b414b7a26700380574da8b38db64bc6205af7eea320bcf2a",
+    "physical_iphone_run_completed": false,
+    "promotion_allowed": false,
+    "documentation": "docs/iphone13_a15_native_cod_20260904.md"
+  },
   "non_promoted_followup": {
     "candidate": "claim-body-v4 step160",
     "reason": "Runtime-exact continuation kept validity at 15/15 but reduced exact polite transfer from 14/15 to 13/15.",

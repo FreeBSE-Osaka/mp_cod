@@ -131,3 +131,17 @@ validatorは、synthetic表示、role preference、D番号、raw schema、LoRA�
 ## Remaining boundary
 
 このfixture PASSだけでExtremeWeatherへ統合しない。次に実データから小さなledgerを構築し、事実cutoff、source URL、D番号の意味監査、キャンセル、3D画面とのmemory/thermal共存を確認する。Weightの昇格範囲は引き続きClaim Body rendererだけで、0.6B構造モデルをWeightとして昇格したことにはしない。
+
+## Historical Typhoon 18 replay readiness
+
+次段階用に、既存の台風18号data packetから2026-08-25 15:50 JST cutoffの小型replay ledgerを作成した。現在予測ではなく歴史的再生であり、各D番号にsource ID、URL、観測時刻、有効期限を持たせた。親ledgerとpacketのSHAも固定している。
+
+- ledger: [`../data/typhoon18_20260825/native_cod_replay_ledger.json`](../data/typhoon18_20260825/native_cod_replay_ledger.json)
+- ledger SHA-256: `7f5f0f5032158ae448f97976bfd3ec1f336507a79a5634f554f23cce243825eb`
+- source 5 / data 6 / claim 6 / persona 4
+- 0.6B Mac blind preflight: direct 3/4、根拠ID再計算1回、final 4/4
+- Claim Body v3 Mac preflight: contract valid 6/6、safe politeness sanitize 3/6、fallback 0
+- readiness raw: `/Volumes/data4/cod_model_weight/evaluations/claim-body-v3/typhoon18_native_replay_readiness_20260904.json`
+- readiness SHA-256: `8fa2662a6a602202b414b7a26700380574da8b38db64bc6205af7eea320bcf2a`
+
+`tools/validate_native_cod_replay_ledger.py`がprovenance、時刻範囲、source、claim、contradiction、role preference、Base選択、本文意味一致を検証済み。物理iPhone runはまだ完了していない。
