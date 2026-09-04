@@ -64,7 +64,18 @@
     "email_elapsed_seconds_after": 45.1,
     "email_public_output_identical": true,
     "email_baseline_sha256": "2295484814e24c80985cef05d019310ba32bb9ae9de34bf65defa16364f909a6",
-    "email_optimized_sha256": "4d736dab81b03635c950b07311a49195cb094e865ebdc4e5f466e2d5f29dfdb8"
+    "email_optimized_sha256": "4d736dab81b03635c950b07311a49195cb094e865ebdc4e5f466e2d5f29dfdb8",
+    "ev_full8_public_utterances": 12,
+    "ev_full8_weight_utterances": 12,
+    "ev_full8_politeness_sanitizations": 1,
+    "ev_full8_fallbacks": 0,
+    "ev_full8_model_calls": 16,
+    "ev_full8_elapsed_seconds": 54.2,
+    "ev_full8_public_output_identical": true,
+    "ev_full8_hard_gate_before": false,
+    "ev_full8_hard_gate_after": true,
+    "ev_full8_before_sha256": "c7c1dc97e6f71eff771e20b18daf436cbc43a5b014094c81e1d96cc3aab6ecea",
+    "ev_full8_after_sha256": "1ccd5472dd5ede2197deb383ea0e50ec5aa895fc076d0cf538b66d89a109a9e4"
   },
   "external_holdout_15": {
     "topics": ["email_triage", "ev_smart_charging", "bike_rebalancing"],
@@ -129,6 +140,7 @@
     "deterministic body generation at temperature 0",
     "strict schema or safe single-id compatibility parsing",
     "polite sentence, neutral body, frozen-claim, modality, restriction, number, and competing-claim validation",
+    "politeness sanitization only when the model body exactly equals the frozen claim",
     "deterministic move-prefix composition",
     "validated statement fallback on every rejection"
   ],

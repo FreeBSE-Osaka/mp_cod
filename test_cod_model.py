@@ -645,6 +645,18 @@ class CodModelTest(unittest.TestCase):
         self.assertTrue(cod_model.body_is_polite_sentence("直ちには展開しません。"))
         self.assertFalse(cod_model.body_is_polite_sentence("段階導入を先に試す。"))
         self.assertFalse(cod_model.body_is_polite_sentence("削減を優先。"))
+        self.assertEqual(
+            cod_model.sanitize_exact_claim_politeness(
+                "利用不能率9%到達を停止条件候補にする。",
+                "利用不能率9%到達を停止条件候補にする",
+            ),
+            "利用不能率9%到達を停止条件候補にします。",
+        )
+        self.assertIsNone(
+            cod_model.sanitize_exact_claim_politeness(
+                "観測値を確認する。", "停止条件候補にする"
+            )
+        )
         self.assertTrue(
             cod_model.body_matches_claim(
                 "需要が集中する通勤station群でpilotを先に行います。",

@@ -160,6 +160,20 @@ Email 2 event / 1 roundでは、cache適用後のbaselineからさらに次の�
 
 公開発言、投票、D番号、変更理由、summaryは完全一致した。metricsへ`reconciliation_model_repairs / reconciliation_statement_sanitizations`を保存する。
 
+通常規模のEV 8 event / 最大2 roundでは、8件中1件だけWeightが凍結claimそのものをplain formで返した。bodyがlabelと完全一致する場合に限り、学習targetと同じ文末変換（`する→します`等）を適用する`model_body_v2_sanitized`を追加した。言い換え、部分一致、根拠文には適用しない。
+
+| Metric | Before | Exact-claim sanitize |
+|---|---:|---:|
+| Public utterances | 12 | 12 |
+| Weight utterances | 11 | 12 |
+| Politeness sanitizations | 0 | 1 |
+| Fallbacks | 1 | 0 |
+| Hard gate | fail | pass |
+| Total model calls | 16 | 16 |
+| Elapsed | 49.3秒 | 54.2秒 |
+
+表示文、D番号、投票、変更理由、summaryは完全一致した。時間差は実行揺らぎとして扱い、速度改善とは判定しない。
+
 ## v4 stop result
 
 runtimeと完全一致するclaim-only datasetでv3から[`configs/claim-body-v4.yaml`](../configs/claim-body-v4.yaml)を使って32 step追加学習した。v4 step160は外部valid `15/15`を維持したが、exact politeが`14/15`から`13/15`へ下がったため非昇格とした。loss低下だけでは親を置換しない。
@@ -192,6 +206,8 @@ Bike runtime         3424c66152ab6a225a7ca8ea304af7ab4a516a0362cd337525b5ff3bc9a
 EV cached runtime    a56a7d06d2b2edb054f9c536d27adc11535caf5808747e80de3a66631641f87e
 Email cache baseline 2295484814e24c80985cef05d019310ba32bb9ae9de34bf65defa16364f909a6
 Email optimized      4d736dab81b03635c950b07311a49195cb094e865ebdc4e5f466e2d5f29dfdb8
+EV full8 before      c7c1dc97e6f71eff771e20b18daf436cbc43a5b014094c81e1d96cc3aab6ecea
+EV full8 sanitized   1ccd5472dd5ede2197deb383ea0e50ec5aa895fc076d0cf538b66d89a109a9e4
 v4 dataset manifest  bc978b4d7ada314395c050cdba4121727465fc2841ff2966c109a2365a0a1376
 v4 training config   5e8f1ff7e12d558c1b7d22df2a0d7fb5808ab54be0d38c00bd2c5447136a700f
 v4 adapter weights   749b80dc2666061246f55d1b5a59012c6291da4646127bca1f750a16a354b9e9

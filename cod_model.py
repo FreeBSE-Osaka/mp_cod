@@ -48,6 +48,7 @@ MODEL_UTTERANCE_ORIGINS = {
     "model_renderer_v3_sanitized",
     "model_body_v1",
     "model_body_v2",
+    "model_body_v2_sanitized",
 }
 MOVE_UTTERANCE_TEMPLATES = {
     "object": (
@@ -116,6 +117,12 @@ BODY_MODALITY_SHIFT_MARKERS = (
 )
 BODY_FRAGMENT_ENDINGS = (
     "ことを提案。", "ことを検討。", "ことを監査。", "ことを評価。",
+)
+BODY_POLITE_SUFFIXES = (
+    ("しない", "しません"), ("留める", "留めます"), ("設ける", "設けます"),
+    ("調べる", "調べます"), ("増やす", "増やします"), ("残す", "残します"),
+    ("高い", "高いです"), ("する", "します"), ("行う", "行います"),
+    ("扱う", "扱います"), ("作る", "作ります"),
 )
 
 
@@ -1349,6 +1356,19 @@ def body_matches_claim(body: str, label: str) -> bool:
     )
 
 
+def sanitize_exact_claim_politeness(body: str, label: str) -> str | None:
+    plain_body = body.rstrip("。！？!?")
+    plain_label = label.rstrip("。！？!?")
+    if plain_body != plain_label:
+        return None
+    for suffix, replacement in BODY_POLITE_SUFFIXES:
+        if plain_label.endswith(suffix):
+            candidate, _ = normalize_renderer_body(plain_label[: -len(suffix)] + replacement)
+            if candidate is not None and body_is_polite_sentence(candidate):
+                return candidate
+    return None
+
+
 def event_execution_settings(args: argparse.Namespace, persona_count: int) -> dict[str, int]:
     if not getattr(args, "fast", False):
         return {
@@ -1703,7 +1723,7 @@ def event_run_metrics(run: dict) -> dict:
     model_utterance_origins = MODEL_UTTERANCE_ORIGINS
     body_utterance_origins = {
         "model_body_v1", "model_body_v1_schema_repair",
-        "model_body_v2", "model_body_v2_schema_repair",
+        "model_body_v2", "model_body_v2_sanitized", "model_body_v2_schema_repair",
     }
     model_statements = sum(event.get("statement_origin") in model_statement_origins for event in events)
     model_event_utterances = sum(event.get("utterance_origin") in model_utterance_origins for event in events)
@@ -1842,6 +1862,7 @@ def event_run_metrics(run: dict) -> dict:
         "body_model_utterances": body_event_utterances + body_vote_utterances,
         "body_renderer_model_calls": len(body_renderer_batches),
         "body_renderer_cache_hits": sum(bool(record.get("renderer_cached")) for record in public_records),
+        "body_politeness_sanitizations": sum(bool(record.get("body_sanitized")) for record in public_records),
         "body_schema_repairs": sum(
             text.get("utterance_origin") in {"model_body_v1_schema_repair", "model_body_v2_schema_repair"}
             for text in public_records
@@ -2252,10 +2273,17 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         parsed, [renderer_id]
                     )
                     body, body_warning = normalize_renderer_body(values.get(renderer_id))
+                    body_sanitized = False
                     if body is not None and not body_is_neutral(body):
                         body, body_warning = None, "body renderer exposed a dialogue move"
                     if body is not None and not body_is_polite_sentence(body):
-                        body, body_warning = None, "body renderer did not return a polite complete sentence"
+                        polite_body = sanitize_exact_claim_politeness(body, record["label"])
+                        if polite_body is None:
+                            body, body_warning = None, "body renderer did not return a polite complete sentence"
+                        else:
+                            body = polite_body
+                            body_sanitized = True
+                            body_warning = "normalized exact claim to a polite sentence"
                     if body is not None and not body_matches_claim(body, record["label"]):
                         body, body_warning = None, "body renderer does not match the frozen claim"
                     if body is not None and not dialogue_numbers_are_grounded(body, item):
@@ -2273,12 +2301,14 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         "request": {"items": [item]},
                         "raw": raw,
                         "warning": warning,
+                        "body_sanitized": body_sanitized,
                     }
                     run["renderer_batches"].append(batch)
                     cache_entry = {
                         "body": body,
                         "schema_repaired": schema_repaired,
                         "warning": warning,
+                        "body_sanitized": body_sanitized,
                         "batch": batch,
                         "adapter": adapter_path,
                     }
@@ -2307,18 +2337,19 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 if utterance is None:
                     utterance = record["fallback"]
                     origin = record.get("fallback_origin", "statement_fallback")
+                elif cache_entry["schema_repaired"]:
+                    origin = "model_body_v2_schema_repair"
+                elif cache_entry["body_sanitized"]:
+                    origin = "model_body_v2_sanitized"
                 else:
-                    origin = (
-                        "model_body_v2_schema_repair"
-                        if cache_entry["schema_repaired"]
-                        else "model_body_v2"
-                    )
+                    origin = "model_body_v2"
                 target["utterance"] = utterance
                 target["utterance_origin"] = origin
                 target["utterance_warning"] = body_warning
                 target["renderer_batch_id"] = cache_entry["batch"]["batch_id"]
                 target["renderer_adapter"] = cache_entry["adapter"]
                 target["renderer_cached"] = cache_hit
+                target["body_sanitized"] = cache_entry["body_sanitized"]
             return
         if no_renderer or (
             getattr(args, "fast", False)
