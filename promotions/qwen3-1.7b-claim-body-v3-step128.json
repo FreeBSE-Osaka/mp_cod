@@ -89,6 +89,17 @@
     "reason": "Runtime-exact continuation kept validity at 15/15 but reduced exact polite transfer from 14/15 to 13/15.",
     "evaluation_sha256": "44a5bb52fa52b0495af0735855c6a26aed65bd1426e5a49854df9c66fe8f95b0"
   },
+  "release_staging": {
+    "path": "/Volumes/data4/cod_model_weight/releases/mp-cod-claim-body-v3",
+    "adapter_config_sha256": "078a2db9d9eb4d7df1c5fb2db1386d47427aaa05e330cbfdf107b7a46532622f",
+    "adapter_weights_sha256": "4ce21e64af220f0ee309599e189fd136e10c4c5cd11440c3d60fd306749a9a92",
+    "model_card_sha256": "3880324e5cfe82b3ef248552c6a41b5bb39e6fe16401140fde21e6b681ec2ca9",
+    "package_smoke_sha256": "fdd712c06427b7c61b86d016c6c4861cf73e2117ac20f03e09b7b894e31f6276",
+    "model_card_valid": true,
+    "local_paths_absent": true,
+    "hard_gate_pass": true,
+    "uploaded": false
+  },
   "required_guards": [
     "Base-only claim, evidence, confidence, vote, and change-reason generation",
     "one claim-only item per renderer call with fixed transport id B01",
