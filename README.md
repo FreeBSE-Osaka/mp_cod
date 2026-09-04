@@ -273,6 +273,8 @@ EV 8 event / 最大2 roundは16 model call・54.2秒で完走しました。Weig
 
 `--portable-context`を指定したrun JSONにはledger snapshot、人格順、表示名を埋め込めます。ledger本文を複製するため既定はOFFです。台風18号weather runは16/16 Weight発言・hard gate通過後、ExtremeWeatherの純Swift importer、無関係fixtureからの復元、改変ledger拒否、iPhone 16 Simulatorでの画面表示まで確認しました。[実装・画面証跡](docs/extremeweather_portable_import_20260904.md)
 
+物理iPhone 13 Pro / A15 / iOS 17.6.1では、`Qwen3-1.7B-4bit + Claim Body v3`を端末内MLXで直接ロード・生成・unloadできました。warm runはTTFT 2.306秒、25.732 tok/s、total 4.558秒、thermal nominalです。これは本文1件の実機スモークであり、完全な多人数CoDの実機完走ではありません。[実装・実測・再現手順](docs/iphone13_a15_claim_body_v3_smoke_20260904.md)
+
 Hugging Face向けには、ローカルpathを除いたAdapter設定、Model Card、Weight、SHA256SUMSだけのstaging packageを用意しています。公開前検証とupload境界は [Hugging Face release staging](docs/huggingface_release_claim_body_v3.md) を参照してください。
 
 ## bounded RSI shadow

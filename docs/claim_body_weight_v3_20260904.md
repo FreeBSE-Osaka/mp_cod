@@ -219,3 +219,9 @@ rawは`/Volumes/data4/cod_model_weight/evaluations/claim-body-v3/`、Weightは`/
 ## Weather and iOS portable import
 
 学習から除外したweather domainの台風18号12 event / 1 roundでも、公開16発言すべてWeight由来、fallback 0、hard gate passとなった。run JSONへledger snapshotと人格metadataを埋め込み、ExtremeWeatherの純Swift importerで再検証・Simulator表示まで完走した。詳細と画面証跡は[ExtremeWeather portable CoD import](extremeweather_portable_import_20260904.md)を参照。
+
+## Physical iPhone MLX smoke
+
+物理iPhone 13 Pro / A15 / iOS 17.6.1で、`Qwen3-1.7B-4bit`と本Adapterを直接ロードし、weather claim 1件をstrict JSONの丁寧な本文へ変換した。通常memory limitでAdapter unloadとsession clearまでPASSし、warm runはTTFT 2.306秒、25.732 tok/s、total 4.558秒、thermal nominalだった。result JSONのSHA-256は`c3008004f01ddf941f9b6080e1f8df869ca5c35e8f432a67616a4bebcf9bd8ba`。詳細は[iPhone 13 Pro / A15 device smoke](iphone13_a15_claim_body_v3_smoke_20260904.md)を参照。
+
+これは本文renderer 1 callの成立確認であり、完全な複数人格CoD、連続round、Peak memory、ExtremeWeather本体との共存は未検証である。

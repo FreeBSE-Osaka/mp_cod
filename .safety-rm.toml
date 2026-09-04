@@ -1,0 +1,6 @@
+version = 1
+
+[[allow]]
+path = "ios/ClaimBodyDeviceHarness/DerivedData"
+operations = ["purge"]
+reason = "Regenerable iOS harness build products; source, device result, and installed app are preserved"

@@ -1,0 +1,21 @@
+{
+  "base_model": "mlx-community/Qwen3-1.7B-4bit",
+  "fine_tune_type": "lora",
+  "num_layers": 4,
+  "lora_parameters": {
+    "rank": 4,
+    "dropout": 0.0,
+    "scale": 8.0,
+    "keys": [
+      "mlp.down_proj",
+      "mlp.gate_proj",
+      "mlp.up_proj",
+      "self_attn.k_proj",
+      "self_attn.o_proj",
+      "self_attn.q_proj",
+      "self_attn.v_proj"
+    ]
+  },
+  "renderer_contract": "mp_cod_claim_body_v2",
+  "source_commit": "f65e020b82aa090a550bf1523fd2ac534642901d"
+}
