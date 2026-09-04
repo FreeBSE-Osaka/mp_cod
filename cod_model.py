@@ -14,6 +14,7 @@ import random
 import re
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 from difflib import SequenceMatcher
@@ -1361,6 +1362,14 @@ def dialogue_is_aligned(utterance: str, label: str, competitors: list[str]) -> b
     return selected >= 0.04 and selected >= competing + 0.02
 
 
+def dialogue_numbers_are_grounded(utterance: str, payload: dict) -> bool:
+    numbers = lambda value: set(
+        re.findall(r"\d+(?:\.\d+)?", unicodedata.normalize("NFKC", value))
+    )
+    source = json.dumps(payload, ensure_ascii=False)
+    return numbers(utterance).issubset(numbers(source))
+
+
 def independent_utterance_is_aligned(utterance: str, code: str, claims: list[dict]) -> bool:
     scores = {claim["code"]: similarity(utterance, claim["label"]) for claim in claims}
     return code in scores and scores[code] >= max(scores.values(), default=0.0)
@@ -2097,6 +2106,10 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     utterance, record.get("competitor_labels", [])
                 ):
                     utterance, warning = None, "renderer utterance selects a competing frozen claim"
+                if utterance is not None and not dialogue_numbers_are_grounded(
+                    utterance, record["payload"]
+                ):
+                    utterance, warning = None, "renderer utterance invents an ungrounded number"
                 target_label = record.get("target_label")
                 if (
                     utterance is not None
@@ -2116,6 +2129,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         and not dialogue_selects_competing_claim(
                             repaired, record.get("competitor_labels", [])
                         )
+                        and dialogue_numbers_are_grounded(repaired, record["payload"])
                     ):
                         if not target_label or move not in {"object", "agree"} or reaction_is_aligned(
                             repaired, record["label"], target_label, move

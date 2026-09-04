@@ -671,6 +671,22 @@ class CodModelTest(unittest.TestCase):
                 ["8/30のBOX改善を根拠にpairwise上位3頭で公開BOXを直ちに置換する"],
             )
         )
+        numeric_payload = {
+            "own_claim": "on-call上限30件/日をhard constraintとして扱う",
+            "evidence": ["対象は240件、処理上限は180件である。"],
+        }
+        self.assertTrue(
+            cod_model.dialogue_numbers_are_grounded(
+                "賛成です。上限30件/日と対象240件を確認しましょう。",
+                numeric_payload,
+            )
+        )
+        self.assertFalse(
+            cod_model.dialogue_numbers_are_grounded(
+                "賛成です。12か月ではなく18か月で再確認しましょう。",
+                numeric_payload,
+            )
+        )
 
     def test_objection_speaks_before_new_topic(self):
         ledger = {
