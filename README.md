@@ -265,6 +265,8 @@ Claim Body v1は後の監査で、提案を完了事実へ変える文と名詞�
 
 現行のClaim Body v3 step128は、17 train topic・585件のclean targetでBaseから学習しました。完全除外したemail / EV / bike 15ケースでcontract valid `15/15`、strict schema `15/15`、競合claim `0`です。3 topicの1 round実走はいずれも公開6発言全てがWeight由来、fallback 0、hard gate通過でした。設定、v2/v4停止理由、会話全文、SHAは [Claim Body Weight v3](docs/claim_body_weight_v3_20260904.md)、運用境界は [現行昇格記録](promotions/qwen3-1.7b-claim-body-v3-step128.json) にあります。
 
+未学習の競馬システム改善ledgerでもClaim Body v3はfull runの本文`20/20`、reaction失敗0、矛盾summary 0でhard gateを通過しました。転移で見つかった対立グラフ整合性と凍結claim-aware validationの修正、判断権限の境界は [Horse Claim Body transfer v2](docs/horse_claim_body_transfer_v2_20260905.md) にあります。
+
 同一claim本文のvalidated cacheにより、EV 2 event / 1 roundは公開内容を変えず、Body call `6→2`、総model call `14→10`、実行時間`52.5→41.9秒`へ短縮しました。
 
 選択claimへ整合したstatementの不正D番号は既存sanitizerで正規化し、email 2 event / 1 roundのreconciliation repairを`4→1`、総model callを`14→11`、実行時間を`49.6→45.1秒`へ短縮しました。公開発言・投票・変更理由・summaryは同一です。

@@ -630,6 +630,17 @@ class CodModelTest(unittest.TestCase):
         body, reason = cod_model.normalize_renderer_body(values["C01"])
         self.assertIsNone(reason)
         self.assertEqual(body, "段階導入を先に試すのが現実的です。")
+        label_with_token = "q85はpositive_attention_onlyの記録に留める"
+        body, reason = cod_model.normalize_renderer_body(
+            "q85はpositive_attention_onlyの記録に留めます。", label_with_token
+        )
+        self.assertIsNone(reason)
+        self.assertEqual(body, "q85はpositive_attention_onlyの記録に留めます。")
+        body, reason = cod_model.normalize_renderer_body(
+            "q85はnegative_overrideの記録に留めます。", label_with_token
+        )
+        self.assertIsNone(body)
+        self.assertIn("internal protocol", reason)
         values, warning, repaired = cod_model.parse_renderer_bodies(
             {"C02": "別の主張です。"},
             ["C01"],
@@ -727,6 +738,26 @@ class CodModelTest(unittest.TestCase):
             "agree",
         )
         self.assertTrue(composed.startswith("その案には賛成です。加えて、"))
+        meta_claim = "競馬の自然な異議・賛同・維持・変更文を先に作りrendererだけ再学習する"
+        self.assertEqual(
+            cod_model.compose_dialogue_body(f"{meta_claim[:-2]}します。", meta_claim, "propose"),
+            f"{meta_claim[:-2]}します。",
+        )
+        self.assertIsNone(
+            cod_model.compose_dialogue_body(
+                f"賛同します。{meta_claim[:-2]}します。", meta_claim, "propose"
+            )
+        )
+        q85_claim = "q85はpositive_attention_onlyの記録に留め、選抜判断を割かない"
+        self.assertEqual(
+            cod_model.compose_dialogue_body(f"{q85_claim}と判断します。", q85_claim, "propose"),
+            f"{q85_claim}と判断します。",
+        )
+        maintained, reason = cod_model.validate_dialogue_move(
+            f"結論は変わりません。{q85_claim}と判断します。", "maintain", q85_claim
+        )
+        self.assertIsNone(reason)
+        self.assertIn("positive_attention_only", maintained)
         metrics = cod_model.event_run_metrics(
             {
                 "events": [
@@ -962,6 +993,37 @@ class CodModelTest(unittest.TestCase):
         self.assertFalse(
             cod_model.reconciliation_has_supermajority(
                 {"A|B": {"A": 2, "B": 2}}, [("A", "B")], 4
+            )
+        )
+
+    def test_pairwise_resolution_chain_does_not_select_a_defeated_winner(self):
+        catalog = {
+            "A": {"contradicts": ["B"]},
+            "B": {"contradicts": ["A", "C"]},
+            "C": {"contradicts": ["B"]},
+        }
+        events = [
+            {"code": "A", "persona_id": "p1"},
+            {"code": "B", "persona_id": "p2"},
+            {"code": "C", "persona_id": "p3"},
+            {"code": "C", "persona_id": "p4"},
+        ]
+        reconciliation = [
+            {
+                "votes": {
+                    "A|B": {"p1": "B", "p2": "B", "p3": "B", "p4": "A"},
+                    "B|C": {"p1": "C", "p2": "C", "p3": "C", "p4": "B"},
+                }
+            }
+        ]
+        summary = cod_model.synthesize_event_summary(events, catalog, reconciliation, 4)
+        self.assertEqual(summary["resolved_conflicts"], {"B|C": "C"})
+        self.assertEqual(summary["unresolved_conflicts"], [["A", "B"]])
+        self.assertEqual(summary["consensus"], ["C"])
+        self.assertTrue(cod_model.event_summary_conflict_free(summary))
+        self.assertFalse(
+            cod_model.event_summary_conflict_free(
+                {"consensus": ["B", "C"], "resolved_conflicts": {"B|C": "C"}}
             )
         )
 

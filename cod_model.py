@@ -1330,13 +1330,28 @@ def parse_renderer_bodies(
     return {}, "renderer output must contain only bodies", False
 
 
-def normalize_renderer_body(body: object) -> tuple[str | None, str | None]:
+def mask_frozen_internal_tokens(text: str, label: str) -> tuple[str | None, str | None]:
+    tokens = set(re.findall(r"[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+", text))
+    if tokens:
+        allowed = set(re.findall(r"[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+", label))
+        if not tokens.issubset(allowed):
+            return None, "body exposes internal protocol"
+        for token in tokens:
+            text = text.replace(token, token.replace("_", "-"))
+    return text, None
+
+
+def normalize_renderer_body(body: object, label: str = "") -> tuple[str | None, str | None]:
     if not isinstance(body, str):
         return None, "body must be a string"
     normalized = re.sub(r"\s+", " ", body).strip()
     if normalized and normalized[-1] not in "。！？!?":
         normalized += "。"
-    return validate_dialogue_utterance(normalized)
+    validation_text, reason = mask_frozen_internal_tokens(normalized, label)
+    if validation_text is None:
+        return None, reason
+    validated, reason = validate_dialogue_utterance(validation_text)
+    return (normalized, None) if validated is not None else (None, reason)
 
 
 def body_is_neutral(body: str) -> bool:
@@ -1374,7 +1389,7 @@ def sanitize_body_politeness(body: str, label: str) -> str | None:
         return None
     for suffix, replacement in BODY_POLITE_SUFFIXES:
         if plain_body.endswith(suffix):
-            candidate, _ = normalize_renderer_body(plain_body[: -len(suffix)] + replacement)
+            candidate, _ = normalize_renderer_body(plain_body[: -len(suffix)] + replacement, label)
             if (
                 candidate is not None
                 and body_is_polite_sentence(candidate)
@@ -1382,7 +1397,7 @@ def sanitize_body_politeness(body: str, label: str) -> str | None:
             ):
                 return candidate
     if exact:
-        candidate, _ = normalize_renderer_body(f"{plain_body}と判断します")
+        candidate, _ = normalize_renderer_body(f"{plain_body}と判断します", label)
         if candidate is not None and body_matches_claim(candidate, label):
             return candidate
     return None
@@ -1433,12 +1448,21 @@ def dialogue_move_example(label: str, move: str, variant: int = 0) -> str:
     return templates[variant % len(templates)].replace("{label}", label)
 
 
-def validate_dialogue_move(utterance: object, move: str) -> tuple[str | None, str | None]:
-    normalized, reason = validate_dialogue_utterance(utterance)
+def validate_dialogue_move(
+    utterance: object, move: str, frozen_claim: str = ""
+) -> tuple[str | None, str | None]:
+    validation_input = utterance
+    if isinstance(utterance, str) and frozen_claim:
+        validation_input, reason = mask_frozen_internal_tokens(utterance, frozen_claim)
+        if validation_input is None:
+            return None, reason
+    normalized, reason = validate_dialogue_utterance(validation_input)
     if normalized is None:
         return None, reason
+    if validation_input != utterance:
+        normalized = re.sub(r"\s+", " ", str(utterance)).strip()
     if move == "propose" and any(
-        marker in normalized
+        normalized.count(marker) > frozen_claim.count(marker)
         for marker in (
             "その案", "賛成", "賛同", "同意", "同感", "前の見方", "判断を変え", "結論を維持",
         )
@@ -1528,7 +1552,7 @@ def compose_dialogue_body(body: str, label: str, move: str, variant: int = 0) ->
         body = f"『{label}』{body[len(label):]}"
     prefixes = MOVE_UTTERANCE_PREFIXES.get(move)
     candidate = f"{prefixes[variant % len(prefixes)]}{body}" if prefixes else body
-    normalized, _ = validate_dialogue_move(candidate, move)
+    normalized, _ = validate_dialogue_move(candidate, move, label)
     return normalized if normalized is not None and dialogue_is_aligned(normalized, label, []) else None
 
 
@@ -1544,7 +1568,9 @@ def compose_dialogue_fallback(
     return body, "statement_fallback"
 
 
-def sanitize_dialogue_move(utterance: object, move: str) -> str | None:
+def sanitize_dialogue_move(
+    utterance: object, move: str, frozen_claim: str = ""
+) -> str | None:
     if not isinstance(utterance, str):
         return None
     visible = utterance.split("根拠", 1)[0]
@@ -1554,7 +1580,7 @@ def sanitize_dialogue_move(utterance: object, move: str) -> str | None:
     if not visible:
         return None
     visible = f"{visible}。"
-    normalized, _ = validate_dialogue_move(visible, move)
+    normalized, _ = validate_dialogue_move(visible, move, frozen_claim)
     if normalized is not None:
         return normalized
     if move == "object" and visible.startswith("その案には、"):
@@ -1574,7 +1600,7 @@ def sanitize_dialogue_move(utterance: object, move: str) -> str | None:
         "revise": "前の見方を修正します。",
     }
     candidate = f"{prefixes.get(move, '')}{visible}"
-    normalized, _ = validate_dialogue_move(candidate, move)
+    normalized, _ = validate_dialogue_move(candidate, move, frozen_claim)
     return normalized
 
 
@@ -1704,6 +1730,8 @@ def synthesize_event_summary(
     if reconciliation:
         final_votes = reconciliation[-1].get("votes", {})
         unresolved = []
+        locally_resolved: dict[str, tuple[tuple[str, str], str]] = {}
+        defeated: set[str] = set()
         for pair in pairs:
             key = "|".join(pair)
             choices = final_votes.get(key, {})
@@ -1713,9 +1741,15 @@ def synthesize_event_summary(
             counts = {code: sum(choice == code for choice in normalized_choices) for code in pair}
             winner = max(counts, key=counts.get)
             if counts[winner] >= threshold:
-                resolved[key] = winner
+                locally_resolved[key] = (pair, winner)
+                defeated.update(code for code in pair if code != winner)
             else:
                 unresolved.append(pair)
+        for key, (pair, winner) in locally_resolved.items():
+            if winner in defeated:
+                unresolved.append(pair)
+            else:
+                resolved[key] = winner
     excluded = {code for pair in pairs for code in pair}
     for winner in resolved.values():
         excluded.discard(winner)
@@ -1731,6 +1765,14 @@ def synthesize_event_summary(
         "unresolved_conflicts": [list(pair) for pair in unresolved],
         "speaker_counts": {code: len(owners) for code, owners in speakers.items()},
     }
+
+
+def event_summary_conflict_free(summary: dict) -> bool:
+    selected = set(summary.get("consensus") or []) | set(summary.get("unopposed_supported") or [])
+    pair_keys = list((summary.get("resolved_conflicts") or {}).keys()) + [
+        "|".join(pair) for pair in summary.get("unresolved_conflicts") or []
+    ]
+    return all(not set(key.split("|")).issubset(selected) for key in pair_keys)
 
 
 def event_run_metrics(run: dict) -> dict:
@@ -1853,6 +1895,7 @@ def event_run_metrics(run: dict) -> dict:
     action_diversity = len({event.get("action") for event in events}) / len(ACTION_PRIORITY) if events else 0.0
     near_duplicate_rate = near_duplicates / len(statement_pairs) if statement_pairs else 0.0
     evidence_validity_rate = model_claims / model_attempts if model_attempts else 0.0
+    summary_conflict_free = event_summary_conflict_free(run.get("summary") or {})
     score = 100 * (
         0.15 * model_claim_rate
         + 0.1 * model_statement_rate
@@ -1907,6 +1950,7 @@ def event_run_metrics(run: dict) -> dict:
         "action_diversity": round(action_diversity, 4),
         "near_duplicate_pairs": near_duplicates,
         "near_duplicate_rate": round(near_duplicate_rate, 4),
+        "summary_conflict_free": summary_conflict_free,
         "shadow_score": round(score, 2),
         "hard_gate_pass": (
             rejected == 0
@@ -1917,6 +1961,7 @@ def event_run_metrics(run: dict) -> dict:
             and model_statement_rate == 1.0
             and model_utterance_rate == 1.0
             and reaction_failures == 0
+            and summary_conflict_free
         ),
     }
 
@@ -2298,7 +2343,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     values, schema_warning, schema_repaired = parse_renderer_bodies(
                         parsed, [renderer_id]
                     )
-                    body, body_warning = normalize_renderer_body(values.get(renderer_id))
+                    body, body_warning = normalize_renderer_body(values.get(renderer_id), record["label"])
                     body_sanitized = False
                     if body is not None and not body_is_neutral(body):
                         body, body_warning = None, "body renderer exposed a dialogue move"
@@ -2443,7 +2488,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 candidate = restore_claim_label(values.get(record["id"]), record["label"])
                 move = record.get("validation_move")
                 if move:
-                    utterance, warning = validate_dialogue_move(candidate, move)
+                    utterance, warning = validate_dialogue_move(candidate, move, record["label"])
                 else:
                     utterance, warning = validate_dialogue_utterance(candidate)
                 if utterance is not None and not dialogue_is_aligned(
@@ -2468,7 +2513,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     utterance, warning = None, "renderer utterance follows the target instead of its own claim"
                 sanitized = False
                 if utterance is None and candidate is not None:
-                    repaired = sanitize_dialogue_move(candidate, move or "")
+                    repaired = sanitize_dialogue_move(candidate, move or "", record["label"])
                     if (
                         repaired is not None
                         and dialogue_is_aligned(
