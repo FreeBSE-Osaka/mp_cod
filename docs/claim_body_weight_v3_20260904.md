@@ -146,6 +146,20 @@ EVの公開発言は次のとおり。
 
 event発言、4人格の投票、表示文、変更理由、最終summaryは旧runと完全一致した。`renderer_batches.record_ids`へ全再利用先、各発言の`renderer_cached`、metricsへ`body_renderer_model_calls / body_renderer_cache_hits`を保存する。
 
+reconciliationの初回statementで選択は有効だがD番号だけが不正な場合、独立主張ですでに使っている`sanitize_model_statement`を再利用する。sanitized文が選択claimへ競合案より強く一致し、競合claimを選んでいない時だけmodel repairを省く。見解変更理由が不正な場合は従来どおりrepairする。
+
+Email 2 event / 1 roundでは、cache適用後のbaselineからさらに次のように短縮した。
+
+| Metric | Cache only | Cache + sanitizer |
+|---|---:|---:|
+| Reconciliation repair calls | 4 | 1 |
+| Total model calls | 14 | 11 |
+| Elapsed | 49.6秒 | 45.1秒 |
+| Weight utterances | 6/6 | 6/6 |
+| Hard gate | pass | pass |
+
+公開発言、投票、D番号、変更理由、summaryは完全一致した。metricsへ`reconciliation_model_repairs / reconciliation_statement_sanitizations`を保存する。
+
 ## v4 stop result
 
 runtimeと完全一致するclaim-only datasetでv3から[`configs/claim-body-v4.yaml`](../configs/claim-body-v4.yaml)を使って32 step追加学習した。v4 step160は外部valid `15/15`を維持したが、exact politeが`14/15`から`13/15`へ下がったため非昇格とした。loss低下だけでは親を置換しない。
@@ -176,6 +190,8 @@ email runtime        9178d81a2be5ba218b8694fc252e39b281c7e952e7d0487e5b4957baf38
 EV runtime           fb3b2cc3b94226ebb4bb7b19c63d26b90722ed2c94fa3d58a0ec64a0b5b5a89c
 Bike runtime         3424c66152ab6a225a7ca8ea304af7ab4a516a0362cd337525b5ff3bc9a90f1a
 EV cached runtime    a56a7d06d2b2edb054f9c536d27adc11535caf5808747e80de3a66631641f87e
+Email cache baseline 2295484814e24c80985cef05d019310ba32bb9ae9de34bf65defa16364f909a6
+Email optimized      4d736dab81b03635c950b07311a49195cb094e865ebdc4e5f466e2d5f29dfdb8
 v4 dataset manifest  bc978b4d7ada314395c050cdba4121727465fc2841ff2966c109a2365a0a1376
 v4 training config   5e8f1ff7e12d558c1b7d22df2a0d7fb5808ab54be0d38c00bd2c5447136a700f
 v4 adapter weights   749b80dc2666061246f55d1b5a59012c6291da4646127bca1f750a16a354b9e9

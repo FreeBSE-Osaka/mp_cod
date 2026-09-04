@@ -979,6 +979,7 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(metrics["mechanical_utterance_rate"], 0.0)
         self.assertEqual(metrics["dialogue_near_duplicate_pairs"], 0)
         self.assertEqual(metrics["reaction_failures"], 0)
+        self.assertEqual(metrics["reconciliation_model_repairs"], 0)
         self.assertFalse(metrics["hard_gate_pass"])
 
     def test_changed_reconciliation_vote_requires_model_change_reason(self):

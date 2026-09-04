@@ -267,6 +267,8 @@ Claim Body v1は後の監査で、提案を完了事実へ変える文と名詞�
 
 同一claim本文のvalidated cacheにより、EV 2 event / 1 roundは公開内容を変えず、Body call `6→2`、総model call `14→10`、実行時間`52.5→41.9秒`へ短縮しました。
 
+選択claimへ整合したstatementの不正D番号は既存sanitizerで正規化し、email 2 event / 1 roundのreconciliation repairを`4→1`、総model callを`14→11`、実行時間を`49.6→45.1秒`へ短縮しました。公開発言・投票・変更理由・summaryは同一です。
+
 Hugging Face向けには、ローカルpathを除いたAdapter設定、Model Card、Weight、SHA256SUMSだけのstaging packageを用意しています。公開前検証とupload境界は [Hugging Face release staging](docs/huggingface_release_claim_body_v3.md) を参照してください。
 
 ## bounded RSI shadow

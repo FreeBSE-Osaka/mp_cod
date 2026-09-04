@@ -55,7 +55,16 @@
     "ev_elapsed_seconds_after": 41.9,
     "public_output_identical": true,
     "hard_gate_pass": true,
-    "run_sha256": "a56a7d06d2b2edb054f9c536d27adc11535caf5808747e80de3a66631641f87e"
+    "run_sha256": "a56a7d06d2b2edb054f9c536d27adc11535caf5808747e80de3a66631641f87e",
+    "email_reconciliation_repairs_before": 4,
+    "email_reconciliation_repairs_after": 1,
+    "email_total_calls_before": 14,
+    "email_total_calls_after": 11,
+    "email_elapsed_seconds_before": 49.6,
+    "email_elapsed_seconds_after": 45.1,
+    "email_public_output_identical": true,
+    "email_baseline_sha256": "2295484814e24c80985cef05d019310ba32bb9ae9de34bf65defa16364f909a6",
+    "email_optimized_sha256": "4d736dab81b03635c950b07311a49195cb094e865ebdc4e5f466e2d5f29dfdb8"
   },
   "external_holdout_15": {
     "topics": ["email_triage", "ev_smart_charging", "bike_rebalancing"],

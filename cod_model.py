@@ -1789,6 +1789,7 @@ def event_run_metrics(run: dict) -> dict:
         for batch in run.get("renderer_batches") or []
         if batch.get("renderer_kind") in {"claim_body_v1", "claim_body_v2"}
     ]
+    reconciliation_model_repairs = sum(vote.get("repair_raw") is not None for vote in vote_records)
     dialogue_records = [(event.get("utterance", ""), event.get("code")) for event in events] + [
         (vote.get("utterance", ""), vote.get("choice")) for vote in vote_records
     ]
@@ -1855,6 +1856,10 @@ def event_run_metrics(run: dict) -> dict:
         "mechanical_utterances": mechanical_utterances,
         "mechanical_utterance_rate": round(mechanical_utterance_rate, 4),
         "reconciliation_parse_fallbacks": vote_parse_fallbacks,
+        "reconciliation_model_repairs": reconciliation_model_repairs,
+        "reconciliation_statement_sanitizations": sum(
+            vote.get("statement_origin") == "model_sanitized" for vote in vote_records
+        ),
         "changed_votes": len(changed_votes),
         "model_change_reason_rate": round(change_reason_rate, 4),
         "raw_record_rate": round(raw_record_rate, 4),
@@ -2718,14 +2723,35 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     parsed.get("statement") if isinstance(parsed, dict) else None,
                     data_ids,
                 )
+                statement_repair_needed = statement is None
                 if statement is None:
-                    if choice in catalog:
+                    sanitized = sanitize_model_statement(
+                        parsed.get("statement") if isinstance(parsed, dict) else None,
+                        data_ids,
+                    )
+                    competitors = [
+                        catalog[code]["label"]
+                        for code in pair
+                        if code != choice and code in catalog
+                    ]
+                    if (
+                        sanitized is not None
+                        and choice in catalog
+                        and dialogue_is_aligned(sanitized, catalog[choice]["label"], competitors)
+                        and not dialogue_selects_competing_claim(sanitized, competitors)
+                    ):
+                        statement = sanitized
+                        statement_origin = "model_sanitized"
+                        statement_repair_needed = False
+                    elif choice in catalog:
                         statement = label_statement(choice, data_ids, ledger)
+                        statement_origin = "label_fallback"
                     elif choice == "BOTH":
                         statement = f"両方を独立シナリオとして残します。根拠は[{','.join(data_ids)}]。"
+                        statement_origin = "label_fallback"
                     else:
                         statement = f"証拠だけでは選べないため保留します。参照は[{','.join(data_ids)}]。"
-                    statement_origin = "label_fallback"
+                        statement_origin = "label_fallback"
                 else:
                     statement_origin = "model"
                 changed = previous_choice is not None and previous_choice != choice
@@ -2763,7 +2789,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 repair_change_reason_warning = None
                 repair_utterance_warning = None
                 if (
-                    statement_reason is not None
+                    statement_repair_needed
                     or (changed and change_reason_warning is not None)
                 ):
                     repair_label = selected_label
@@ -2800,7 +2826,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         min(execution["decision_max_tokens"], 240),
                         f"reconciliation-repair:{round_no}:{key}:{persona['id']}",
                     )
-                    if statement_reason is not None:
+                    if statement_repair_needed:
                         repaired, repair_statement_warning = validate_public_statement(
                             repair_parsed.get("statement") if isinstance(repair_parsed, dict) else None,
                             data_ids,
