@@ -603,6 +603,80 @@ class CodModelTest(unittest.TestCase):
             },
         )
 
+    def test_claim_body_renderer_accepts_only_safe_single_id_compatibility(self):
+        values, warning, repaired = cod_model.parse_renderer_bodies(
+            {"bodies": [{"id": "C01", "body": "段階導入を先に試します。"}]},
+            ["C01"],
+        )
+        self.assertIsNone(warning)
+        self.assertFalse(repaired)
+        self.assertEqual(values["C01"], "段階導入を先に試します。")
+        values, warning, repaired = cod_model.parse_renderer_bodies(
+            {"C01": "段階導入を先に試すのが現実的です"},
+            ["C01"],
+        )
+        self.assertTrue(repaired)
+        self.assertIn("single-id", warning)
+        body, reason = cod_model.normalize_renderer_body(values["C01"])
+        self.assertIsNone(reason)
+        self.assertEqual(body, "段階導入を先に試すのが現実的です。")
+        values, warning, repaired = cod_model.parse_renderer_bodies(
+            {"C02": "別の主張です。"},
+            ["C01"],
+        )
+        self.assertEqual(values, {})
+        self.assertFalse(repaired)
+        self.assertIn("only bodies", warning)
+        values, warning, repaired = cod_model.parse_renderer_bodies(
+            {"B01": "短いtransport idなら長い討論idを復唱しなくて済みます。"},
+            ["B01"],
+        )
+        self.assertTrue(repaired)
+        self.assertEqual(set(values), {"B01"})
+        self.assertTrue(cod_model.body_is_neutral("段階導入を先に試します。"))
+        self.assertTrue(cod_model.body_is_neutral("長期的な懸念として扱います。"))
+        self.assertTrue(cod_model.body_is_neutral("契約案に同意します。"))
+        self.assertFalse(cod_model.body_is_neutral("その案には賛成です。"))
+        self.assertFalse(cod_model.body_is_neutral("その案には懸念があります。"))
+        self.assertTrue(
+            cod_model.body_matches_claim(
+                "需要が集中する通勤station群でpilotを先に行います。",
+                "需要が集中する通勤station群でpilotを先に行う",
+            )
+        )
+        self.assertFalse(
+            cod_model.body_matches_claim(
+                "貸出不能の71%が通勤stationへ集中していました。",
+                "需要が集中する通勤station群でpilotを先に行う",
+            )
+        )
+        composed = cod_model.compose_dialogue_body(
+            "段階導入を先に試します。",
+            "段階導入を先に試す",
+            "agree",
+        )
+        self.assertTrue(composed.startswith("その案には賛成です。加えて、"))
+        metrics = cod_model.event_run_metrics(
+            {
+                "events": [
+                    {
+                        "code": "A",
+                        "action": "new",
+                        "origin": "model",
+                        "statement": "段階導入を先に試します。根拠は[D01]です。",
+                        "statement_origin": "model",
+                        "utterance": composed,
+                        "utterance_origin": "model_body_v1_schema_repair",
+                    }
+                ],
+                "independent": {},
+            }
+        )
+        self.assertEqual(metrics["body_model_utterance_rate"], 1.0)
+        self.assertEqual(metrics["body_schema_repairs"], 1)
+        self.assertEqual(metrics["model_utterance_rate"], 0.0)
+
+
     def test_renderer_v3_training_batch_uses_runtime_contract(self):
         persona = cod_model.load_domains()["general"]["personas"][0]
         rows = [

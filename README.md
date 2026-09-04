@@ -19,6 +19,7 @@
 - 異議・賛同は相手の原文ではなく構造化主張だけを見て会話調で応答
 - renderer失敗時も、異議・賛同・維持・変更ごとの複数templateをローテーションして自然文表示
 - `--no-renderer`で、すり合わせを残したまま検証済みstatementから会話文を合成
+- `--body-adapter`で、LoRAはclaim本文だけを生成し、発話行為はコードで安全に合成
 - 証拠のない主張は自動失格し、対立は最大ラウンド内で3/4に達した時点で終了
 - 人格ごとに効用と損失を分け、反論は前提否定・反例・トレードオフの型を使用
 - prompt/configだけを比較するbounded RSI shadow gateを同梱
@@ -165,7 +166,17 @@ Generalは既存台帳では従来の3人格を保ちます。`role_preferences`
   --renderer-adapter <shared-renderer-adapter>
 ```
 
-2026-09-03時点のv4を含むWeight候補は、別topicの直接valid率が昇格水準に届かないため、上記は研究用interfaceであり推奨Weightはありません。AdapterなしのBase構造判断が既定です。
+全文を作るv3〜v6のrenderer Weightは引き続き研究用です。2026-09-04のclaim-body v1だけは、検証済みclaim本文に限定し、validatorとfallbackを必須にした条件付きWeightとして利用できます。
+
+```sh
+<mlx-python> cod_model.py event-debate \
+  --ledger <claim-ledger.json> \
+  --domain general \
+  --model-path <base-model> \
+  --body-adapter <claim-body-v1-adapter>
+```
+
+`--body-adapter`は1発言ずつ本文だけを生成します。claim、証拠、投票はAdapterを外したBaseが担当し、object / agree / maintain / reviseはコード合成します。`--adapter-map`、`--renderer-adapter`、`--no-renderer`とは排他的です。安全なsingle-ID schema補正を使った発言は`model_body_v1_schema_repair`として保存し、hard gate通過には数えません。
 
 台風データは2026年8月25日15時50分JST時点の再現用スナップショットで、現在の予報には使えません。
 
@@ -249,6 +260,8 @@ Natural specialist v5ではQwen3-14B teacherから実行役event-agreeの直接�
 Natural specialists v6では12の異なるtopicから仮説object 12件・実行event-agree 13件を集め、人格・phase・move別LoRAとrepair LoRAを評価しました。数値創作を拒否するgrounding guardは採用しましたが、全Weightが未学習holdoutで親同等以下だったため非昇格です。全target、評価、SHA、停止理由は [General Dialogue natural specialists v6実験記録](docs/general_dialogue_weight_v6_20260904.md) にあります。
 
 発話行為をコードで確定し、検証済みstatement本文だけを接続する`--no-renderer`経路は、4人格のすり合わせを残したまま39.2秒へ短縮しました。設計、実測、会話全文は [Composed statement renderer v1](docs/composed_statement_renderer_v1_20260904.md) にあります。
+
+Claim Body v1はLoRAを本文生成だけへさらに限定し、未学習3 topic群の厳格claim一致をBase `26/46`からWeight `40/46`へ改善しました。1 round実走では公開6発言中5件をWeightから採用し、証拠だけを返した1件は安全にfallbackしています。長い討論IDは短いtransport IDへ置換し、元IDを監査ログへ残します。同じEV 2 event / 1 roundで46.3秒（従来全文renderer 68.8秒、`--no-renderer` 39.2秒）でした。これは本文専用の条件付き昇格で、Base・投票・全文rendererの置換ではありません。設定、全評価、発言全文、SHAは [Claim Body Weight v1](docs/claim_body_weight_v1_20260904.md)、運用境界は [昇格記録](promotions/qwen3-1.7b-claim-body-v1-step64.json) にあります。
 
 ## bounded RSI shadow
 

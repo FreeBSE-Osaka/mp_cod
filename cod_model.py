@@ -46,6 +46,7 @@ MODEL_UTTERANCE_ORIGINS = {
     "model_dialogue_v2_repair",
     "model_renderer_v3",
     "model_renderer_v3_sanitized",
+    "model_body_v1",
 }
 MOVE_UTTERANCE_TEMPLATES = {
     "object": (
@@ -93,6 +94,17 @@ MOVE_UTTERANCE_PREFIXES = {
         "先ほどとは結論を変えます。",
     ),
 }
+BODY_RENDERER_SYSTEM = (
+    "各itemのspeakerとして、検証済みclaimを自然な日本語一文で述べる本文renderer。"
+    "claim、根拠、数字を変更・追加せず、moveや賛否は表現しない。"
+    "入力itemsと同じidを一度ずつ返す。"
+    "出力はbodiesだけをキーに持つJSONで、各要素のキーはidとbodyだけ。"
+)
+BODY_MOVE_MARKERS = (
+    "その案には賛成", "その案に賛成", "私も賛同", "私も同意", "その結論には異議",
+    "その案には異議", "その案には懸念", "結論を維持", "見方を修正", "考え直しました",
+    "結論を変え",
+)
 
 
 def short_string(limit: int = 160) -> dict:
@@ -1269,6 +1281,56 @@ def parse_renderer_utterances(
     return values, None
 
 
+def parse_renderer_bodies(
+    parsed: object, expected_ids: list[str]
+) -> tuple[dict[str, object], str | None, bool]:
+    if isinstance(parsed, dict) and set(parsed) == {"bodies"}:
+        rows = parsed.get("bodies")
+        if not isinstance(rows, list):
+            return {}, "renderer bodies must be an array", False
+        expected = set(expected_ids)
+        values: dict[str, object] = {}
+        for row in rows:
+            if not isinstance(row, dict) or set(row) != {"id", "body"}:
+                return {}, "renderer body rows must contain only id and body", False
+            item_id = row.get("id")
+            if not isinstance(item_id, str) or item_id not in expected or item_id in values:
+                return {}, "renderer returned an unknown or duplicate body id", False
+            values[item_id] = row.get("body")
+        if set(values) != expected:
+            return {}, "renderer did not return every requested body id", False
+        return values, None, False
+    if (
+        len(expected_ids) == 1
+        and isinstance(parsed, dict)
+        and set(parsed) == {expected_ids[0]}
+        and isinstance(parsed[expected_ids[0]], str)
+    ):
+        return {expected_ids[0]: parsed[expected_ids[0]]}, "normalized single-id body mapping", True
+    return {}, "renderer output must contain only bodies", False
+
+
+def normalize_renderer_body(body: object) -> tuple[str | None, str | None]:
+    if not isinstance(body, str):
+        return None, "body must be a string"
+    normalized = re.sub(r"\s+", " ", body).strip()
+    if normalized and normalized[-1] not in "。！？!?":
+        normalized += "。"
+    return validate_dialogue_utterance(normalized)
+
+
+def body_is_neutral(body: str) -> bool:
+    return not any(marker in body for marker in BODY_MOVE_MARKERS)
+
+
+def body_matches_claim(body: str, label: str) -> bool:
+    return (
+        dialogue_matches_claim(body, label)
+        and not dialogue_reverses_restriction(body, label)
+        and dialogue_preserves_restriction(body, label)
+    )
+
+
 def event_execution_settings(args: argparse.Namespace, persona_count: int) -> dict[str, int]:
     if not getattr(args, "fast", False):
         return {
@@ -1404,18 +1466,22 @@ def dialogue_fallback(statement: str) -> str:
     return f"{visible}。"
 
 
+def compose_dialogue_body(body: str, label: str, move: str, variant: int = 0) -> str | None:
+    if body.startswith(label) and body[len(label) :].startswith("を"):
+        body = f"『{label}』{body[len(label):]}"
+    prefixes = MOVE_UTTERANCE_PREFIXES.get(move)
+    candidate = f"{prefixes[variant % len(prefixes)]}{body}" if prefixes else body
+    normalized, _ = validate_dialogue_move(candidate, move)
+    return normalized if normalized is not None and dialogue_is_aligned(normalized, label, []) else None
+
+
 def compose_dialogue_fallback(
     statement: str, label: str, move: str, variant: int = 0
 ) -> tuple[str, str]:
     body = dialogue_fallback(statement)
-    if body.startswith(label) and body[len(label) :].startswith("を"):
-        body = f"『{label}』{body[len(label):]}"
-    prefixes = MOVE_UTTERANCE_PREFIXES.get(move)
-    if prefixes:
-        candidate = f"{prefixes[variant % len(prefixes)]}{body}"
-        normalized, _ = validate_dialogue_move(candidate, move)
-        if normalized is not None and dialogue_is_aligned(normalized, label, []):
-            return normalized, "composed_statement_fallback"
+    composed = compose_dialogue_body(body, label, move, variant)
+    if composed is not None:
+        return composed, "composed_statement_fallback"
     if move in MOVE_UTTERANCE_TEMPLATES:
         return dialogue_move_example(label, move, variant), "template_fallback"
     return body, "statement_fallback"
@@ -1617,8 +1683,10 @@ def event_run_metrics(run: dict) -> dict:
     fallbacks = sum(event.get("origin") == "validated_fallback" for event in events)
     model_statement_origins = {"model", "model_repair", "model_sanitized"}
     model_utterance_origins = MODEL_UTTERANCE_ORIGINS
+    body_utterance_origins = {"model_body_v1", "model_body_v1_schema_repair"}
     model_statements = sum(event.get("statement_origin") in model_statement_origins for event in events)
     model_event_utterances = sum(event.get("utterance_origin") in model_utterance_origins for event in events)
+    body_event_utterances = sum(event.get("utterance_origin") in body_utterance_origins for event in events)
     dialogue_v2_utterances = sum(
         event.get("utterance_origin") in {"model_dialogue_v2", "model_dialogue_v2_repair"}
         for event in events
@@ -1677,12 +1745,20 @@ def event_run_metrics(run: dict) -> dict:
     vote_model_utterances = sum(
         vote.get("utterance_origin") in model_utterance_origins for vote in vote_records
     )
+    body_vote_utterances = sum(
+        vote.get("utterance_origin") in body_utterance_origins for vote in vote_records
+    )
     public_statement_total = total + len(vote_records)
     model_statement_rate = (
         (model_statements + vote_model_statements) / public_statement_total if public_statement_total else 0.0
     )
     model_utterance_rate = (
         (model_event_utterances + vote_model_utterances) / public_statement_total
+        if public_statement_total
+        else 0.0
+    )
+    body_utterance_rate = (
+        (body_event_utterances + body_vote_utterances) / public_statement_total
         if public_statement_total
         else 0.0
     )
@@ -1734,6 +1810,12 @@ def event_run_metrics(run: dict) -> dict:
         "reconciliation_model_statements": vote_model_statements,
         "model_utterance_rate": round(model_utterance_rate, 4),
         "event_model_utterances": model_event_utterances,
+        "body_model_utterance_rate": round(body_utterance_rate, 4),
+        "body_model_utterances": body_event_utterances + body_vote_utterances,
+        "body_schema_repairs": sum(
+            text.get("utterance_origin") == "model_body_v1_schema_repair"
+            for text in events + vote_records
+        ),
         "dialogue_v2_utterances": dialogue_v2_utterances,
         "dialogue_v3_utterances": dialogue_v3_utterances,
         "reaction_events": len(reaction_events),
@@ -1910,20 +1992,26 @@ def run_event_debate(args: argparse.Namespace) -> int:
     if args.backend == "mlx" and not args.model_path:
         raise ValueError("MLX backend requires --model-path")
     shared_renderer_adapter = getattr(args, "renderer_adapter", None)
+    body_renderer_adapter = getattr(args, "body_adapter", None)
     no_renderer = bool(getattr(args, "no_renderer", False))
-    if args.adapter_map and shared_renderer_adapter:
-        raise ValueError("--adapter-map and --renderer-adapter are mutually exclusive")
-    if no_renderer and (args.adapter_map or shared_renderer_adapter):
+    if sum(bool(value) for value in (args.adapter_map, shared_renderer_adapter, body_renderer_adapter)) > 1:
+        raise ValueError("--adapter-map, --renderer-adapter, and --body-adapter are mutually exclusive")
+    if no_renderer and (args.adapter_map or shared_renderer_adapter or body_renderer_adapter):
         raise ValueError("--no-renderer cannot be combined with a renderer adapter")
-    if args.backend == "ollama" and (args.adapter_map or shared_renderer_adapter):
+    if args.backend == "ollama" and (args.adapter_map or shared_renderer_adapter or body_renderer_adapter):
         raise ValueError("Ollama backend does not accept MLX renderer adapters")
-    if shared_renderer_adapter:
-        adapter_dir = Path(shared_renderer_adapter)
+    for adapter_name, adapter_path in (
+        ("renderer", shared_renderer_adapter),
+        ("body renderer", body_renderer_adapter),
+    ):
+        if not adapter_path:
+            continue
+        adapter_dir = Path(adapter_path)
         if not adapter_dir.is_dir():
-            raise ValueError(f"renderer adapter directory does not exist: {shared_renderer_adapter}")
+            raise ValueError(f"{adapter_name} adapter directory does not exist: {adapter_path}")
         for required in ("adapter_config.json", "adapters.safetensors"):
             if not (adapter_dir / required).is_file():
-                raise ValueError(f"renderer adapter is missing {required}")
+                raise ValueError(f"{adapter_name} adapter is missing {required}")
     adapter_map = (
         load_adapter_map(args.adapter_map, {persona["id"] for persona in personas})
         if args.backend == "mlx"
@@ -1954,11 +2042,12 @@ def run_event_debate(args: argparse.Namespace) -> int:
 
         def activate_persona_adapter(persona_id: str | None) -> str | None:
             nonlocal model, active_adapter, adapter_layers_active
-            target = (
-                shared_renderer_adapter
-                if persona_id == "shared"
-                else adapter_map.get(persona_id) if persona_id is not None else None
-            )
+            if persona_id == "shared":
+                target = shared_renderer_adapter
+            elif persona_id == "body":
+                target = body_renderer_adapter
+            else:
+                target = adapter_map.get(persona_id) if persona_id is not None else None
             if target == active_adapter and (target is not None or not adapter_layers_active):
                 return target
             if adapter_layers_active:
@@ -2046,8 +2135,10 @@ def run_event_debate(args: argparse.Namespace) -> int:
         "execution": {"fast": bool(getattr(args, "fast", False)), "no_renderer": no_renderer, **execution},
         "adapter_map": adapter_map,
         "renderer_adapter": shared_renderer_adapter,
+        "body_adapter": body_renderer_adapter,
         "renderer_schema_version": 3,
-        "adapter_scope": "utterance_renderer_v3_only",
+        "body_renderer_schema_version": 1 if body_renderer_adapter else None,
+        "adapter_scope": "claim_body_v1_only" if body_renderer_adapter else "utterance_renderer_v3_only",
         "adapter_fingerprints": {
             persona_id: {
                 "config_sha256": hashlib.sha256((Path(path) / "adapter_config.json").read_bytes()).hexdigest(),
@@ -2067,6 +2158,18 @@ def run_event_debate(args: argparse.Namespace) -> int:
             if shared_renderer_adapter
             else None
         ),
+        "body_adapter_fingerprint": (
+            {
+                "config_sha256": hashlib.sha256(
+                    (Path(body_renderer_adapter) / "adapter_config.json").read_bytes()
+                ).hexdigest(),
+                "weights_sha256": hashlib.sha256(
+                    (Path(body_renderer_adapter) / "adapters.safetensors").read_bytes()
+                ).hexdigest(),
+            }
+            if body_renderer_adapter
+            else None
+        ),
         "independent": {},
         "events": [],
         "reconciliation": [],
@@ -2078,8 +2181,78 @@ def run_event_debate(args: argparse.Namespace) -> int:
     def render_utterance_records(records: list[dict], phase: str) -> None:
         if not records:
             return
+        if body_renderer_adapter:
+            for record_index, record in enumerate(records):
+                adapter_path = activate_persona_adapter("body")
+                batch_number = len(run["renderer_batches"]) + 1
+                batch_id = f"RB{batch_number:02d}"
+                renderer_id = f"B{batch_number:02d}"
+                item = {
+                    "id": renderer_id,
+                    "speaker": persona_configs[record["persona_id"]]["name"],
+                    "claim": record["label"],
+                    "evidence": record["payload"]["evidence"],
+                }
+                raw, parsed = ask_json(
+                    BODY_RENDERER_SYSTEM,
+                    json.dumps({"items": [item]}, ensure_ascii=False),
+                    min(args.max_tokens, 180),
+                    f"body-renderer:{phase}:{record['id']}",
+                )
+                values, schema_warning, schema_repaired = parse_renderer_bodies(
+                    parsed, [renderer_id]
+                )
+                body, body_warning = normalize_renderer_body(values.get(renderer_id))
+                if body is not None and not body_is_neutral(body):
+                    body, body_warning = None, "body renderer exposed a dialogue move"
+                if body is not None and not body_matches_claim(body, record["label"]):
+                    body, body_warning = None, "body renderer does not match the frozen claim"
+                if body is not None and not dialogue_numbers_are_grounded(body, item):
+                    body, body_warning = None, "body renderer invents an ungrounded number"
+                if body is not None and dialogue_selects_competing_claim(
+                    body, record.get("competitor_labels", [])
+                ):
+                    body, body_warning = None, "body renderer selects a competing frozen claim"
+                utterance = (
+                    compose_dialogue_body(
+                        body,
+                        record["label"],
+                        record.get("validation_move") or "propose",
+                        record_index,
+                    )
+                    if body is not None
+                    else None
+                )
+                target = record["target"]
+                if utterance is None:
+                    utterance = record["fallback"]
+                    origin = record.get("fallback_origin", "statement_fallback")
+                else:
+                    origin = "model_body_v1_schema_repair" if schema_repaired else "model_body_v1"
+                run["renderer_batches"].append(
+                    {
+                        "batch_id": batch_id,
+                        "record_id": record["id"],
+                        "phase": phase,
+                        "renderer_kind": "claim_body_v1",
+                        "persona_id": record["persona_id"],
+                        "adapter": adapter_path,
+                        "request": {"items": [item]},
+                        "raw": raw,
+                        "warning": body_warning or schema_warning,
+                    }
+                )
+                target["utterance"] = utterance
+                target["utterance_origin"] = origin
+                target["utterance_warning"] = body_warning or schema_warning
+                target["renderer_batch_id"] = batch_id
+                target["renderer_adapter"] = adapter_path
+            return
         if no_renderer or (
-            getattr(args, "fast", False) and not adapter_map and not shared_renderer_adapter
+            getattr(args, "fast", False)
+            and not adapter_map
+            and not shared_renderer_adapter
+            and not body_renderer_adapter
         ):
             print(
                 f"[{'no-renderer' if no_renderer else 'fast'}] {phase} rendererを省略し、"
@@ -3142,6 +3315,10 @@ def parser() -> argparse.ArgumentParser:
     event_debate.add_argument(
         "--renderer-adapter",
         help="全人格を1バッチ描画する共有utterance renderer v3のMLX LoRA directory",
+    )
+    event_debate.add_argument(
+        "--body-adapter",
+        help="検証済みclaim本文だけを生成し、moveをコード合成するclaim-body v1 MLX LoRA directory",
     )
     event_debate.add_argument(
         "--fast",

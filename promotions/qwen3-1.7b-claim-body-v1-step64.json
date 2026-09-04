@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "status": "conditional_claim_body_renderer",
+  "promoted_at": "2026-09-04",
+  "base_model": "mlx-community/Qwen3-1.7B-4bit",
+  "adapter": "not bundled; planned as a separate Hugging Face artifact",
+  "adapter_bytes": 2496303,
+  "adapter_config_sha256": "e2fd8b28d01ab5d598302fc287947653008eaaa8dfb689a46f27aa27dbbedaa8",
+  "adapter_weights_sha256": "4e2b90a8e80641eec2874179f72b0fe8bacc0b34d0d585a9afd1d35c67bb08c4",
+  "training_source_config": "configs/general-dialogue-v2.yaml with CLI overrides",
+  "effective_training_config": "configs/claim-body-v1.yaml",
+  "training_config_sha256": "7d4fe259ba84fd7eb0236921dbfe9d55846d9100e7bea6c8a1601514d9fef777",
+  "dataset_manifest_sha256": "b3e2e249ae6096a240df68060e8456bae456c98c2308cb22eb4684c7bdec1a51",
+  "dataset_counts": {
+    "train": 96,
+    "valid": 8,
+    "test": 8
+  },
+  "training": {
+    "initial_valid_loss": 2.051,
+    "step_32_valid_loss": 1.362,
+    "step_64_valid_loss": 0.396,
+    "final_train_loss": 0.317,
+    "test_loss": 0.307,
+    "test_perplexity": 1.36,
+    "peak_memory_gb": 1.822
+  },
+  "unseen_strict_claim_validity": {
+    "electric_vehicle": {
+      "base": "12/18",
+      "adapter": "14/18",
+      "base_raw_sha256": "021c0c52584f9ada94885f4c064bc79c5b35106fb8b60337c06c067a35c524e4",
+      "adapter_raw_sha256": "f04dd6831401bd358777321609655d1e6e2bf9e97158850e8b8863e9c8c8c7ee"
+    },
+    "email_triage": {
+      "base": "5/8",
+      "adapter": "7/8",
+      "base_raw_sha256": "8253f34eac7cfefed5a7433f8033575cec895f02557ddd6eb598f731f7c8d653",
+      "adapter_raw_sha256": "48c2944fb79e803f711929a1264f943af917654031913f487e0afa163ab7e695"
+    },
+    "bike_rebalancing": {
+      "base": "9/20",
+      "adapter": "19/20",
+      "base_raw_sha256": "2df5292b84ccad21e5fc990a12f3ea045bc3bacab3b75b8e8e2d02bff661aefd",
+      "adapter_raw_sha256": "62b287e251482ed6b9c94308233be88bd14f477cf8f809fdf688bc457201a744"
+    },
+    "aggregate": {
+      "base": "26/46",
+      "adapter": "40/46"
+    }
+  },
+  "runtime_smoke": {
+    "ledger": "data/general_v2_weight_transfer_holdout/claim_ledger.json",
+    "events": 2,
+    "reconciliation_rounds": 1,
+    "public_utterances": 6,
+    "body_model_utterances": 5,
+    "safe_fallbacks": 1,
+    "resolved_conflicts": 1,
+    "model_calls": 14,
+    "elapsed_seconds": 46.3,
+    "run_artifact": "not bundled; /Volumes/data4/cod_model_weight/evaluations/claim-body-v1/runtime_round1.json",
+    "run_sha256": "8facd7cafaf7fdc052861a33796b7ef538a72dea30aa933256ac515c33246c08",
+    "hard_gate_pass": false
+  },
+  "required_guards": [
+    "Base-only claim, evidence, confidence, vote, and change-reason generation",
+    "exact bodies schema or one expected-id string mapping only",
+    "neutral-body, frozen-claim, restriction, number-grounding, and competing-claim validation",
+    "short transport IDs with the original record ID retained in the audit log",
+    "deterministic move-prefix composition",
+    "validated statement fallback on every rejection"
+  ],
+  "promotion_allowed": true,
+  "promoted_scope": "claim_body_v1_only_behind_validator_and_fallback",
+  "structural_use_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "hard_gate_credit_for_schema_repair": false,
+  "decision": "Conditionally usable only as the claim-body renderer. It is not an utterance, reasoning, voting, or Base replacement Weight."
+}
