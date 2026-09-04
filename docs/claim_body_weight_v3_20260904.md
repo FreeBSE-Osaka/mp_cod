@@ -229,3 +229,5 @@ rawは`/Volumes/data4/cod_model_weight/evaluations/claim-body-v3/`、Weightは`/
 続く4人格の独立本文soakは4/4 contract valid、exact polite 2/4、11.904秒、decode 25.564 tok/s、thermal nominalだった。各session後にMLX buffer cacheを解放することで、同一4文・同等速度のままpeak task footprintを2,510.879から1,478.894 MiBへ41.1%削減し、memory-limit headroomを561.137から2,058.169 MiBへ増やした。生成中cancelもAdapter unload / MLX cache 0で完了した。
 
 実機JSON SHA-256は、cache解放前`3ff050552c9c1b0949582e118193b93a93fdb64e4c54fda6ba8f3104a782884c`、最適化後`8205792a922733004623534431f7f68d8332ae49c4e39aa1dd96d7f018a61fba`、cancel`869313c595f312f97c42417ae2b8d196e85485e8cdd05f02eee5098e45d6f1cd`。4人格でも本文描画だけであり、Base構造判断を含む完全CoDではない。
+
+続くNative CoD実機試験では、0.6B Baseをclaim/evidence/confidence選択、1.7B Baseを変更理由、本Weightを本文だけへ分離した。架空の均衡fixtureで7 event、構造repair 0、本文fallback 0、最終2対2の未解決保持、17.245秒、thermal fairでhard gateを通過した。本文7件は、直前の同一実機Weight runで生成し本validatorを通した3 unique claimの永続cacheを、Adapter SHA・claim・raw・canonical digestで再検証して利用した。cache直接再読込の2回目も18.771秒、peak 1,318.144 MiB、thermal fairで通過し、会話・票・結論が完全一致した。詳細は[iPhone native CoD](iphone13_a15_native_cod_20260904.md)。この結果は0.6BのWeight昇格や実案件統合を意味しない。

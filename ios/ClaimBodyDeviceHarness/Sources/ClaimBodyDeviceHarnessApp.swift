@@ -115,9 +115,9 @@ private struct ClaimBodyDeviceHarnessView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Qwen3 1.7B 4bit + Claim Body v3")
+                    Text("Qwen3 0.6B Base + 1.7B Claim Body v3")
                         .font(.headline)
-                    Text("iPhone実機だけでBase load、LoRA適用、4人格の独立本文生成、unloadを確認します。")
+                    Text("iPhone実機だけで構造化CoD、本文LoRA、memory、thermal、unloadを確認します。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
@@ -131,12 +131,22 @@ private struct ClaimBodyDeviceHarnessView: View {
                         .textSelection(.enabled)
 
                     Button {
-                        startSmoke()
+                        startNativeCoD()
                     } label: {
-                        Label("A15 4人格Soakを実行", systemImage: "cpu")
+                        Label("A15 Native CoDを実行", systemImage: "person.3.sequence")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(isRunning)
+                    .accessibilityIdentifier("runA15NativeCoD")
+
+                    Button {
+                        startSmoke()
+                    } label: {
+                        Label("本文Renderer Soakを実行", systemImage: "cpu")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
                     .disabled(isRunning)
                     .accessibilityIdentifier("runA15Smoke")
 
@@ -158,7 +168,11 @@ private struct ClaimBodyDeviceHarnessView: View {
                 guard !didAutoRun,
                       ProcessInfo.processInfo.arguments.contains("--autorun") else { return }
                 didAutoRun = true
-                startSmoke()
+                if ProcessInfo.processInfo.arguments.contains("--native-cod") {
+                    startNativeCoD()
+                } else {
+                    startSmoke()
+                }
             }
         }
     }
@@ -169,6 +183,57 @@ private struct ClaimBodyDeviceHarnessView: View {
         smokeTask = Task { @MainActor in
             await runSmoke()
             smokeTask = nil
+        }
+    }
+
+    @MainActor
+    private func startNativeCoD() {
+        guard smokeTask == nil else { return }
+        smokeTask = Task { @MainActor in
+            await runNativeCoD()
+            smokeTask = nil
+        }
+    }
+
+    @MainActor
+    private func runNativeCoD() async {
+        guard !isRunning else { return }
+        isRunning = true
+        downloadProgress = 0
+        status = "Native CoDを準備中"
+        log = "structure_model=mlx-community/Qwen3-0.6B-4bit\nbody_model=mlx-community/Qwen3-1.7B-4bit\n"
+        defer { isRunning = false }
+
+        do {
+            let result = try await NativeCoDSmokeRunner.run { phase in
+                status = phase
+            }
+            let eventLog = result.events.map {
+                "[\($0.id) \($0.move) claim=\($0.claim) data=\($0.dataIDs.joined(separator: ","))]\n\($0.persona): \($0.utterance)"
+            }.joined(separator: "\n\n")
+            log += eventLog
+            log += "\n\ninitial_tally=\(result.initialTally)\n"
+            log += "final_tally=\(result.finalTally)\n"
+            log += "consensus=\(result.consensusClaim ?? "unresolved")\n"
+            log += "outcome_status=\(result.outcomeStatus)\n"
+            log += "structural_repairs=\(result.structuralRepairs)\n"
+            log += "body_calls=\(result.bodyRendererModelCalls) cache_hits=\(result.bodyRendererCacheHits)\n"
+            log += "body_sanitizations=\(result.bodyPolitenessSanitizations) fallbacks=\(result.bodyFallbacks)\n"
+            log += "peak_footprint_mib=\(format(mebibytes(result.peakFootprintBytes)))\n"
+            log += "minimum_limit_remaining_mib=\(format(mebibytes(result.minimumLimitBytesRemaining)))\n"
+            log += "total_seconds=\(format(result.totalSeconds)) thermal_state=\(result.thermalState)\n"
+            log += "result_file=mp_cod_a15_native_cod.json\n"
+            status = result.hardGatePass ? "CoD PASS" : "CoD HOLD"
+            downloadProgress = 1
+            print("MP_COD_A15_NATIVE_COD \(result.hardGatePass ? "PASS" : "HOLD")\n\(log)")
+        } catch is CancellationError {
+            status = "CANCELLED"
+            log += "cancelled=true\n"
+            print("MP_COD_A15_NATIVE_COD CANCELLED\n\(log)")
+        } catch {
+            status = "FAIL"
+            log += "error=\(error.localizedDescription)\n"
+            print("MP_COD_A15_NATIVE_COD FAIL \(error)")
         }
     }
 

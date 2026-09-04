@@ -1,6 +1,6 @@
 # Claim Body Device Harness
 
-Qwen3-1.7B-4bitとClaim Body v3 LoRAを、ExtremeWeather本体へ組み込む前にiOS 17/A15実機で段階検証する独立harnessです。
+Qwen3-0.6B-4bit構造Base、Qwen3-1.7B-4bit、Claim Body v3 LoRAを、ExtremeWeather本体へ組み込む前にiOS 17/A15実機で段階検証する独立harnessです。
 
 確認するもの:
 
@@ -12,6 +12,7 @@ Qwen3-1.7B-4bitとClaim Body v3 LoRAを、ExtremeWeather本体へ組み込む前
 - session clear後のMLX cache解放
 - 実行中cancel、Adapter unload
 - 成功metricsをDocumentsの`mp_cod_a15_soak.json`、cancel証跡を`mp_cod_a15_cancel.json`へatomic保存
+- Native CoDを`mp_cod_a15_native_cod.json`へatomic保存
 
 ## Generate
 
@@ -70,11 +71,36 @@ python3.11 tools/validate_iphone_claim_body_soak.py \
   --cancel-result /path/to/iphone13_a15_cancel.json
 ```
 
+## Native CoD mode
+
+アプリの「A15 Native CoDを実行」、または`--autorun --native-cod`で次を実行します。
+
+1. 0.6B Baseが人格別`role_preferences`内でclaim / D番号 / confidenceを盲検選択
+2. 初期多数派の票を保持し、異論側だけBase再選択
+3. 見解変更者だけ1.7B Baseで`change_reason`を生成
+4. 全構造判断後にClaim Body v3 LoRAをロード
+5. unique claim本文だけを生成し、同一claimはcache
+6. objection → revise → agreementの優先順で会話化
+7. Adapterをunloadし、memory / thermal / rawを保存
+
+他人格の自然文をBaseへ渡さず、LoRAはclaim・evidence・vote・change reasonを生成しません。構造Baseと本文Baseは同時常駐させず、各session後にMLX cacheを解放します。
+
+```sh
+python3.11 tools/validate_iphone_native_cod.py \
+  /path/to/iphone13_a15_native_cod.json \
+  --repeat /path/to/iphone13_a15_native_cod_repeat.json
+```
+
+詳細と全HOLD履歴は[`../../docs/iphone13_a15_native_cod_20260904.md`](../../docs/iphone13_a15_native_cod_20260904.md)を参照してください。
+
+物理iPhone 13 Pro / A15のwarm-cache runは、構造7 model call、公開7 event、17.245秒でhard gateを通過しました。永続cacheを直接再読込した2回目も18.771秒、peak 1,318.144 MiB、headroom 2,068.278 MiB、thermal fairで通過しています。初期3案から異議・見解変更・賛同を経て、最終2対2を`unresolved_tie`として保持しました。
+
+永続本文cacheは、同じ実機で生成したWeight raw、Adapter SHA、claim label、body、canonical digestを保持します。各runで再検証し、完全な時だけLoRAの再load・再生成を省きます。
+
 ## Boundary
 
 - 学習しない
-- Baseによるclaim/evidence/vote選択やreconciliationは実行しない
 - ExtremeWeatherへMLX packageを追加しない
 - Base WeightをGit/Appへ同梱しない
-- 物理端末でPASSしたのは4人格の独立本文rendererで、完全な複数人格CoDではない
+- Native CoDは架空の均衡fixtureで検証し、実案件の意思決定結果として使わない
 - ExtremeWeather本体への統合は別の回帰・memoryゲートを通す

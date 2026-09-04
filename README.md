@@ -275,7 +275,9 @@ EV 8 event / 最大2 roundは16 model call・54.2秒で完走しました。Weig
 
 物理iPhone 13 Pro / A15 / iOS 17.6.1では、`Qwen3-1.7B-4bit + Claim Body v3`を端末内MLXで直接ロード・生成・unloadできました。warm runはTTFT 2.306秒、25.732 tok/s、total 4.558秒、thermal nominalです。これは本文1件の実機スモークであり、完全な多人数CoDの実機完走ではありません。[実装・実測・再現手順](docs/iphone13_a15_claim_body_v3_smoke_20260904.md)
 
-続く4人格の独立本文soakは11.904秒、4/4 contract valid、exact polite 2/4、thermal nominalでした。各session後にMLX buffer cacheを解放し、peak footprintを2,510.879→1,478.894 MiB（-41.1%）、memory-limit headroomを561.137→2,058.169 MiBへ改善しました。生成中cancel後のAdapter unload / cache 0も実機確認済みです。Baseによる主張選択とreconciliationはまだ端末内実行していません。
+続く4人格の独立本文soakは11.904秒、4/4 contract valid、exact polite 2/4、thermal nominalでした。各session後にMLX buffer cacheを解放し、peak footprintを2,510.879→1,478.894 MiB（-41.1%）、memory-limit headroomを561.137→2,058.169 MiBへ改善しました。生成中cancel後のAdapter unload / cache 0も実機確認済みです。このsoak単体ではBaseによる主張選択とreconciliationを実行していません。
+
+その後、物理A15内で`Qwen3-0.6B`の盲検claim/evidence選択、異論側だけの再投票、`Qwen3-1.7B`の変更理由、Claim Body v3由来本文による1 round Native CoDを実行しました。架空の均衡fixtureで初期3案、異議・変更・賛同、最終2対2の未解決保持まで17.245秒、永続cache直接再読込でも18.771秒、thermal fair、hard gate passです。2回の会話・票・結論は完全一致し、repeat peakは1,318.144 MiBでした。Weight本文は同じ実機で生成・検証済みのSHA付き永続cacheを再検証して7件再利用しました。[実測・全HOLD・会話全文](docs/iphone13_a15_native_cod_20260904.md)
 
 Hugging Face向けには、ローカルpathを除いたAdapter設定、Model Card、Weight、SHA256SUMSだけのstaging packageを用意しています。公開前検証とupload境界は [Hugging Face release staging](docs/huggingface_release_claim_body_v3.md) を参照してください。
 
