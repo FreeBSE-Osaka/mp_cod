@@ -8,28 +8,137 @@ import MLXLLM
 import MLXLMCommon
 import Tokenizers
 
-struct NativeCoDDataItem: Encodable {
+struct NativeCoDDataItem: Codable {
     let id: String
     let text: String
+    let sourceIDs: [String]?
+    let observedAt: String?
+    let validUntil: String?
+
+    init(
+        id: String,
+        text: String,
+        sourceIDs: [String]? = nil,
+        observedAt: String? = nil,
+        validUntil: String? = nil
+    ) {
+        self.id = id
+        self.text = text
+        self.sourceIDs = sourceIDs
+        self.observedAt = observedAt
+        self.validUntil = validUntil
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, text
+        case sourceIDs = "source_ids"
+        case observedAt = "observed_at"
+        case validUntil = "valid_until"
+    }
 }
 
-struct NativeCoDClaim: Encodable {
+struct NativeCoDClaim: Codable {
     let code: String
     let label: String
     let supportedBy: [String]
+    let contradicts: [String]
+    let requiredTerms: [String]
+
+    init(
+        code: String,
+        label: String,
+        supportedBy: [String],
+        contradicts: [String] = [],
+        requiredTerms: [String] = []
+    ) {
+        self.code = code
+        self.label = label
+        self.supportedBy = supportedBy
+        self.contradicts = contradicts
+        self.requiredTerms = requiredTerms
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case code, label, contradicts
+        case supportedBy = "supported_by"
+        case requiredTerms = "required_terms"
+    }
 }
 
-struct NativeCoDPersona: Encodable {
+struct NativeCoDPersona: Codable {
     let name: String
     let objective: String
 }
 
-struct NativeCoDLedger: Encodable {
+struct NativeCoDSource: Codable {
+    let id: String
+    let name: String
+    let url: String
+    let authority: String
+}
+
+struct NativeCoDProvenance: Codable {
+    let liveRetrieval: Bool
+    let parentLedger: String
+    let parentLedgerSHA256: String
+    let dataPacket: String
+    let dataPacketSHA256: String
+
+    enum CodingKeys: String, CodingKey {
+        case liveRetrieval = "live_retrieval"
+        case parentLedger = "parent_ledger"
+        case parentLedgerSHA256 = "parent_ledger_sha256"
+        case dataPacket = "data_packet"
+        case dataPacketSHA256 = "data_packet_sha256"
+    }
+}
+
+struct NativeCoDLedger: Codable {
+    let scenarioID: String
     let fixtureKind: String
+    let historicalReplay: Bool
+    let cutoff: String?
     let topic: String
+    let provenance: NativeCoDProvenance?
+    let sources: [NativeCoDSource]
     let data: [NativeCoDDataItem]
     let claims: [NativeCoDClaim]
+    let personas: [NativeCoDPersona]
     let rolePreferences: [String: [String]]
+
+    init(
+        scenarioID: String,
+        fixtureKind: String,
+        historicalReplay: Bool,
+        cutoff: String? = nil,
+        topic: String,
+        provenance: NativeCoDProvenance? = nil,
+        sources: [NativeCoDSource] = [],
+        data: [NativeCoDDataItem],
+        claims: [NativeCoDClaim],
+        personas: [NativeCoDPersona],
+        rolePreferences: [String: [String]]
+    ) {
+        self.scenarioID = scenarioID
+        self.fixtureKind = fixtureKind
+        self.historicalReplay = historicalReplay
+        self.cutoff = cutoff
+        self.topic = topic
+        self.provenance = provenance
+        self.sources = sources
+        self.data = data
+        self.claims = claims
+        self.personas = personas
+        self.rolePreferences = rolePreferences
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case cutoff, topic, provenance, sources, data, claims, personas
+        case scenarioID = "scenario_id"
+        case fixtureKind = "fixture_kind"
+        case historicalReplay = "historical_replay"
+        case rolePreferences = "role_preferences"
+    }
 }
 
 struct NativeCoDPosition: Encodable {
@@ -114,9 +223,12 @@ struct NativeCoDResult: Encodable {
     let schemaVersion: Int
     let createdAt: Date
     let mode: String
+    let resultFilename: String
     let model: String
     let bodyModel: String
+    let bodyModelLoaded: Bool
     let adapterWeightsSHA256: String
+    let ledgerSHA256: String
     let ledger: NativeCoDLedger
     let personas: [NativeCoDPersona]
     let structuralCalls: [NativeCoDStructuralCall]
@@ -143,6 +255,7 @@ struct NativeCoDResult: Encodable {
     let bodyAdapterLoadRequired: Bool
     let bodyAdapterLoaded: Bool
     let bodyAdapterLoadedAfterStructuralCalls: Bool
+    let bodyCachePrimeMode: Bool
     let adapterUnloaded: Bool
     let hardGatePass: Bool
     let baseLoadSeconds: Double
@@ -177,11 +290,6 @@ private struct NativeSelection {
     let calls: [NativeCoDStructuralCall]
 }
 
-private struct NativeReasonSelection {
-    let reason: String
-    let calls: [NativeCoDStructuralCall]
-}
-
 private struct NativeGeneration {
     let raw: String
     let ttftSeconds: Double
@@ -201,6 +309,17 @@ private struct NativeEventDraft {
     let move: String
     let targetEventID: String?
     let choice: NativeChoice
+}
+
+private struct NativePromptDataItem: Encodable {
+    let id: String
+    let text: String
+}
+
+private struct NativePromptClaim: Encodable {
+    let code: String
+    let label: String
+    let supportedBy: [String]
 }
 
 private struct NativeBodyValue {
@@ -234,6 +353,19 @@ struct NativeBodyCacheFile: Codable {
         case adapterWeightsSHA256 = "adapter_weights_sha256"
         case sourcePayloadSHA256 = "source_payload_sha256"
     }
+}
+
+enum NativeCoDScenarioKind {
+    case syntheticBalanced
+    case typhoon18Replay
+}
+
+private struct NativeScenarioRuntime {
+    let ledger: NativeCoDLedger
+    let ledgerSHA256: String
+    let claimRuntimes: [NativeClaimRuntime]
+    let resultFilename: String
+    let cacheFilename: String
 }
 
 @MainActor
@@ -270,7 +402,8 @@ enum NativeCoDSmokeRunner {
             claim: NativeCoDClaim(
                 code: "PILOT",
                 label: "100人へpilotを拡大し修正率と電池影響を再評価する",
-                supportedBy: ["D01", "D02", "D03"]
+                supportedBy: ["D01", "D02", "D03"],
+                requiredTerms: ["100人", "pilot", "修正率", "電池影響", "再評価"]
             ),
             requiredTerms: ["100人", "pilot", "修正率", "電池影響", "再評価"]
         ),
@@ -278,7 +411,8 @@ enum NativeCoDSmokeRunner {
             claim: NativeCoDClaim(
                 code: "ROLLOUT",
                 label: "feature flagを維持したまま全利用者へ段階展開する",
-                supportedBy: ["D01", "D04", "D05"]
+                supportedBy: ["D01", "D04", "D05"],
+                requiredTerms: ["feature flag", "全利用者", "段階展開"]
             ),
             requiredTerms: ["feature flag", "全利用者", "段階展開"]
         ),
@@ -286,7 +420,8 @@ enum NativeCoDSmokeRunner {
             claim: NativeCoDClaim(
                 code: "DEVICE_SPLIT",
                 label: "新しい端末だけ自動要約を有効化し旧端末は既存経路を保つ",
-                supportedBy: ["D01", "D02", "D04"]
+                supportedBy: ["D01", "D02", "D04"],
+                requiredTerms: ["新しい端末", "自動要約", "有効化", "旧端末", "既存経路"]
             ),
             requiredTerms: ["新しい端末", "自動要約", "有効化", "旧端末", "既存経路"]
         ),
@@ -320,23 +455,110 @@ enum NativeCoDSmokeRunner {
 
     private static var ledger: NativeCoDLedger {
         NativeCoDLedger(
+            scenarioID: "synthetic_balanced_v1",
             fixtureKind: "synthetic_balanced",
+            historicalReplay: false,
             topic: "架空の災害通知アプリの自動要約機能をどう段階導入するか",
             data: data,
             claims: claimRuntimes.map(\.claim),
+            personas: personas,
             rolePreferences: rolePreferences
         )
     }
 
-    static func run(progress: (String) -> Void) async throws -> NativeCoDResult {
+    private static func loadScenario(_ kind: NativeCoDScenarioKind) throws -> NativeScenarioRuntime {
+        switch kind {
+        case .syntheticBalanced:
+            let syntheticLedger = ledger
+            try validateScenario(syntheticLedger, historicalReplayRequired: false)
+            let encoded = try jsonString(syntheticLedger)
+            return NativeScenarioRuntime(
+                ledger: syntheticLedger,
+                ledgerSHA256: sha256(Data(encoded.utf8)),
+                claimRuntimes: claimRuntimes,
+                resultFilename: "mp_cod_a15_native_cod.json",
+                cacheFilename: "mp_cod_claim_body_cache.json"
+            )
+        case .typhoon18Replay:
+            guard let url = Bundle.main.url(
+                forResource: "native_cod_replay_ledger",
+                withExtension: "json"
+            ) else {
+                throw NativeCoDError.scenarioMissing
+            }
+            let payload = try Data(contentsOf: url)
+            let digest = sha256(payload)
+            guard digest == "53683c7ebdba75861981e0d8ee2729965d09bb97d4d829432c0ed15e83b1349c" else {
+                throw NativeCoDError.scenarioInvalid("台風18号replay ledger SHA不一致")
+            }
+            let ledger = try JSONDecoder().decode(NativeCoDLedger.self, from: payload)
+            try validateScenario(ledger, historicalReplayRequired: true)
+            return NativeScenarioRuntime(
+                ledger: ledger,
+                ledgerSHA256: digest,
+                claimRuntimes: ledger.claims.map {
+                    NativeClaimRuntime(claim: $0, requiredTerms: $0.requiredTerms)
+                },
+                resultFilename: "mp_cod_a15_typhoon18_replay.json",
+                cacheFilename: "mp_cod_typhoon18_body_cache.json"
+            )
+        }
+    }
+
+    private static func validateScenario(
+        _ ledger: NativeCoDLedger,
+        historicalReplayRequired: Bool
+    ) throws {
+        let dataIDs = ledger.data.map(\.id)
+        let claimCodes = ledger.claims.map(\.code)
+        let personaNames = ledger.personas.map(\.name)
+        guard !ledger.scenarioID.isEmpty,
+              !ledger.topic.isEmpty,
+              Set(dataIDs).count == dataIDs.count,
+              Set(claimCodes).count == claimCodes.count,
+              ledger.personas.count == 4,
+              Set(personaNames).count == personaNames.count,
+              Set(ledger.rolePreferences.keys) == Set(personaNames),
+              (!historicalReplayRequired || (ledger.historicalReplay && ledger.cutoff != nil)),
+              ledger.claims.allSatisfy({ claim in
+                  !claim.requiredTerms.isEmpty
+                    && Set(claim.supportedBy).isSubset(of: Set(dataIDs))
+                    && Set(claim.contradicts).isSubset(of: Set(claimCodes).subtracting([claim.code]))
+              }),
+              ledger.rolePreferences.allSatisfy({ _, codes in
+                  codes.count >= 2 && Set(codes).isSubset(of: Set(claimCodes))
+              }),
+              ledger.data.allSatisfy({ item in
+                  !historicalReplayRequired
+                    || (item.sourceIDs?.isEmpty == false
+                        && item.observedAt != nil
+                        && item.validUntil != nil)
+              }),
+              ledger.sources.allSatisfy({ source in
+                  URL(string: source.url)?.scheme == "https"
+              }) else {
+            throw NativeCoDError.scenarioInvalid("scenario schemaまたは参照整合性が不正")
+        }
+    }
+
+    static func run(
+        scenario kind: NativeCoDScenarioKind = .syntheticBalanced,
+        allowBodyCachePrime: Bool = false,
+        progress: (String) -> Void
+    ) async throws -> NativeCoDResult {
+        let scenario = try loadScenario(kind)
+        let ledger = scenario.ledger
+        let claimRuntimes = scenario.claimRuntimes
+        let personas = ledger.personas
+        let rolePreferences = ledger.rolePreferences
         let totalStart = ContinuousClock.now
         let startThermalState = thermalName(ProcessInfo.processInfo.thermalState)
-        var persistentBodyCache = try loadOrSeedBodyCache()
+        var persistentBodyCache = try loadOrSeedBodyCache(scenario)
         let cacheComplete = Set(claimRuntimes.map(\.claim.code)).isSubset(
             of: Set(persistentBodyCache?.entries.keys ?? Dictionary<String, NativeBodyCacheEntry>().keys)
         )
         guard startThermalState == "nominal"
-                || (startThermalState == "fair" && cacheComplete) else {
+                || (startThermalState == "fair" && (cacheComplete || allowBodyCachePrime)) else {
             throw NativeCoDError.deviceTooHot(startThermalState)
         }
         Memory.peakMemory = 0
@@ -364,20 +586,30 @@ enum NativeCoDSmokeRunner {
                 try Task.checkCancellation()
                 progress("盲検選択: \(persona.name)")
                 let allowedCodes = rolePreferences[persona.name] ?? []
-                let personaLedger = NativeCoDLedger(
-                    fixtureKind: ledger.fixtureKind,
+                let personaLedger = NativeInitialContext(
+                    scenarioID: ledger.scenarioID,
+                    historicalReplay: ledger.historicalReplay,
+                    cutoff: ledger.cutoff,
                     topic: ledger.topic,
-                    data: ledger.data,
-                    claims: allowedCodes.compactMap { code in
-                        claimRuntimes.first(where: { $0.claim.code == code })?.claim
+                    data: ledger.data.map {
+                        NativePromptDataItem(id: $0.id, text: $0.text)
                     },
-                    rolePreferences: [persona.name: allowedCodes]
+                    claims: allowedCodes.compactMap { code in
+                        claimRuntimes.first(where: { $0.claim.code == code }).map {
+                            NativePromptClaim(
+                                code: $0.claim.code,
+                                label: $0.claim.label,
+                                supportedBy: $0.claim.supportedBy
+                            )
+                        }
+                    }
                 )
                 let selection = try await selectChoice(
                     phase: "initial",
                     persona: persona,
                     context: "固定ledger:\n\(try jsonString(personaLedger))",
                     allowedCodes: allowedCodes,
+                    claimRuntimes: claimRuntimes,
                     container: structureContainer
                 )
                 structuralCalls.append(contentsOf: selection.calls)
@@ -394,18 +626,50 @@ enum NativeCoDSmokeRunner {
             }
 
             initialTally = tally(initialPositions)
-            leadingClaim = uniqueLeader(initialTally)
-            reconciliationModelSpeakers = initialPositions.compactMap {
-                leadingClaim == nil || $0.claim != leadingClaim ? $0.persona : nil
+            leadingClaim = uniqueLeader(initialTally) ?? initialPositions.first?.claim
+            let dissenters = initialPositions
+                .filter { $0.claim != leadingClaim }
+                .sorted { left, right in
+                    let leftConflict = claimsConflict(
+                        left.claim,
+                        leadingClaim,
+                        claimRuntimes: claimRuntimes
+                    )
+                    let rightConflict = claimsConflict(
+                        right.claim,
+                        leadingClaim,
+                        claimRuntimes: claimRuntimes
+                    )
+                    if leftConflict != rightConflict { return leftConflict && !rightConflict }
+                    if left.confidence != right.confidence { return left.confidence > right.confidence }
+                    return personaIndex(left.persona, personas: personas)
+                        < personaIndex(right.persona, personas: personas)
+                }
+            let conflictingDissenters = dissenters.filter {
+                claimsConflict(
+                    $0.claim,
+                    leadingClaim,
+                    claimRuntimes: claimRuntimes
+                )
             }
+            let activePool = conflictingDissenters.isEmpty ? dissenters : conflictingDissenters
+            reconciliationModelSpeakers = Array(activePool.prefix(2).map(\.persona))
             activeSpeakers = Set(reconciliationModelSpeakers)
             let reconciliationContext = try jsonString(
                 NativeReconciliationContext(
                     ledger: NativeReconciliationLedger(
                         fixtureKind: ledger.fixtureKind,
                         topic: ledger.topic,
-                        data: ledger.data,
-                        claims: ledger.claims
+                        data: ledger.data.map {
+                            NativePromptDataItem(id: $0.id, text: $0.text)
+                        },
+                        claims: ledger.claims.map {
+                            NativePromptClaim(
+                                code: $0.code,
+                                label: $0.label,
+                                supportedBy: $0.supportedBy
+                            )
+                        }
                     ),
                     initialPositions: initialPositions,
                     tally: initialTally
@@ -430,17 +694,46 @@ enum NativeCoDSmokeRunner {
                 }
                 try Task.checkCancellation()
                 progress("すり合わせ: \(persona.name)")
+                let priorClaim = initialPositions.first {
+                    $0.persona == persona.name
+                }?.claim
+                let conflictCodes = claimRuntimes.map(\.claim.code).filter { code in
+                    code == priorClaim
+                        || claimsConflict(
+                            code,
+                            priorClaim,
+                            claimRuntimes: claimRuntimes
+                        )
+                }
+                let reconciliationCodes = conflictCodes.count >= 2
+                    ? conflictCodes
+                    : claimRuntimes.map(\.claim.code)
                 let selection = try await selectChoice(
                     phase: "reconciliation",
                     persona: persona,
                     context: "構造化context:\n\(reconciliationContext)",
-                    allowedCodes: claimRuntimes.map(\.claim.code),
+                    allowedCodes: reconciliationCodes,
+                    claimRuntimes: claimRuntimes,
                     container: structureContainer
                 )
                 structuralCalls.append(contentsOf: selection.calls)
+                let selectedChoice: NativeChoice
+                if let priorClaim, selection.choice.claim != priorClaim {
+                    selectedChoice = NativeChoice(
+                        claim: selection.choice.claim,
+                        dataIDs: selection.choice.dataIDs,
+                        confidence: selection.choice.confidence,
+                        changeReason: structuredChangeReason(
+                            priorClaim: priorClaim,
+                            selectedChoice: selection.choice
+                        )
+                    )
+                } else {
+                    selectedChoice = selection.choice
+                }
                 let position = position(
                     persona: persona.name,
-                    choice: selection.choice,
+                    choice: selectedChoice,
                     origin: "model"
                 )
                 reconciliationPositions.append(position)
@@ -458,68 +751,62 @@ enum NativeCoDSmokeRunner {
             .sorted { left, right in left.value == right.value ? left.key < right.key : left.value > right.value }
             .first(where: { $0.value >= 3 })?
             .key
-        let outcomeStatus = consensusClaim == nil ? "unresolved_tie" : "consensus"
-
-        guard let adapterDirectory = Bundle.main.url(forResource: "Adapter", withExtension: nil) else {
-            throw NativeCoDError.adapterMissing
+        let outcomeStatus: String
+        if consensusClaim != nil {
+            outcomeStatus = "consensus"
+        } else if finalTally.values.sorted() == [2, 2] {
+            outcomeStatus = "unresolved_tie"
+        } else {
+            outcomeStatus = "unresolved_plurality"
         }
-        progress("構造判断完了・本文1.7Bをロード中")
-        let bodyBaseStart = ContinuousClock.now
-        let container = try await #huggingFaceLoadModelContainer(
-            configuration: LLMRegistry.qwen3_1_7b_4bit
-        )
-        let bodyBaseLoadSeconds = seconds(since: bodyBaseStart)
-        memorySamples.append(try memorySample(stage: "after_body_base_load"))
 
-        for index in reconciliationPositions.indices {
-            let current = reconciliationPositions[index]
-            guard current.origin == "model",
-                  let prior = initialPositions.first(where: { $0.persona == current.persona }),
-                  current.claim != prior.claim,
-                  let persona = personas.first(where: { $0.name == current.persona }) else {
-                continue
-            }
-            progress("変更理由: \(current.persona)")
-            let reason = try await selectChangeReason(
-                persona: persona,
-                priorClaim: prior.claim,
-                selectedChoice: choice(current),
-                container: container
+        let requiredCodes = Set(
+            (initialPositions + reconciliationPositions).map(\.claim)
+        )
+        let cacheTargetCodes = allowBodyCachePrime
+            ? Set(claimRuntimes.map(\.claim.code))
+            : requiredCodes
+        var persistentEntries = persistentBodyCache?.entries ?? [:]
+        var cache: [String: NativeBodyValue] = [:]
+        for (code, entry) in persistentEntries where cacheTargetCodes.contains(code) {
+            cache[code] = NativeBodyValue(
+                body: entry.body,
+                origin: "\(entry.origin)_persistent"
             )
-            structuralCalls.append(contentsOf: reason.calls)
-            reconciliationPositions[index] = NativeCoDPosition(
-                persona: current.persona,
-                claim: current.claim,
-                dataIDs: current.dataIDs,
-                confidence: current.confidence,
-                changeReason: reason.reason,
-                origin: current.origin
+        }
+        let missingCodes = cacheTargetCodes.subtracting(cache.keys)
+        let bodyAdapterLoadRequired = !missingCodes.isEmpty
+        let bodyModelRequired = bodyAdapterLoadRequired
+        var container: ModelContainer?
+        var bodyBaseLoadSeconds = 0.0
+        if bodyModelRequired {
+            progress("構造判断完了・本文1.7Bをロード中")
+            let bodyBaseStart = ContinuousClock.now
+            container = try await #huggingFaceLoadModelContainer(
+                configuration: LLMRegistry.qwen3_1_7b_4bit
             )
-            memorySamples.append(try memorySample(stage: "after_change_reason_\(current.persona)"))
+            bodyBaseLoadSeconds = seconds(since: bodyBaseStart)
+            memorySamples.append(try memorySample(stage: "after_body_base_load"))
         }
 
         let drafts = makeEventDrafts(
             initial: initialPositions,
             reconciled: reconciliationPositions,
             referenceClaim: consensusClaim ?? leadingClaim,
-            activeSpeakers: activeSpeakers
+            activeSpeakers: activeSpeakers,
+            personas: personas
         )
-        let requiredCodes = Set(drafts.map(\.choice.claim))
-        var persistentEntries = persistentBodyCache?.entries ?? [:]
-        var cache: [String: NativeBodyValue] = [:]
-        for (code, entry) in persistentEntries where requiredCodes.contains(code) {
-            cache[code] = NativeBodyValue(
-                body: entry.body,
-                origin: "\(entry.origin)_persistent"
-            )
-        }
-        let missingCodes = requiredCodes.subtracting(cache.keys)
-        let bodyAdapterLoadRequired = !missingCodes.isEmpty
         var adapter: LoRAContainer?
         var adapterLoadSeconds = 0.0
         var bodyAdapterLoaded = false
         var adapterUnloaded = !bodyAdapterLoadRequired
         if bodyAdapterLoadRequired {
+            guard let adapterDirectory = Bundle.main.url(
+                forResource: "Adapter",
+                withExtension: nil
+            ), let container else {
+                throw NativeCoDError.adapterMissing
+            }
             progress("本文LoRAをロード中")
             let adapterStart = ContinuousClock.now
             let loadedAdapter = try LoRAContainer.from(directory: adapterDirectory)
@@ -539,6 +826,39 @@ enum NativeCoDSmokeRunner {
             var cacheHits = 0
             var events: [NativeCoDEvent] = []
 
+            if allowBodyCachePrime {
+                for runtime in claimRuntimes where cache[runtime.claim.code] == nil {
+                    try Task.checkCancellation()
+                    guard let container else {
+                        throw NativeCoDError.adapterMissing
+                    }
+                    progress("本文cache prime: \(runtime.claim.code)")
+                    let call = try await renderBody(
+                        claim: runtime,
+                        speaker: personas[0].name,
+                        container: container
+                    )
+                    bodyCalls.append(call)
+                    memorySamples.append(
+                        try memorySample(stage: "after_cache_prime_\(bodyCalls.count)")
+                    )
+                    let origin = call.fallback
+                        ? "fallback"
+                        : (call.sanitized ? "model_body_v2_sanitized" : "model_body_v2")
+                    if call.valid {
+                        let value = NativeBodyValue(body: call.body, origin: origin)
+                        cache[runtime.claim.code] = value
+                        persistentEntries[runtime.claim.code] = NativeBodyCacheEntry(
+                            claimLabel: runtime.claim.label,
+                            rawOutput: call.rawOutput,
+                            body: call.body,
+                            sanitized: call.sanitized,
+                            origin: origin
+                        )
+                    }
+                }
+            }
+
             for (offset, draft) in drafts.enumerated() {
                 try Task.checkCancellation()
                 guard let runtime = claimRuntimes.first(where: { $0.claim.code == draft.choice.claim }) else {
@@ -549,6 +869,9 @@ enum NativeCoDSmokeRunner {
                     cacheHits += 1
                     bodyValue = NativeBodyValue(body: cached.body, origin: "\(cached.origin)_cache")
                 } else {
+                    guard let container else {
+                        throw NativeCoDError.adapterMissing
+                    }
                     progress("本文描画: \(draft.persona)")
                     let call = try await renderBody(
                         claim: runtime,
@@ -591,7 +914,7 @@ enum NativeCoDSmokeRunner {
                 print("MP_COD_NATIVE_EVENT \(event.id) persona=\(event.persona) move=\(event.move) utterance=\(event.utterance)")
             }
 
-            if let adapter {
+            if let adapter, let container {
                 await container.perform { context in
                     adapter.unload(from: context.model)
                 }
@@ -606,17 +929,17 @@ enum NativeCoDSmokeRunner {
                 sourcePayloadSHA256: bodyCacheDigest(persistentEntries),
                 entries: persistentEntries
             )
-            guard bodyCacheIsValid(savedBodyCache) else {
+            guard bodyCacheIsValid(savedBodyCache, claimRuntimes: claimRuntimes) else {
                 throw NativeCoDError.invalidBody("永続cacheの再検証に失敗しました")
             }
-            try save(savedBodyCache, named: "mp_cod_claim_body_cache.json")
+            try save(savedBodyCache, named: scenario.cacheFilename)
             persistentBodyCache = savedBodyCache
 
             let bodyFallbacks = bodyCalls.filter(\.fallback).count
             let structuralRepairs = structuralCalls.filter { !$0.valid }.count
             let thermalState = thermalName(ProcessInfo.processInfo.thermalState)
-            let recordedConclusion = consensusClaim != nil
-                || finalTally.values.sorted() == [2, 2]
+            let recordedConclusion = finalTally.values.reduce(0, +) == personas.count
+                && (consensusClaim != nil || finalTally.count >= 2)
             let hardGatePass = Set(initialPositions.map(\.claim)).count >= 2
                 && recordedConclusion
                 && events.count >= 6
@@ -625,16 +948,19 @@ enum NativeCoDSmokeRunner {
                 && structuralRepairs <= 1
                 && (!bodyAdapterLoadRequired || (bodyAdapterLoaded && adapterUnloaded))
                 && ["nominal", "fair"].contains(thermalState)
-                && events.contains(where: { $0.move == "object" })
-                && events.contains(where: { $0.move == "agree" })
+                && events.contains(where: { ["object", "revise"].contains($0.move) })
+                && events.contains(where: { ["agree", "maintain"].contains($0.move) })
                 && structuralCalls.allSatisfy { !$0.adapterActive }
             let result = NativeCoDResult(
                 schemaVersion: 3,
                 createdAt: Date(),
                 mode: "native_cod_one_round",
+                resultFilename: scenario.resultFilename,
                 model: modelID,
                 bodyModel: bodyModelID,
+                bodyModelLoaded: bodyModelRequired,
                 adapterWeightsSHA256: adapterSHA,
+                ledgerSHA256: scenario.ledgerSHA256,
                 ledger: ledger,
                 personas: personas,
                 structuralCalls: structuralCalls,
@@ -661,6 +987,7 @@ enum NativeCoDSmokeRunner {
                 bodyAdapterLoadRequired: bodyAdapterLoadRequired,
                 bodyAdapterLoaded: bodyAdapterLoaded,
                 bodyAdapterLoadedAfterStructuralCalls: bodyAdapterLoaded,
+                bodyCachePrimeMode: allowBodyCachePrime,
                 adapterUnloaded: adapterUnloaded,
                 hardGatePass: hardGatePass,
                 baseLoadSeconds: baseLoadSeconds,
@@ -673,10 +1000,10 @@ enum NativeCoDSmokeRunner {
                 minimumLimitBytesRemaining: memorySamples.map(\.limitBytesRemaining).min() ?? 0,
                 memorySamples: memorySamples
             )
-            try save(result, named: "mp_cod_a15_native_cod.json")
+            try save(result, named: scenario.resultFilename)
             return result
         } catch {
-            if let adapter, !adapterUnloaded {
+            if let adapter, let container, !adapterUnloaded {
                 await container.perform { context in
                     adapter.unload(from: context.model)
                 }
@@ -692,19 +1019,20 @@ enum NativeCoDSmokeRunner {
         let tally: [String: Int]
     }
 
+    private struct NativeInitialContext: Encodable {
+        let scenarioID: String
+        let historicalReplay: Bool
+        let cutoff: String?
+        let topic: String
+        let data: [NativePromptDataItem]
+        let claims: [NativePromptClaim]
+    }
+
     private struct NativeReconciliationLedger: Encodable {
         let fixtureKind: String
         let topic: String
-        let data: [NativeCoDDataItem]
-        let claims: [NativeCoDClaim]
-    }
-
-    private struct NativeChangeReasonContext: Encodable {
-        let priorClaimCode: String
-        let priorClaimLabel: String
-        let selectedClaimCode: String
-        let selectedClaimLabel: String
-        let selectedEvidence: [NativeCoDDataItem]
+        let data: [NativePromptDataItem]
+        let claims: [NativePromptClaim]
     }
 
     private static func selectChoice(
@@ -712,6 +1040,7 @@ enum NativeCoDSmokeRunner {
         persona: NativeCoDPersona,
         context: String,
         allowedCodes: [String],
+        claimRuntimes: [NativeClaimRuntime],
         container: ModelContainer
     ) async throws -> NativeSelection {
         var calls: [NativeCoDStructuralCall] = []
@@ -739,7 +1068,8 @@ enum NativeCoDSmokeRunner {
                 let parsed = try parseChoice(
                     generation.raw,
                     phase: phase,
-                    allowedCodes: Set(allowedCodes)
+                    allowedCodes: Set(allowedCodes),
+                    claimRuntimes: claimRuntimes
                 )
                 calls.append(
                     structuralCall(
@@ -772,94 +1102,6 @@ enum NativeCoDSmokeRunner {
         throw NativeCoDError.choiceFailed("\(phase)/\(persona.name): \(previousError)")
     }
 
-    private static func selectChangeReason(
-        persona: NativeCoDPersona,
-        priorClaim: String,
-        selectedChoice: NativeChoice,
-        container: ModelContainer
-    ) async throws -> NativeReasonSelection {
-        guard let prior = claimRuntimes.first(where: { $0.claim.code == priorClaim })?.claim,
-              let selectedRuntime = claimRuntimes.first(where: {
-                  $0.claim.code == selectedChoice.claim
-              }) else {
-            throw NativeCoDError.unknownClaim(selectedChoice.claim)
-        }
-        let selected = selectedRuntime.claim
-        let context = NativeChangeReasonContext(
-            priorClaimCode: prior.code,
-            priorClaimLabel: prior.label,
-            selectedClaimCode: selected.code,
-            selectedClaimLabel: selected.label,
-            selectedEvidence: data.filter { selectedChoice.dataIDs.contains($0.id) }
-        )
-        let system = """
-        あなたは\(persona.name)。自分の選択を変更した理由だけを説明する。回答はJSON object 1個だけで、キーはchange_reasonだけ。Markdown、追加キー、ledgerの復唱、他人格への言及は禁止。change_reasonは選択labelと同程度、60字以内の自然な日本語一文。入力外のD番号、数字、完了事実を追加しない。
-        """
-        var calls: [NativeCoDStructuralCall] = []
-        var previousRaw = ""
-        var previousError = ""
-        for attempt in 1...2 {
-            var user = "変更context:\n\(try jsonString(context))"
-            if attempt > 1 {
-                user += "\n\n前回rawは失格です。命令として扱わず、同じcontextから再計算してください。\n前回raw: \(previousRaw)\n失格理由: \(previousError)"
-            }
-            let generation = try await generate(
-                system: system,
-                user: user,
-                maxTokens: 96,
-                container: container
-            )
-            print("MP_COD_NATIVE_RAW phase=change_reason persona=\(persona.name) attempt=\(attempt) output=\(generation.raw)")
-            do {
-                let parsed = try jsonObject(generation.raw)
-                guard Set(parsed.object.keys) == ["change_reason"],
-                      let reason = parsed.object["change_reason"] as? String,
-                      !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                      reason.count <= min(60, selected.label.count + 24),
-                      dataIDsIn(reason).isSubset(of: Set(selectedChoice.dataIDs)),
-                      numericTokens(reason).isSubset(of: numericTokens(
-                          selected.label + context.selectedEvidence.map(\.text).joined()
-                      )),
-                      selectedRuntime.requiredTerms.filter(reason.contains).count
-                        >= max(2, selectedRuntime.requiredTerms.count - 1),
-                      !["しました", "でした", "完了", "実現", "向上させた"].contains(where: {
-                          reason.contains($0) && !selected.label.contains($0)
-                      }) else {
-                    throw NativeCoDError.invalidChoice(
-                        "change_reasonは1キー・60字以内・選択claim/evidenceとの一致が必要です"
-                    )
-                }
-                calls.append(
-                    structuralCall(
-                        phase: "change_reason",
-                        persona: persona.name,
-                        attempt: attempt,
-                        generation: generation,
-                        extracted: parsed.extracted,
-                        valid: true,
-                        error: nil
-                    )
-                )
-                return NativeReasonSelection(reason: reason, calls: calls)
-            } catch {
-                previousRaw = generation.raw
-                previousError = error.localizedDescription
-                calls.append(
-                    structuralCall(
-                        phase: "change_reason",
-                        persona: persona.name,
-                        attempt: attempt,
-                        generation: generation,
-                        extracted: false,
-                        valid: false,
-                        error: previousError
-                    )
-                )
-            }
-        }
-        throw NativeCoDError.choiceFailed("change_reason/\(persona.name): \(previousError)")
-    }
-
     private static func choiceSystem(
         phase: String,
         persona: NativeCoDPersona,
@@ -873,7 +1115,7 @@ enum NativeCoDSmokeRunner {
         if phase == "initial" {
             return common + "\n他人格の回答は見えていない。固定ledgerから独立選択する。キーはclaim,data_ids,confidenceの3つだけで、その他キーは禁止。"
         }
-        return common + "\n他者の自然文ではなく構造化初期選択だけを見て再評価する。キーはclaim,data_ids,confidenceの3つだけで、その他キーは禁止。変更理由は別callで生成するため書かない。"
+        return common + "\n他者の自然文ではなく構造化初期選択だけを見て再評価する。キーはclaim,data_ids,confidenceの3つだけで、その他キーは禁止。変更理由文は検証済みの旧claim・新claim・data_idsからコード合成するため書かない。"
     }
 
     private static func generate(
@@ -935,7 +1177,8 @@ enum NativeCoDSmokeRunner {
     private static func parseChoice(
         _ raw: String,
         phase: String,
-        allowedCodes: Set<String>
+        allowedCodes: Set<String>,
+        claimRuntimes: [NativeClaimRuntime]
     ) throws -> NativeParsedChoice {
         let parsed = try jsonObject(raw)
         let expected = Set(["claim", "data_ids", "confidence"])
@@ -1053,12 +1296,12 @@ enum NativeCoDSmokeRunner {
             rawBody.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
         )
         var sanitized = false
-        if !bodyIsPolite(body), body == claim {
+        if !bodyIsPolite(body), canonicalClaimText(body) == canonicalClaimText(claim) {
             body = politeFallback(body)
             sanitized = true
         }
         guard bodyIsPolite(body),
-              runtime.requiredTerms.allSatisfy(body.contains),
+              runtime.requiredTerms.allSatisfy({ requiredTermPreserved($0, in: body) }),
               dataIDsIn(body).isEmpty,
               numericTokens(body).isSubset(of: numericTokens(claim)),
               ["異議", "賛成", "賛同", "同意", "反対", "考え直"].allSatisfy({ !body.contains($0) }),
@@ -1070,15 +1313,29 @@ enum NativeCoDSmokeRunner {
         return (terminalSentence(body), sanitized)
     }
 
-    private static func loadOrSeedBodyCache() throws -> NativeBodyCacheFile? {
-        let cacheURL = try documentURL("mp_cod_claim_body_cache.json")
+    private static func canonicalClaimText(_ text: String) -> String {
+        stripTerminal(text).replacingOccurrences(
+            of: #"[\s、,]"#,
+            with: "",
+            options: .regularExpression
+        )
+    }
+
+    private static func requiredTermPreserved(_ term: String, in body: String) -> Bool {
+        body.contains(term) || body.contains(stripTerminal(politeFallback(term)))
+    }
+
+    private static func loadOrSeedBodyCache(
+        _ scenario: NativeScenarioRuntime
+    ) throws -> NativeBodyCacheFile? {
+        let cacheURL = try documentURL(scenario.cacheFilename)
         if let payload = try? Data(contentsOf: cacheURL),
            let cache = try? JSONDecoder().decode(NativeBodyCacheFile.self, from: payload),
-           bodyCacheIsValid(cache) {
+           bodyCacheIsValid(cache, claimRuntimes: scenario.claimRuntimes) {
             return cache
         }
 
-        let priorURL = try documentURL("mp_cod_a15_native_cod.json")
+        let priorURL = try documentURL(scenario.resultFilename)
         guard let priorData = try? Data(contentsOf: priorURL),
               let root = try? JSONSerialization.jsonObject(with: priorData) as? [String: Any],
               root["adapter_weights_sha256"] as? String == adapterSHA,
@@ -1093,7 +1350,7 @@ enum NativeCoDSmokeRunner {
                   let raw = row["raw_output"] as? String,
                   let body = row["body"] as? String,
                   let sanitized = row["sanitized"] as? Bool,
-                  let runtime = claimRuntimes.first(where: { $0.claim.code == code }),
+                  let runtime = scenario.claimRuntimes.first(where: { $0.claim.code == code }),
                   let validated = try? validateBody(raw, runtime: runtime),
                   validated.body == body,
                   validated.sanitized == sanitized else {
@@ -1114,12 +1371,15 @@ enum NativeCoDSmokeRunner {
             sourcePayloadSHA256: bodyCacheDigest(entries),
             entries: entries
         )
-        guard bodyCacheIsValid(cache) else { return nil }
-        try save(cache, named: "mp_cod_claim_body_cache.json")
+        guard bodyCacheIsValid(cache, claimRuntimes: scenario.claimRuntimes) else { return nil }
+        try save(cache, named: scenario.cacheFilename)
         return cache
     }
 
-    private static func bodyCacheIsValid(_ cache: NativeBodyCacheFile) -> Bool {
+    private static func bodyCacheIsValid(
+        _ cache: NativeBodyCacheFile,
+        claimRuntimes: [NativeClaimRuntime]
+    ) -> Bool {
         guard cache.schemaVersion == 1,
               cache.adapterWeightsSHA256 == adapterSHA,
               cache.sourcePayloadSHA256 == bodyCacheDigest(cache.entries) else {
@@ -1170,7 +1430,8 @@ enum NativeCoDSmokeRunner {
         initial: [NativeCoDPosition],
         reconciled: [NativeCoDPosition],
         referenceClaim: String?,
-        activeSpeakers: Set<String>
+        activeSpeakers: Set<String>,
+        personas: [NativeCoDPersona]
     ) -> [NativeEventDraft] {
         var drafts = initial.map {
             NativeEventDraft(
@@ -1193,7 +1454,8 @@ enum NativeCoDSmokeRunner {
             }
             .sorted {
                 $0.confidence == $1.confidence
-                    ? personaIndex($0.persona) < personaIndex($1.persona)
+                    ? personaIndex($0.persona, personas: personas)
+                        < personaIndex($1.persona, personas: personas)
                     : $0.confidence > $1.confidence
             }
             .first?
@@ -1208,7 +1470,9 @@ enum NativeCoDSmokeRunner {
                 move = "revise"
             } else if let referenceClaim, final.claim != referenceClaim {
                 move = "object"
-            } else if initial.contains(where: { $0.persona != final.persona && $0.claim == final.claim }) {
+            } else if initial.contains(where: {
+                $0.persona != final.persona && $0.claim == final.claim
+            }) {
                 move = "agree"
             } else {
                 move = "maintain"
@@ -1232,7 +1496,8 @@ enum NativeCoDSmokeRunner {
             let left = priority[$0.move, default: 9]
             let right = priority[$1.move, default: 9]
             if left != right { return left < right }
-            return personaIndex($0.persona) < personaIndex($1.persona)
+            return personaIndex($0.persona, personas: personas)
+                < personaIndex($1.persona, personas: personas)
         }
         drafts.append(contentsOf: reactions)
         return drafts
@@ -1263,6 +1528,13 @@ enum NativeCoDSmokeRunner {
         )
     }
 
+    private static func structuredChangeReason(
+        priorClaim: String,
+        selectedChoice: NativeChoice
+    ) -> String {
+        "\(selectedChoice.dataIDs.joined(separator: ","))を根拠に\(priorClaim)から\(selectedChoice.claim)へ変更します。"
+    }
+
     private static func choice(_ position: NativeCoDPosition) -> NativeChoice {
         NativeChoice(
             claim: position.claim,
@@ -1287,7 +1559,23 @@ enum NativeCoDSmokeRunner {
         return first.key
     }
 
-    private static func personaIndex(_ name: String) -> Int {
+    private static func claimsConflict(
+        _ left: String,
+        _ right: String?,
+        claimRuntimes: [NativeClaimRuntime]
+    ) -> Bool {
+        guard let right,
+              let leftClaim = claimRuntimes.first(where: { $0.claim.code == left })?.claim,
+              let rightClaim = claimRuntimes.first(where: { $0.claim.code == right })?.claim else {
+            return false
+        }
+        return leftClaim.contradicts.contains(right) || rightClaim.contradicts.contains(left)
+    }
+
+    private static func personaIndex(
+        _ name: String,
+        personas: [NativeCoDPersona]
+    ) -> Int {
         personas.firstIndex(where: { $0.name == name }) ?? personas.count
     }
 
@@ -1450,6 +1738,8 @@ enum NativeCoDSmokeRunner {
 }
 
 private enum NativeCoDError: LocalizedError {
+    case scenarioMissing
+    case scenarioInvalid(String)
     case adapterMissing
     case unexpectedToolCall
     case missingMetrics
@@ -1462,6 +1752,8 @@ private enum NativeCoDError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .scenarioMissing: "Bundle内にNative CoD scenarioがありません"
+        case .scenarioInvalid(let reason): "Native CoD scenarioが不正です: \(reason)"
         case .adapterMissing: "Bundle内にClaim Body Adapterがありません"
         case .unexpectedToolCall: "モデルが予期しないtool callを返しました"
         case .missingMetrics: "生成性能metricsを取得できませんでした"

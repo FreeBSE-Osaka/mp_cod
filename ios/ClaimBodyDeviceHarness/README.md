@@ -77,7 +77,7 @@ python3.11 tools/validate_iphone_claim_body_soak.py \
 
 1. 0.6B Baseが人格別`role_preferences`内でclaim / D番号 / confidenceを盲検選択
 2. 初期多数派の票を保持し、異論側だけBase再選択
-3. 見解変更者だけ1.7B Baseで`change_reason`を生成
+3. 見解変更時はBase選択済みの旧claim・新claim・D番号から`change_reason`を決定論合成
 4. 全構造判断後にClaim Body v3 LoRAをロード
 5. unique claim本文だけを生成し、同一claimはcache
 6. objection → revise → agreementの優先順で会話化
@@ -96,6 +96,8 @@ python3.11 tools/validate_iphone_native_cod.py \
 物理iPhone 13 Pro / A15のwarm-cache runは、構造7 model call、公開7 event、17.245秒でhard gateを通過しました。永続cacheを直接再読込した2回目も18.771秒、peak 1,318.144 MiB、headroom 2,068.278 MiB、thermal fairで通過しています。初期3案から異議・見解変更・賛同を経て、最終2対2を`unresolved_tie`として保持しました。
 
 永続本文cacheは、同じ実機で生成したWeight raw、Adapter SHA、claim label、body、canonical digestを保持します。各runで再検証し、完全な時だけLoRAの再load・再生成を省きます。
+
+`--autorun --native-cod --weather-replay`は、bundle内の監査済み台風18号歴史replay JSONを読み込みます。ledger SHA不一致を拒否し、直交する進路・強度・防災claimを単一勝者へ潰さず、明示的な`contradicts`だけを再討論します。物理A15の検証済み3 runは13.631〜13.735秒、fallback 0、thermal nominal、semantic完全一致でhard gateを通過しました。
 
 ## Boundary
 

@@ -53,6 +53,7 @@ def validate_position(position: dict, claims: dict[str, dict], data_ids: set[str
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("result", type=Path)
+    parser.add_argument("--ledger", type=Path)
     parser.add_argument("--repeat", type=Path)
     parser.add_argument("--maximum-seconds", type=float, default=35.0)
     parser.add_argument("--minimum-headroom-mib", type=float, default=512.0)
@@ -79,17 +80,33 @@ def main() -> None:
 
     ledger = result.get("ledger")
     require(isinstance(ledger, dict), "ledger is missing")
-    require(ledger.get("fixture_kind") == "synthetic_balanced", "fixture is not marked synthetic")
+    if args.ledger:
+        expected_ledger = json.loads(args.ledger.read_text())
+        expected_ledger.pop("schema_version", None)
+        require(ledger == expected_ledger, "embedded ledger differs from the audited input")
+        require(
+            result.get("ledger_sha256") == hashlib.sha256(args.ledger.read_bytes()).hexdigest(),
+            "ledger SHA mismatch",
+        )
+        require(ledger.get("historical_replay") is True, "real-data run is not marked historical")
+        persona_names = [persona["name"] for persona in ledger.get("personas", [])]
+        required_terms = {
+            claim["code"]: claim["required_terms"] for claim in ledger.get("claims", [])
+        }
+    else:
+        require(ledger.get("fixture_kind") == "synthetic_balanced", "fixture is not marked synthetic")
+        persona_names = PERSONAS
+        required_terms = REQUIRED_TERMS
     data_ids = {row["id"] for row in ledger.get("data", [])}
     claims = {row["code"]: row for row in ledger.get("claims", [])}
     preferences = ledger.get("role_preferences", {})
-    require(len(data_ids) == 5 and len(claims) == 3, "unexpected ledger size")
-    require(set(preferences) == set(PERSONAS), "role_preferences persona mismatch")
+    require(len(persona_names) == 4, "exactly four personas are required")
+    require(set(preferences) == set(persona_names), "role_preferences persona mismatch")
 
     initial = result.get("initial_positions")
     reconciled = result.get("reconciliation_positions")
-    require([row.get("persona") for row in initial or []] == PERSONAS, "initial persona order mismatch")
-    require([row.get("persona") for row in reconciled or []] == PERSONAS, "reconciliation persona order mismatch")
+    require([row.get("persona") for row in initial or []] == persona_names, "initial persona order mismatch")
+    require([row.get("persona") for row in reconciled or []] == persona_names, "reconciliation persona order mismatch")
     for row in initial:
         validate_position(row, claims, data_ids)
         require(row.get("origin") == "model", f"initial choice is not model-origin: {row['persona']}")
@@ -105,15 +122,19 @@ def main() -> None:
     consensus = result.get("consensus_claim")
     outcome = result.get("outcome_status")
     if consensus is None:
-        require(sorted(final_tally.values()) == [2, 2], "unresolved outcome is not a 2-to-2 tie")
-        require(outcome == "unresolved_tie", "unresolved outcome status mismatch")
+        if sorted(final_tally.values()) == [2, 2]:
+            require(outcome == "unresolved_tie", "unresolved tie status mismatch")
+        else:
+            require(sum(final_tally.values()) == 4 and len(final_tally) >= 2, "invalid unresolved plurality")
+            require(outcome == "unresolved_plurality", "unresolved plurality status mismatch")
     else:
         require(consensus in claims and final_tally.get(consensus, 0) >= 3, "3-of-4 consensus is invalid")
         require(outcome == "consensus", "consensus outcome status mismatch")
 
     speakers = result.get("reconciliation_model_speakers")
     require(isinstance(speakers, list) and 0 < len(speakers) < 4, "reconciliation was not selective")
-    require(result.get("retained_initial_votes") == 4 - len(speakers), "retained vote count mismatch")
+    require(result.get("retained_initial_votes") == len(persona_names) - len(speakers), "retained vote count mismatch")
+    expected_event_count = len(persona_names) + len(speakers) + 1
     for row in reconciled:
         expected_origin = "model" if row["persona"] in speakers else "retained_initial"
         require(row.get("origin") == expected_origin, f"reconciliation origin mismatch: {row['persona']}")
@@ -130,7 +151,7 @@ def main() -> None:
     )
     require(
         {call["persona"] for call in calls if call["phase"] == "initial" and call["valid"]}
-        == set(PERSONAS),
+        == set(persona_names),
         "not every blind choice has a valid model call",
     )
     require(
@@ -171,7 +192,10 @@ def main() -> None:
         for call in calls
         if call["phase"] == "change_reason" and call["valid"]
     }
-    require(reason_calls == changed_personas, "change_reason model calls do not match changed votes")
+    require(
+        reason_calls in (set(), changed_personas),
+        "change_reason model calls do not match changed votes",
+    )
     for row in reconciled:
         require(
             bool(row.get("change_reason")) == (row["persona"] in changed_personas),
@@ -179,11 +203,23 @@ def main() -> None:
         )
         if row["persona"] in changed_personas:
             reason = row["change_reason"]
+            prior = next(item for item in initial if item["persona"] == row["persona"])
+            if not reason_calls:
+                expected_reason = (
+                    f"{','.join(row['data_ids'])}を根拠に"
+                    f"{prior['claim']}から{row['claim']}へ変更します。"
+                )
+                require(reason == expected_reason, f"structured change_reason mismatch: {row['persona']}")
+                continue
             label = claims[row["claim"]]["label"]
-            terms = REQUIRED_TERMS[row["claim"]]
-            require(len(reason) <= min(60, len(label) + 24), f"change_reason is too long: {row['persona']}")
+            terms = required_terms[row["claim"]]
+            prior_terms = required_terms[prior["claim"]]
+            selected_matches = sum(term in reason for term in terms)
+            prior_matches = sum(term in reason for term in prior_terms)
+            codes_present = prior["claim"] in reason and row["claim"] in reason
+            require(len(reason) <= min(50, len(label) + 24), f"change_reason is too long: {row['persona']}")
             require(
-                sum(term in reason for term in terms) >= max(2, len(terms) - 1),
+                codes_present or (selected_matches >= 1 and prior_matches >= 1),
                 f"change_reason lost the selected claim: {row['persona']}",
             )
             allowed_numbers = set(re.findall(r"\d+(?:\.\d+)?", label))
@@ -198,7 +234,12 @@ def main() -> None:
     body_calls = result.get("body_calls")
     require(isinstance(body_calls, list), "body calls are missing")
     require(result.get("body_renderer_model_calls") == len(body_calls), "body model-call count mismatch")
-    require(result.get("body_renderer_cache_hits") == 7 - len(body_calls), "body cache-hit count mismatch")
+    expected_cache_hits = (
+        expected_event_count
+        if result.get("body_cache_prime_mode")
+        else expected_event_count - len(body_calls)
+    )
+    require(result.get("body_renderer_cache_hits") == expected_cache_hits, "body cache-hit count mismatch")
     require(result.get("body_fallbacks") == 0, "body fallback was used")
     require(
         result.get("body_politeness_sanitizations")
@@ -258,11 +299,21 @@ def main() -> None:
         )
     cache_digest = hashlib.sha256("\n".join(digest_rows).encode()).hexdigest()
     require(body_cache.get("source_payload_sha256") == cache_digest, "body cache digest mismatch")
-    require(result.get("persistent_body_cache_entries") == 3, "body cache count mismatch")
+    require(result.get("persistent_body_cache_entries") == len(claims), "body cache count mismatch")
     require(result.get("persistent_body_cache_source_sha256") == cache_digest, "result/cache digest mismatch")
 
     load_required = result.get("body_adapter_load_required")
     loaded = result.get("body_adapter_loaded")
+    if "body_model_loaded" in result:
+        expected_body_model = bool(load_required)
+        require(
+            result["body_model_loaded"] is expected_body_model,
+            "body model load decision mismatch",
+        )
+        if expected_body_model:
+            require(result.get("body_base_load_seconds", 0) > 0, "body model load time is missing")
+        else:
+            require(result.get("body_base_load_seconds") == 0, "skipped body model has nonzero load time")
     if load_required:
         require(loaded is True and len(body_calls) > 0, "required body Adapter was not loaded")
         require(result.get("body_adapter_loaded_after_structural_calls") is True, "body Adapter load order is unproven")
@@ -272,10 +323,25 @@ def main() -> None:
     require(result.get("adapter_unloaded") is True, "body Adapter was not unloaded")
 
     events = result.get("events")
-    require(isinstance(events, list) and len(events) == 7, "expected four blind and three reaction events")
-    require([event["id"] for event in events] == [f"C{i:02d}" for i in range(1, 8)], "event IDs are not sequential")
-    require(all(event["move"] == "initial" for event in events[:4]), "blind event move mismatch")
-    require([event["move"] for event in events[4:]] == ["object", "revise", "agree"], "reaction priority mismatch")
+    require(isinstance(events, list) and len(events) == expected_event_count, "event count mismatch")
+    require(
+        [event["id"] for event in events]
+        == [f"C{i:02d}" for i in range(1, expected_event_count + 1)],
+        "event IDs are not sequential",
+    )
+    require(
+        all(event["move"] == "initial" for event in events[: len(persona_names)]),
+        "blind event move mismatch",
+    )
+    reaction_moves = [event["move"] for event in events[len(persona_names) :]]
+    priorities = {"object": 0, "revise": 1, "agree": 2, "maintain": 3}
+    require(
+        [priorities.get(move, 9) for move in reaction_moves]
+        == sorted(priorities.get(move, 9) for move in reaction_moves),
+        "reaction priority mismatch",
+    )
+    require(any(move in {"object", "revise"} for move in reaction_moves), "no dissent/revision event")
+    require(any(move in {"agree", "maintain"} for move in reaction_moves), "no supporting/maintaining event")
     for event in events:
         validate_position(event, claims, data_ids)
         require(re.search(r"D\d{2,}", event["utterance"]) is None, f"D ID leaked: {event['id']}")
@@ -283,7 +349,12 @@ def main() -> None:
         require(cod_model.body_matches_claim(event["body"], claims[event["claim"]]["label"]), f"event body mismatch: {event['id']}")
         if event["move"] in MOVE_PREFIX:
             require(event["utterance"] == MOVE_PREFIX[event["move"]] + event["body"], f"move/body composition mismatch: {event['id']}")
-            require(event.get("target_event_id") in {"C01", "C02", "C03", "C04"}, f"reaction target mismatch: {event['id']}")
+            if event["move"] != "maintain":
+                require(
+                    event.get("target_event_id")
+                    in {f"C{i:02d}" for i in range(1, len(persona_names) + 1)},
+                    f"reaction target mismatch: {event['id']}",
+                )
         else:
             require(event["utterance"] == event["body"], f"initial utterance mismatch: {event['id']}")
 

@@ -27,6 +27,8 @@ targets:
       - path: Resources/Adapter
         type: folder
         buildPhase: resources
+      - path: ../../data/typhoon18_20260825/native_cod_replay_ledger.json
+        buildPhase: resources
     dependencies:
       - package: MLXSwiftLM
         product: MLXLLM

@@ -230,4 +230,6 @@ rawは`/Volumes/data4/cod_model_weight/evaluations/claim-body-v3/`、Weightは`/
 
 実機JSON SHA-256は、cache解放前`3ff050552c9c1b0949582e118193b93a93fdb64e4c54fda6ba8f3104a782884c`、最適化後`8205792a922733004623534431f7f68d8332ae49c4e39aa1dd96d7f018a61fba`、cancel`869313c595f312f97c42417ae2b8d196e85485e8cdd05f02eee5098e45d6f1cd`。4人格でも本文描画だけであり、Base構造判断を含む完全CoDではない。
 
-続くNative CoD実機試験では、0.6B Baseをclaim/evidence/confidence選択、1.7B Baseを変更理由、本Weightを本文だけへ分離した。架空の均衡fixtureで7 event、構造repair 0、本文fallback 0、最終2対2の未解決保持、17.245秒、thermal fairでhard gateを通過した。本文7件は、直前の同一実機Weight runで生成し本validatorを通した3 unique claimの永続cacheを、Adapter SHA・claim・raw・canonical digestで再検証して利用した。cache直接再読込の2回目も18.771秒、peak 1,318.144 MiB、thermal fairで通過し、会話・票・結論が完全一致した。詳細は[iPhone native CoD](iphone13_a15_native_cod_20260904.md)。この結果は0.6BのWeight昇格や実案件統合を意味しない。
+続くNative CoD実機試験では、0.6B Baseをclaim/evidence/confidence選択、本Weightを本文だけへ分離した。変更理由の自由文model callは旧案取り違えが再発したため、Baseが選んだ旧claim・新claim・D番号から決定論的に監査文を合成する。架空の均衡fixtureの現行回帰runは7 event、構造repair 0、本文fallback 0、最終2対2の未解決保持、26.846秒、peak 895.893 MiB、thermal nominalでhard gateを通過した。詳細は[iPhone native CoD](iphone13_a15_native_cod_20260904.md)。この結果は0.6BのWeight昇格や実案件統合を意味しない。
+
+台風18号の歴史的実データreplayでも、6 claimの実機Weight cacheを検証し、4人格の初期見解、北東転向外れに関する異議と見解維持、強度・短期防災の保持を実行した。検証済み3 runは13.631〜13.735秒、本文fallback 0、thermal nominal、semantic完全一致でhard gate pass。本文cache完備・変更理由なしのrunでは1.7Bをロードせず、0.6B構造Baseだけで処理した。本Weightの昇格範囲は本文rendererのままである。

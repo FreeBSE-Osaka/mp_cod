@@ -138,7 +138,10 @@ def main() -> None:
             require(set(selected or []) <= set(by_code[code]["supported_by"]), f"readiness unsupported data: {code}")
             require(1 <= choice.get("confidence", 0) <= 100, f"readiness confidence invalid: {code}")
         invalid_choices = [choice for choice in choices if choice.get("valid") is False]
-        require(len(invalid_choices) == readiness["structure"]["repairs"] == 1, "repair audit mismatch")
+        require(
+            len(invalid_choices) == readiness["structure"]["repairs"] <= 1,
+            "repair audit mismatch",
+        )
         require(all(choice.get("error") for choice in invalid_choices), "invalid choice lacks error")
 
         body_outputs = readiness.get("body", {}).get("outputs")

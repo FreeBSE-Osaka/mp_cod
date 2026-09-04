@@ -131,12 +131,22 @@ private struct ClaimBodyDeviceHarnessView: View {
                         .textSelection(.enabled)
 
                     Button {
-                        startNativeCoD()
+                        startNativeCoD(.typhoon18Replay)
                     } label: {
-                        Label("A15 Native CoDを実行", systemImage: "person.3.sequence")
+                        Label("台風18号Historical Replay", systemImage: "hurricane")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(isRunning)
+                    .accessibilityIdentifier("runA15TyphoonReplay")
+
+                    Button {
+                        startNativeCoD(.syntheticBalanced)
+                    } label: {
+                        Label("架空Fixture Native CoD", systemImage: "person.3.sequence")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
                     .disabled(isRunning)
                     .accessibilityIdentifier("runA15NativeCoD")
 
@@ -169,7 +179,14 @@ private struct ClaimBodyDeviceHarnessView: View {
                       ProcessInfo.processInfo.arguments.contains("--autorun") else { return }
                 didAutoRun = true
                 if ProcessInfo.processInfo.arguments.contains("--native-cod") {
-                    startNativeCoD()
+                    startNativeCoD(
+                        ProcessInfo.processInfo.arguments.contains("--weather-replay")
+                            ? .typhoon18Replay
+                            : .syntheticBalanced,
+                        allowBodyCachePrime: ProcessInfo.processInfo.arguments.contains(
+                            "--prime-body-cache"
+                        )
+                    )
                 } else {
                     startSmoke()
                 }
@@ -187,16 +204,25 @@ private struct ClaimBodyDeviceHarnessView: View {
     }
 
     @MainActor
-    private func startNativeCoD() {
+    private func startNativeCoD(
+        _ scenario: NativeCoDScenarioKind,
+        allowBodyCachePrime: Bool = false
+    ) {
         guard smokeTask == nil else { return }
         smokeTask = Task { @MainActor in
-            await runNativeCoD()
+            await runNativeCoD(
+                scenario,
+                allowBodyCachePrime: allowBodyCachePrime
+            )
             smokeTask = nil
         }
     }
 
     @MainActor
-    private func runNativeCoD() async {
+    private func runNativeCoD(
+        _ scenario: NativeCoDScenarioKind,
+        allowBodyCachePrime: Bool
+    ) async {
         guard !isRunning else { return }
         isRunning = true
         downloadProgress = 0
@@ -205,7 +231,10 @@ private struct ClaimBodyDeviceHarnessView: View {
         defer { isRunning = false }
 
         do {
-            let result = try await NativeCoDSmokeRunner.run { phase in
+            let result = try await NativeCoDSmokeRunner.run(
+                scenario: scenario,
+                allowBodyCachePrime: allowBodyCachePrime
+            ) { phase in
                 status = phase
             }
             let eventLog = result.events.map {
@@ -222,7 +251,7 @@ private struct ClaimBodyDeviceHarnessView: View {
             log += "peak_footprint_mib=\(format(mebibytes(result.peakFootprintBytes)))\n"
             log += "minimum_limit_remaining_mib=\(format(mebibytes(result.minimumLimitBytesRemaining)))\n"
             log += "total_seconds=\(format(result.totalSeconds)) thermal_state=\(result.thermalState)\n"
-            log += "result_file=mp_cod_a15_native_cod.json\n"
+            log += "result_file=\(result.resultFilename)\n"
             status = result.hardGatePass ? "CoD PASS" : "CoD HOLD"
             downloadProgress = 1
             print("MP_COD_A15_NATIVE_COD \(result.hardGatePass ? "PASS" : "HOLD")\n\(log)")

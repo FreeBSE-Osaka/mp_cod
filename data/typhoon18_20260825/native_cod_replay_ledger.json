@@ -105,10 +105,10 @@
     },
     {
       "code": "NORTH_OUTLIER_LOW_PRIORITY",
-      "label": "72時間の主判断では北東転向外れを低位に扱う",
+      "label": "72時間の主判断では北東転向外れの優先度を低くする",
       "supported_by": ["D04", "D05", "D06"],
       "contradicts": ["NORTH_OUTLIER_MATERIAL"],
-      "required_terms": ["72時間", "北東転向", "低位"]
+      "required_terms": ["72時間", "北東転向", "優先度", "低く"]
     },
     {
       "code": "SHORT_TERM_IMPACT_CRITICAL",
@@ -126,10 +126,10 @@
     },
     {
       "code": "LONG_RANGE_MEDIUM_CONF",
-      "label": "72時間以後の位置と弱化速度は中程度の信頼に留める",
+      "label": "72時間を過ぎた後の位置と弱化速度は中程度の信頼に留める",
       "supported_by": ["D04", "D05", "D06"],
       "contradicts": [],
-      "required_terms": ["72時間以後", "位置", "弱化速度", "中程度", "信頼"]
+      "required_terms": ["72時間", "過ぎた後", "位置", "弱化速度", "中程度", "信頼"]
     }
   ],
   "personas": [
@@ -151,7 +151,7 @@
     }
   ],
   "role_preferences": {
-    "力学モデル研究者": ["TRACK_MAIN_WSW", "NORTH_OUTLIER_LOW_PRIORITY", "LONG_RANGE_MEDIUM_CONF"],
+    "力学モデル研究者": ["NORTH_OUTLIER_LOW_PRIORITY", "TRACK_MAIN_WSW", "LONG_RANGE_MEDIUM_CONF"],
     "アンサンブル確率予報者": ["NORTH_OUTLIER_MATERIAL", "LONG_RANGE_MEDIUM_CONF", "TRACK_MAIN_WSW"],
     "観測・ナウキャスト専門家": ["INTENSITY_GRADUAL_WEAKEN", "TRACK_MAIN_WSW", "LONG_RANGE_MEDIUM_CONF"],
     "影響・リスク予報者": ["SHORT_TERM_IMPACT_CRITICAL", "NORTH_OUTLIER_MATERIAL", "LONG_RANGE_MEDIUM_CONF"]

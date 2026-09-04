@@ -125,4 +125,4 @@ Swift sourceは`/Users/osaka/src/typhon_exweather/ExtremeWeather/`にあり、�
 
 ## Boundary
 
-今回証明したのは「Macで生成したCoD runをSimulator/iOSの純Swift coreで検証・表示する」経路。Qwen3 BaseとLoRAをiPhone内で直接推論する経路ではない。過去のMLX/CoreSimulator Metal crashがあるため、本体へのMLX再導入は行わず、将来はiOS 17/A15の最小実機harnessで先に検証する。
+この文書で証明したのは「Macで生成したCoD runをSimulator/iOSの純Swift coreで検証・表示する」経路である。その後、独立harnessの物理iPhone 13 Pro / A15上では、Qwen3 BaseとClaim Body v3を使う架空fixtureおよび台風18号歴史replayのNative CoDまでhard gateを通過した。詳細は[物理iPhone Native CoD](iphone13_a15_native_cod_20260904.md)。過去のMLX/CoreSimulator Metal crash境界は変わらず、ExtremeWeather本体へのMLX再導入はまだ行わない。
