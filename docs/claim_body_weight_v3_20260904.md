@@ -225,3 +225,7 @@ rawは`/Volumes/data4/cod_model_weight/evaluations/claim-body-v3/`、Weightは`/
 物理iPhone 13 Pro / A15 / iOS 17.6.1で、`Qwen3-1.7B-4bit`と本Adapterを直接ロードし、weather claim 1件をstrict JSONの丁寧な本文へ変換した。通常memory limitでAdapter unloadとsession clearまでPASSし、warm runはTTFT 2.306秒、25.732 tok/s、total 4.558秒、thermal nominalだった。result JSONのSHA-256は`c3008004f01ddf941f9b6080e1f8df869ca5c35e8f432a67616a4bebcf9bd8ba`。詳細は[iPhone 13 Pro / A15 device smoke](iphone13_a15_claim_body_v3_smoke_20260904.md)を参照。
 
 これは本文renderer 1 callの成立確認であり、完全な複数人格CoD、連続round、Peak memory、ExtremeWeather本体との共存は未検証である。
+
+続く4人格の独立本文soakは4/4 contract valid、exact polite 2/4、11.904秒、decode 25.564 tok/s、thermal nominalだった。各session後にMLX buffer cacheを解放することで、同一4文・同等速度のままpeak task footprintを2,510.879から1,478.894 MiBへ41.1%削減し、memory-limit headroomを561.137から2,058.169 MiBへ増やした。生成中cancelもAdapter unload / MLX cache 0で完了した。
+
+実機JSON SHA-256は、cache解放前`3ff050552c9c1b0949582e118193b93a93fdb64e4c54fda6ba8f3104a782884c`、最適化後`8205792a922733004623534431f7f68d8332ae49c4e39aa1dd96d7f018a61fba`、cancel`869313c595f312f97c42417ae2b8d196e85485e8cdd05f02eee5098e45d6f1cd`。4人格でも本文描画だけであり、Base構造判断を含む完全CoDではない。

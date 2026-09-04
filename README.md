@@ -275,6 +275,8 @@ EV 8 event / 最大2 roundは16 model call・54.2秒で完走しました。Weig
 
 物理iPhone 13 Pro / A15 / iOS 17.6.1では、`Qwen3-1.7B-4bit + Claim Body v3`を端末内MLXで直接ロード・生成・unloadできました。warm runはTTFT 2.306秒、25.732 tok/s、total 4.558秒、thermal nominalです。これは本文1件の実機スモークであり、完全な多人数CoDの実機完走ではありません。[実装・実測・再現手順](docs/iphone13_a15_claim_body_v3_smoke_20260904.md)
 
+続く4人格の独立本文soakは11.904秒、4/4 contract valid、exact polite 2/4、thermal nominalでした。各session後にMLX buffer cacheを解放し、peak footprintを2,510.879→1,478.894 MiB（-41.1%）、memory-limit headroomを561.137→2,058.169 MiBへ改善しました。生成中cancel後のAdapter unload / cache 0も実機確認済みです。Baseによる主張選択とreconciliationはまだ端末内実行していません。
+
 Hugging Face向けには、ローカルpathを除いたAdapter設定、Model Card、Weight、SHA256SUMSだけのstaging packageを用意しています。公開前検証とupload境界は [Hugging Face release staging](docs/huggingface_release_claim_body_v3.md) を参照してください。
 
 ## bounded RSI shadow

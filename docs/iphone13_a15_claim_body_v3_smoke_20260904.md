@@ -61,8 +61,68 @@ xcodebuild \
   build
 ```
 
-署名済みappを実機へinstallし、`--autorun`で起動する。初回だけBaseをHugging Faceから取得し、以後は端末cacheを利用する。成功時は画面とconsoleを`PASS`にし、Documentsへ`mp_cod_a15_smoke.json`を保存する。
+署名済みappを実機へinstallし、`--autorun`で起動する。初回だけBaseをHugging Faceから取得し、以後は端末cacheを利用する。現行版は成功時に画面とconsoleを`PASS`にし、Documentsへ`mp_cod_a15_soak.json`を保存する。`--cancel-during-generation`を追加するとcancel経路を実行する。
 
 ## Boundary
 
-このPASSが証明するのは「A15 / iOS 17.6.1で、1.7B 4bit Base + 2.5 MB LoRAによる1件のClaim Body生成が通常memory limit内で動く」ことだけである。完全な複数人格CoD、長いcontext、連続round、peak memory、memory warning、3D画面との共存は未検証で、ExtremeWeather本体へMLXを追加する許可にはしない。
+最初のPASSが証明するのは「A15 / iOS 17.6.1で、1.7B 4bit Base + 2.5 MB LoRAによる1件のClaim Body生成が通常memory limit内で動く」ことだけである。
+
+## Four-persona sequential soak
+
+同じWeightを一度だけloadし、各人格に新しい`ChatSession`を割り当てて4件を順次生成した。他人格の発言履歴は次のsessionへ渡していない。
+
+```text
+力学モデル研究者: 進路予測は上層場と地上場の整合を確認して更新します
+アンサンブル確率予報者: 少数だが重大なシナリオも分布に残して比較します
+観測・ナウキャスト専門家: 観測時刻と出典を毎回確認します。
+影響・リスク予報者: 暴風が強まる前に安全確保を優先します
+```
+
+端末内strict検査に加え、取得後の4文をPython本番`body_matches_claim`、neutral、polite、strict `bodies` schemaへ通し、全件合格した。学習targetと文末記号を除いて完全一致したのは2/4で、残りは意味を保つ自然な省略・言い換えだった。
+
+| Metric | Cache解放前 | Sessionごとに`Memory.clearCache()` | Change |
+|---|---:|---:|---:|
+| Contract-valid bodies | 4/4 | 4/4 | unchanged |
+| Exact polite target | 2/4 | 2/4 | unchanged |
+| Total | 12.077秒 | 11.904秒 | -1.4% |
+| Decode speed | 約25 tok/s | 25.564 tok/s | unchanged |
+| Peak task footprint | 2,510.879 MiB | 1,478.894 MiB | -41.1% |
+| Minimum memory-limit headroom | 561.137 MiB | 2,058.169 MiB | +1,497.032 MiB |
+| Thermal | fair | nominal | run variance |
+
+未解放時はsessionごとにtask footprintが増えた。`session.clear()`後にMLX buffer cacheを解放すると、各発言後のcurrent footprintは約1.06GBへ戻り、速度と本文は維持された。
+
+```text
+baseline JSON  /Volumes/data4/cod_model_weight/evaluations/claim-body-v3/iphone13_a15_four_persona_soak_before_cache_clear_20260904.json
+baseline SHA   3ff050552c9c1b0949582e118193b93a93fdb64e4c54fda6ba8f3104a782884c
+optimized JSON /Volumes/data4/cod_model_weight/evaluations/claim-body-v3/iphone13_a15_four_persona_soak_20260904.json
+optimized SHA  8205792a922733004623534431f7f68d8332ae49c4e39aa1dd96d7f018a61fba
+```
+
+## Cancellation
+
+`--cancel-during-generation`で最初の生成開始250ms後にtaskをcancelした。MLX streamがcompletion metricsなしで終了する場合も`Task.isCancelled`から`CANCELLED`へ正規化し、session clear、Adapter unload、MLX cache解放後に証跡を保存する。
+
+```text
+completed utterances  0
+adapter unloaded      true
+MLX cache after stop  0 bytes
+thermal               nominal
+cancel JSON           /Volumes/data4/cod_model_weight/evaluations/claim-body-v3/iphone13_a15_cancel_20260904.json
+cancel SHA            869313c595f312f97c42417ae2b8d196e85485e8cdd05f02eee5098e45d6f1cd
+```
+
+検証command:
+
+```sh
+python3.11 tools/validate_iphone_claim_body_soak.py \
+  /Volumes/data4/cod_model_weight/evaluations/claim-body-v3/iphone13_a15_four_persona_soak_20260904.json \
+  --baseline /Volumes/data4/cod_model_weight/evaluations/claim-body-v3/iphone13_a15_four_persona_soak_before_cache_clear_20260904.json \
+  --cancel-result /Volumes/data4/cod_model_weight/evaluations/claim-body-v3/iphone13_a15_cancel_20260904.json
+```
+
+結果は`status=valid`、4 utterances、exact polite 2、peak 1,478.894 MiB、headroom 2,058.169 MiB、peak reduction 41.101%、cancel validだった。
+
+## Remaining boundary
+
+このsoakは4人格の自然文rendererを連続実行したもので、Baseによるclaim/evidence/vote選択や、反論・賛同・意見変更を伴うreconciliationではない。完全な複数人格CoD、長いcontext、memory warning、3D画面との共存は未検証で、ExtremeWeather本体へMLXを追加する許可にはしない。

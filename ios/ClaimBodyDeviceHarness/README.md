@@ -1,16 +1,17 @@
 # Claim Body Device Harness
 
-Qwen3-1.7B-4bitとClaim Body v3 LoRAを、ExtremeWeather本体へ組み込む前にiOS 17/A15実機で1回だけ検証する独立harnessです。
+Qwen3-1.7B-4bitとClaim Body v3 LoRAを、ExtremeWeather本体へ組み込む前にiOS 17/A15実機で段階検証する独立harnessです。
 
 確認するもの:
 
 - public Hugging Face Baseのdownload / load
 - bundled MLX LoRAのload
-- temperature 0、96 tokens以下のclaim-body生成
+- 独立`ChatSession`による4人格のtemperature 0、96 tokens以下のclaim-body生成
 - strict JSON、ID、claim語彙、D番号非混入
-- TTFT、tokens/s、total time、thermal state
-- Adapter unloadとsession clear
-- 成功metricsをDocumentsの`mp_cod_a15_smoke.json`へatomic保存
+- TTFT、tokens/s、total time、thermal state、task/MLX memory
+- session clear後のMLX cache解放
+- 実行中cancel、Adapter unload
+- 成功metricsをDocumentsの`mp_cod_a15_soak.json`、cancel証跡を`mp_cod_a15_cancel.json`へatomic保存
 
 ## Generate
 
@@ -53,11 +54,27 @@ Bundle IDは`com.freebse.MPCoDClaimBodyHarness`、Development Teamは既存Extre
 
 warm runは208 prompt tokensから30 tokensを生成し、`{"bodies":[{"id":"B01","body":"暴風が強まる前に安全確保を優先します"}]}`を返しました。詳細は[`../../docs/iphone13_a15_claim_body_v3_smoke_20260904.md`](../../docs/iphone13_a15_claim_body_v3_smoke_20260904.md)を参照してください。
 
+4人格を独立sessionで連続生成した実測:
+
+| Run | Utterances | Total | Peak footprint | Minimum headroom | Thermal |
+|---|---:|---:|---:|---:|---|
+| MLX cache解放前 | 4/4 | 12.077秒 | 2,510.879 MiB | 561.137 MiB | fair |
+| sessionごとにcache解放 | 4/4（exact 2/4） | 11.904秒 | 1,478.894 MiB | 2,058.169 MiB | nominal |
+
+`Memory.clearCache()`により公開文と速度を変えずpeak footprintを41.1%削減しました。生成開始250ms後の自動cancelも`CANCELLED`となり、Adapter unloadとMLX cache 0を確認しています。
+
+```sh
+python3.11 tools/validate_iphone_claim_body_soak.py \
+  /path/to/iphone13_a15_four_persona_soak.json \
+  --baseline /path/to/iphone13_a15_four_persona_soak_before_cache_clear.json \
+  --cancel-result /path/to/iphone13_a15_cancel.json
+```
+
 ## Boundary
 
 - 学習しない
-- 複数人格討論を実行しない
+- Baseによるclaim/evidence/vote選択やreconciliationは実行しない
 - ExtremeWeatherへMLX packageを追加しない
 - Base WeightをGit/Appへ同梱しない
-- 物理端末でPASSしたのは1件の本文生成だけで、完全な複数人格CoDではない
+- 物理端末でPASSしたのは4人格の独立本文rendererで、完全な複数人格CoDではない
 - ExtremeWeather本体への統合は別の回帰・memoryゲートを通す
