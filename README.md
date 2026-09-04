@@ -225,6 +225,10 @@ General Dialogue v3はLoRAをutterance rendererだけへ分離し、人格別・
 
 General Dialogue v4はvalidatorの誤失格修正、到達可能moveの均等化、共有・move均衡・人格別Weightを比較しました。全評価、23.2秒のfast実測、SHA、停止理由は [General Dialogue utterance renderer v4実験記録](docs/general_dialogue_weight_v4_20260903.md) にあります。
 
+Horse renderer v1は競馬固有の限定表現を対象にv4 step160から48 iteration継続学習しました。horse holdoutとemailは改善しましたが、horse実走8 eventで直接採用0件のため非昇格です。意味反転を止めたvalidator修復、全評価、SHAは [Horse renderer Weight v1実験記録](docs/horse_renderer_weight_v1_20260903.md) にあります。
+
+既存のMLX Qwen3.5-4B-4bitもbatch 1 / last 4 layers / rank 4で確認しました。学習はOOMしませんでしたが約0.081 iteration/秒で、難所3 moveはBaseとstep20が同じ1/3だったため停止しました。設定、memory、Weight、全SHAは [Qwen3.5-4B renderer smoke](docs/qwen35_4b_renderer_smoke_20260904.md) にあります。
+
 ## bounded RSI shadow
 
 RSIは、異なる固定ledgerを使ったdevelopmentとholdoutの両方で候補runがParentを上回るか検査します。

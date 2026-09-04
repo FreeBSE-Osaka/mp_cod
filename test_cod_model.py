@@ -622,6 +622,55 @@ class CodModelTest(unittest.TestCase):
                 ["全面導入"],
             )
         )
+        restricted = "pairwiseを本線2頭専用のshadow headとして残し、公開3頭BOXの全面置換には使わない"
+        reversed_utterance = (
+            "その案には異議があります。代わりに、pairwiseを本線2頭専用のshadow headとして残し、"
+            "公開3頭BOXを直ちに置換する方が安全です。"
+        )
+        self.assertTrue(cod_model.dialogue_reverses_restriction(reversed_utterance, restricted))
+        self.assertFalse(cod_model.dialogue_is_aligned(reversed_utterance, restricted, []))
+        self.assertFalse(
+            cod_model.dialogue_reverses_restriction(
+                "pairwiseは本線専用に留め、公開3頭BOXへは置換しない方が安全です。",
+                restricted,
+            )
+        )
+        self.assertFalse(
+            cod_model.dialogue_reverses_restriction(
+                "data4はWeight保管に使いますが、horse本体の恒久依存にはしません。",
+                "data4はWeight保管に使うがhorse本体の恒久依存にはしない",
+            )
+        )
+        incomplete, reason = cod_model.validate_dialogue_utterance(
+            "pairwiseを本線2頭専用のshadow headとして残します。採用条件として、8/30のBOX改善を。"
+        )
+        self.assertIsNone(incomplete)
+        self.assertIn("complete sentence", reason)
+        self.assertFalse(
+            cod_model.dialogue_is_aligned(
+                "pairwiseを本線2頭専用のshadow headとして残します。",
+                restricted,
+                [],
+            )
+        )
+        self.assertTrue(
+            cod_model.dialogue_selects_competing_claim(
+                "その案には懸念があります。代わりに、8月106競走の3頭BOXを直ちに置換する条件で試します。",
+                ["8/30のBOX改善を根拠にpairwise上位3頭で公開BOXを直ちに置換する"],
+            )
+        )
+        rejected_replacement = (
+            "ただ、本線で残すpairwiseは2頭で決めるのが現実的です。"
+            "代わりに、公開3頭BOXを直ちに置換する案は危険です。"
+        )
+        self.assertTrue(cod_model.dialogue_preserves_restriction(rejected_replacement, restricted))
+        self.assertFalse(cod_model.dialogue_reverses_restriction(rejected_replacement, restricted))
+        self.assertFalse(
+            cod_model.dialogue_selects_competing_claim(
+                rejected_replacement,
+                ["8/30のBOX改善を根拠にpairwise上位3頭で公開BOXを直ちに置換する"],
+            )
+        )
 
     def test_objection_speaks_before_new_topic(self):
         ledger = {

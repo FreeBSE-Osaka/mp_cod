@@ -1117,6 +1117,8 @@ def validate_dialogue_utterance(utterance: object) -> tuple[str | None, str | No
         return None, "utterance must contain natural Japanese"
     if normalized[-1] not in "。！？!?":
         return None, "utterance must end as a complete sentence"
+    if re.search(r"(?:を|へ|に|として|について|条件を)[。！？!?]$", normalized):
+        return None, "utterance must end as a complete sentence"
     return normalized, None
 
 
@@ -1157,11 +1159,67 @@ def renderer_move_instruction(move: object) -> str:
     }.get(str(move), "入力済みの主張をそのまま自然に述べる。")
 
 
+RENDERER_RESTRICTIONS = (
+    "ない", "ません", "禁止", "不可", "避け", "控え", "限定", "留め", "のみ", "だけ", "専用",
+    "危険", "問題", "反対", "異議",
+)
+RENDERER_POSITIVE_ACTIONS = {
+    "置換": r"置換(?:する|します|しよう|を行う)",
+    "採用": r"採用(?:する|します|しよう)",
+    "導入": r"導入(?:する|します|しよう)",
+    "昇格": r"昇格(?:する|します|させる)",
+    "公開": r"公開(?:する|します|しよう)",
+    "実施": r"実施(?:する|します|しよう)",
+    "使用": r"使用(?:する|します|しよう)",
+    "使": r"使(?:う|います|おう)",
+}
+
+
+def _restriction_near(text: str, start: int, end: int) -> bool:
+    window = text[max(0, start - 6) : end + 12]
+    return any(marker in window for marker in RENDERER_RESTRICTIONS + ("却下",))
+
+
+def _restricted_action_stems(label: str) -> set[str]:
+    return {
+        stem
+        for stem in RENDERER_POSITIVE_ACTIONS
+        if any(_restriction_near(label, match.start(), match.end()) for match in re.finditer(re.escape(stem), label))
+    }
+
+
 def dialogue_selects_competing_claim(utterance: str, competitors: list[str]) -> bool:
-    return any(
-        re.search(rf"{re.escape(label)}[』\s]*(?:を|へ)(?:選|採|支持)", utterance)
-        for label in competitors
-        if label
+    for label in competitors:
+        if not label:
+            continue
+        if re.search(rf"{re.escape(label)}[』\s]*(?:を|へ)(?:選|採|支持)", utterance):
+            return True
+        shared_directive = any(marker in label and marker in utterance for marker in ("直ちに", "すぐ", "自動", "全面", "本番"))
+        if not shared_directive:
+            continue
+        for stem, pattern in RENDERER_POSITIVE_ACTIONS.items():
+            if stem not in label:
+                continue
+            if any(not _restriction_near(utterance, match.start(), match.end()) for match in re.finditer(pattern, utterance)):
+                return True
+    return False
+
+
+def dialogue_reverses_restriction(utterance: str, label: str) -> bool:
+    for stem in _restricted_action_stems(label):
+        pattern = RENDERER_POSITIVE_ACTIONS[stem]
+        for match in re.finditer(pattern, utterance):
+            if not _restriction_near(utterance, match.start(), match.end()):
+                return True
+    return False
+
+
+def dialogue_preserves_restriction(utterance: str, label: str) -> bool:
+    restricted = _restricted_action_stems(label)
+    return not restricted or any(
+        _restriction_near(utterance, match.start(), match.end())
+        for stem in restricted
+        for match in re.finditer(re.escape(stem), utterance)
     )
 
 
@@ -1294,6 +1352,8 @@ def dialogue_matches_claim(utterance: str, label: str) -> bool:
 
 
 def dialogue_is_aligned(utterance: str, label: str, competitors: list[str]) -> bool:
+    if dialogue_reverses_restriction(utterance, label) or not dialogue_preserves_restriction(utterance, label):
+        return False
     if dialogue_matches_claim(utterance, label):
         return True
     selected = similarity(utterance, label)
