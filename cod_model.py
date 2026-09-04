@@ -70,6 +70,29 @@ MOVE_UTTERANCE_TEMPLATES = {
         "先ほどとは結論を変えます。『{label}』を採ります。",
     ),
 }
+MOVE_UTTERANCE_PREFIXES = {
+    "object": (
+        "ただ、その案には懸念があります。代わりに、",
+        "その結論には異議があります。代案として、",
+        "そのまま進めるのは危険です。まず、",
+        "問題を避けるなら、",
+    ),
+    "agree": (
+        "その案には賛成です。加えて、",
+        "同意します。私の観点では、",
+        "私も賛成です。特に、",
+    ),
+    "maintain": (
+        "結論は変わりません。",
+        "今のところ見方は同じです。",
+        "この判断を維持します。",
+    ),
+    "revise": (
+        "前の見方を修正します。",
+        "考え直しました。",
+        "先ほどとは結論を変えます。",
+    ),
+}
 
 
 def short_string(limit: int = 160) -> dict:
@@ -1381,6 +1404,23 @@ def dialogue_fallback(statement: str) -> str:
     return f"{visible}。"
 
 
+def compose_dialogue_fallback(
+    statement: str, label: str, move: str, variant: int = 0
+) -> tuple[str, str]:
+    body = dialogue_fallback(statement)
+    if body.startswith(label) and body[len(label) :].startswith("を"):
+        body = f"『{label}』{body[len(label):]}"
+    prefixes = MOVE_UTTERANCE_PREFIXES.get(move)
+    if prefixes:
+        candidate = f"{prefixes[variant % len(prefixes)]}{body}"
+        normalized, _ = validate_dialogue_move(candidate, move)
+        if normalized is not None and dialogue_is_aligned(normalized, label, []):
+            return normalized, "composed_statement_fallback"
+    if move in MOVE_UTTERANCE_TEMPLATES:
+        return dialogue_move_example(label, move, variant), "template_fallback"
+    return body, "statement_fallback"
+
+
 def sanitize_dialogue_move(utterance: object, move: str) -> str | None:
     if not isinstance(utterance, str):
         return None
@@ -1870,8 +1910,11 @@ def run_event_debate(args: argparse.Namespace) -> int:
     if args.backend == "mlx" and not args.model_path:
         raise ValueError("MLX backend requires --model-path")
     shared_renderer_adapter = getattr(args, "renderer_adapter", None)
+    no_renderer = bool(getattr(args, "no_renderer", False))
     if args.adapter_map and shared_renderer_adapter:
         raise ValueError("--adapter-map and --renderer-adapter are mutually exclusive")
+    if no_renderer and (args.adapter_map or shared_renderer_adapter):
+        raise ValueError("--no-renderer cannot be combined with a renderer adapter")
     if args.backend == "ollama" and (args.adapter_map or shared_renderer_adapter):
         raise ValueError("Ollama backend does not accept MLX renderer adapters")
     if shared_renderer_adapter:
@@ -2000,7 +2043,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
         "domain": args.domain,
         "prompt_profile": args.prompt_profile,
         "seed": args.seed,
-        "execution": {"fast": bool(getattr(args, "fast", False)), **execution},
+        "execution": {"fast": bool(getattr(args, "fast", False)), "no_renderer": no_renderer, **execution},
         "adapter_map": adapter_map,
         "renderer_adapter": shared_renderer_adapter,
         "renderer_schema_version": 3,
@@ -2035,9 +2078,12 @@ def run_event_debate(args: argparse.Namespace) -> int:
     def render_utterance_records(records: list[dict], phase: str) -> None:
         if not records:
             return
-        if getattr(args, "fast", False) and not adapter_map and not shared_renderer_adapter:
+        if no_renderer or (
+            getattr(args, "fast", False) and not adapter_map and not shared_renderer_adapter
+        ):
             print(
-                f"[fast] {phase} rendererを省略し、検証済みstatementを表示します。",
+                f"[{'no-renderer' if no_renderer else 'fast'}] {phase} rendererを省略し、"
+                "検証済みstatementを表示します。",
                 flush=True,
             )
             for record in records:
@@ -2283,10 +2329,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
     for event_index, event in enumerate(events):
         target_event = event_by_id.get(event["target_claim_id"])
         move = renderer_event_move(event["action"])
-        move_fallback = (
-            dialogue_move_example(event["label"], move, event_index)
-            if move in MOVE_UTTERANCE_TEMPLATES
-            else event["utterance"]
+        move_fallback, fallback_origin = compose_dialogue_fallback(
+            event["statement"], event["label"], move, event_index
         )
         event_renderer_records.append(
             {
@@ -2297,9 +2341,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 "target_label": target_event["label"] if target_event else None,
                 "validation_move": move,
                 "fallback": move_fallback,
-                "fallback_origin": (
-                    "template_fallback" if move in MOVE_UTTERANCE_TEMPLATES else "statement_fallback"
-                ),
+                "fallback_origin": fallback_origin,
                 "payload": {
                     "phase": "event",
                     "move": move,
@@ -2584,6 +2626,12 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     if choice in catalog
                     else "両方を残す" if choice == "BOTH" else "判断を保留する"
                 )
+                vote_fallback, vote_fallback_origin = compose_dialogue_fallback(
+                    vote["statement"],
+                    selected_label,
+                    vote["dialogue_move"],
+                    persona_rank[persona_id] + round_no,
+                )
                 reconciliation_renderer_records.append(
                     {
                         "id": f"R{round_no}:{key}:{persona_id}",
@@ -2597,12 +2645,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
                             if catalog[code]["label"] != selected_label
                         ],
                         "validation_move": vote["dialogue_move"],
-                        "fallback": dialogue_move_example(
-                            selected_label,
-                            vote["dialogue_move"],
-                            persona_rank[persona_id] + round_no,
-                        ),
-                        "fallback_origin": "template_fallback",
+                        "fallback": vote_fallback,
+                        "fallback_origin": vote_fallback_origin,
                         "payload": {
                             "phase": "reconciliation",
                             "move": vote["dialogue_move"],
@@ -3103,6 +3147,11 @@ def parser() -> argparse.ArgumentParser:
         "--fast",
         action="store_true",
         help="2主張/人格、最大2発言/人格、すり合わせなしでlive shadowを軽量実行",
+    )
+    event_debate.add_argument(
+        "--no-renderer",
+        action="store_true",
+        help="構造判断とすり合わせを残し、会話rendererだけを検証済みstatement合成へ置換",
     )
     event_debate.set_defaults(handler=run_event_debate)
 

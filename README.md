@@ -18,6 +18,7 @@
 - 内部の証拠文 `statement` と、表示専用の会話文 `utterance` を分離し、LoRAは後者だけに限定
 - 異議・賛同は相手の原文ではなく構造化主張だけを見て会話調で応答
 - renderer失敗時も、異議・賛同・維持・変更ごとの複数templateをローテーションして自然文表示
+- `--no-renderer`で、すり合わせを残したまま検証済みstatementから会話文を合成
 - 証拠のない主張は自動失格し、対立は最大ラウンド内で3/4に達した時点で終了
 - 人格ごとに効用と損失を分け、反論は前提否定・反例・トレードオフの型を使用
 - prompt/configだけを比較するbounded RSI shadow gateを同梱
@@ -92,6 +93,20 @@ live shadow向けの軽量経路:
 ```
 
 `--fast`は各人格2主張、最大2発言/人格、すり合わせ0回です。Adapterがない場合は会話rendererも呼ばず、検証済み`statement`またはmove別templateから表示文を作ります。独立判断とD番号validatorは維持しますが、自然文Weightと合意形成を省くためhard gateは通らず、live shadow専用です。Qwen3-1.7Bの未学習EV台帳では8 eventが4 call・29.5秒、4 eventのv4再実測が4 call・23.2秒でした。
+
+すり合わせを残してrendererだけ省く場合:
+
+```sh
+<mlx-python> cod_model.py event-debate \
+  --ledger <claim-ledger.json> \
+  --domain general \
+  --model-path <base-model> \
+  --max-turns 12 \
+  --reconcile-rounds 2 \
+  --no-renderer
+```
+
+`--no-renderer`は主張数やラウンドを縮小せず、検証済みstatementへmove別導入句を合成します。Adapter指定とは併用できません。EVの2 event・1 round実測では11 call・68.8秒から8 call・39.2秒へ短縮し、4人格投票と3/4合意を維持しました。合成文は`composed_statement_fallback`として記録され、Weight成功やhard gate通過には数えません。
 
 モデルには他人格の文章を渡さず、検証済みの主張コードと証拠IDだけを共有します。採決に使うのは検証済みコードだけです。
 
@@ -232,6 +247,8 @@ Horse renderer v1は競馬固有の限定表現を対象にv4 step160から48 it
 Natural specialist v5ではQwen3-14B teacherから実行役event-agreeの直接合格自然文を3件得ましたが、親step160からの専用継続はholdout 1/3のまま、Base specialistは0/3でした。move別few-shotもobjectへ賛同例が混入したためruntimeへ採用せず、全結果を [General Dialogue natural specialist v5実験記録](docs/general_dialogue_weight_v5_20260904.md) に残しています。
 
 Natural specialists v6では12の異なるtopicから仮説object 12件・実行event-agree 13件を集め、人格・phase・move別LoRAとrepair LoRAを評価しました。数値創作を拒否するgrounding guardは採用しましたが、全Weightが未学習holdoutで親同等以下だったため非昇格です。全target、評価、SHA、停止理由は [General Dialogue natural specialists v6実験記録](docs/general_dialogue_weight_v6_20260904.md) にあります。
+
+発話行為をコードで確定し、検証済みstatement本文だけを接続する`--no-renderer`経路は、4人格のすり合わせを残したまま39.2秒へ短縮しました。設計、実測、会話全文は [Composed statement renderer v1](docs/composed_statement_renderer_v1_20260904.md) にあります。
 
 ## bounded RSI shadow
 

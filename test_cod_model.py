@@ -383,6 +383,32 @@ class CodModelTest(unittest.TestCase):
         )
         self.assertNotIn("代わりに、その案には", rewritten)
         self.assertIsNone(cod_model.sanitize_dialogue_move("その案には賛成です。", "agree"))
+        fallback_label = "利用不能率9%または受電600kW超を停止条件にする"
+        fallback_statement = f"{fallback_label}と判断します。根拠は[D08]です。"
+        composed, origin = cod_model.compose_dialogue_fallback(
+            fallback_statement,
+            fallback_label,
+            "agree",
+        )
+        self.assertEqual(origin, "composed_statement_fallback")
+        self.assertTrue(composed.startswith("その案には賛成です。加えて、"))
+        self.assertIn(fallback_label, composed)
+        self.assertNotIn("D08", composed)
+        objection, origin = cod_model.compose_dialogue_fallback(
+            fallback_statement,
+            fallback_label,
+            "object",
+            1,
+        )
+        self.assertEqual(origin, "composed_statement_fallback")
+        self.assertTrue(objection.startswith("その結論には異議があります。代案として、"))
+        selected, origin = cod_model.compose_dialogue_fallback(
+            f"{fallback_label}を採ります。根拠は[D08]です。",
+            fallback_label,
+            "maintain",
+        )
+        self.assertIn(f"『{fallback_label}』を採ります。", selected)
+        self.assertNotIn(f"{fallback_label}を採ります。", selected)
         for move in ("object", "agree", "maintain", "revise"):
             examples = [
                 cod_model.dialogue_move_example("対象を絞ったpilotを行う", move, index)
@@ -536,11 +562,13 @@ class CodModelTest(unittest.TestCase):
                 "qwen3.5:4b",
                 "--prompt-profile",
                 "orthogonal_bare",
+                "--no-renderer",
             ]
         )
         self.assertEqual(args.backend, "ollama")
         self.assertEqual(args.ollama_model, "qwen3.5:4b")
         self.assertEqual(args.prompt_profile, "orthogonal_bare")
+        self.assertTrue(args.no_renderer)
         self.assertIsNone(args.model_path)
 
     def test_renderer_v3_requires_exact_ids_and_fast_mode_is_bounded(self):
