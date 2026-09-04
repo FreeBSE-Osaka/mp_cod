@@ -567,6 +567,14 @@ class CodModelTest(unittest.TestCase):
         )
         self.assertEqual(args.backend, "ollama")
         self.assertEqual(args.ollama_model, "qwen3.5:4b")
+        self.assertFalse(args.portable_context)
+        portable = cod_model.parser().parse_args(
+            [
+                "event-debate", "--ledger", "ledger.json", "--domain", "general",
+                "--portable-context",
+            ]
+        )
+        self.assertTrue(portable.portable_context)
         self.assertEqual(args.prompt_profile, "orthogonal_bare")
         self.assertTrue(args.no_renderer)
         self.assertIsNone(args.model_path)
@@ -646,16 +654,30 @@ class CodModelTest(unittest.TestCase):
         self.assertFalse(cod_model.body_is_polite_sentence("段階導入を先に試す。"))
         self.assertFalse(cod_model.body_is_polite_sentence("削減を優先。"))
         self.assertEqual(
-            cod_model.sanitize_exact_claim_politeness(
+            cod_model.sanitize_body_politeness(
                 "利用不能率9%到達を停止条件候補にする。",
                 "利用不能率9%到達を停止条件候補にする",
             ),
             "利用不能率9%到達を停止条件候補にします。",
         )
         self.assertIsNone(
-            cod_model.sanitize_exact_claim_politeness(
+            cod_model.sanitize_body_politeness(
                 "観測値を確認する。", "停止条件候補にする"
             )
+        )
+        self.assertEqual(
+            cod_model.sanitize_body_politeness(
+                "72時間後には位置と弱化速度が中程度の信頼に留まる。",
+                "72時間以後の位置と弱化速度は中程度の信頼に留める",
+            ),
+            "72時間後には位置と弱化速度が中程度の信頼に留まります。",
+        )
+        self.assertEqual(
+            cod_model.sanitize_body_politeness(
+                "主経路は琉球から東シナ海を西〜南西進し中国東岸方向。",
+                "主経路は琉球から東シナ海を西〜南西進し中国東岸方向",
+            ),
+            "主経路は琉球から東シナ海を西〜南西進し中国東岸方向と判断します。",
         )
         self.assertTrue(
             cod_model.body_matches_claim(
@@ -728,6 +750,20 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(metrics["body_renderer_cache_hits"], 1)
         self.assertEqual(metrics["body_schema_repairs"], 1)
         self.assertEqual(metrics["model_utterance_rate"], 0.0)
+
+    def test_event_portable_context_embeds_ledger_and_active_personas(self):
+        ledger = {"schema_version": 1, "topic": "portable"}
+        context = cod_model.event_portable_context(
+            ledger,
+            [
+                {"id": "p1", "name": "提案役"},
+                {"id": "p2", "name": "反証役"},
+            ],
+        )
+        self.assertEqual(context["portable_context_schema_version"], 1)
+        self.assertIs(context["ledger_snapshot"], ledger)
+        self.assertEqual(context["persona_order"], ["p1", "p2"])
+        self.assertEqual(context["persona_names"], {"p1": "提案役", "p2": "反証役"})
 
 
     def test_renderer_v3_training_batch_uses_runtime_contract(self):

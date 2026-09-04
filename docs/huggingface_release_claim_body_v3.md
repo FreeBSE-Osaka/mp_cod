@@ -26,7 +26,7 @@
 ```text
 adapter_config.json  078a2db9d9eb4d7df1c5fb2db1386d47427aaa05e330cbfdf107b7a46532622f
 adapters.safetensors 4ce21e64af220f0ee309599e189fd136e10c4c5cd11440c3d60fd306749a9a92
-README.md            3880324e5cfe82b3ef248552c6a41b5bb39e6fe16401140fde21e6b681ec2ca9
+README.md            d2cfdc0a0d8b352b65827c66e09b9b62d6f994989ec2c0f2a0f8efb69db632f2
 package smoke raw    fdd712c06427b7c61b86d016c6c4861cf73e2117ac20f03e09b7b894e31f6276
 ```
 

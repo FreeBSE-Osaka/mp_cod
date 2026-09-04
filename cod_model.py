@@ -120,6 +120,7 @@ BODY_FRAGMENT_ENDINGS = (
 )
 BODY_POLITE_SUFFIXES = (
     ("しない", "しません"), ("留める", "留めます"), ("設ける", "設けます"),
+    ("留まる", "留まります"),
     ("調べる", "調べます"), ("増やす", "増やします"), ("残す", "残します"),
     ("高い", "高いです"), ("する", "します"), ("行う", "行います"),
     ("扱う", "扱います"), ("作る", "作ります"),
@@ -1356,16 +1357,34 @@ def body_matches_claim(body: str, label: str) -> bool:
     )
 
 
-def sanitize_exact_claim_politeness(body: str, label: str) -> str | None:
+def event_portable_context(ledger: dict, personas: list[dict]) -> dict:
+    return {
+        "portable_context_schema_version": 1,
+        "ledger_snapshot": ledger,
+        "persona_order": [persona["id"] for persona in personas],
+        "persona_names": {persona["id"]: persona["name"] for persona in personas},
+    }
+
+
+def sanitize_body_politeness(body: str, label: str) -> str | None:
     plain_body = body.rstrip("。！？!?")
     plain_label = label.rstrip("。！？!?")
-    if plain_body != plain_label:
+    exact = plain_body == plain_label
+    if not exact and not body_matches_claim(body, label):
         return None
     for suffix, replacement in BODY_POLITE_SUFFIXES:
-        if plain_label.endswith(suffix):
-            candidate, _ = normalize_renderer_body(plain_label[: -len(suffix)] + replacement)
-            if candidate is not None and body_is_polite_sentence(candidate):
+        if plain_body.endswith(suffix):
+            candidate, _ = normalize_renderer_body(plain_body[: -len(suffix)] + replacement)
+            if (
+                candidate is not None
+                and body_is_polite_sentence(candidate)
+                and body_matches_claim(candidate, label)
+            ):
                 return candidate
+    if exact:
+        candidate, _ = normalize_renderer_body(f"{plain_body}と判断します")
+        if candidate is not None and body_matches_claim(candidate, label):
+            return candidate
     return None
 
 
@@ -2079,6 +2098,11 @@ def run_event_debate(args: argparse.Namespace) -> int:
         for item in ledger["claim_catalog"]
     ]
     model_id = args.model_path if args.backend == "mlx" else args.ollama_model
+    portable_context = (
+        event_portable_context(ledger, personas)
+        if getattr(args, "portable_context", False)
+        else {}
+    )
     if args.backend == "mlx":
         try:
             import mlx.core as mx
@@ -2190,6 +2214,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
         "ledger": args.ledger,
         "ledger_sha256": hashlib.sha256(Path(args.ledger).read_bytes()).hexdigest(),
         "domain": args.domain,
+        **portable_context,
         "prompt_profile": args.prompt_profile,
         "seed": args.seed,
         "execution": {
@@ -2197,6 +2222,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
             "no_renderer": no_renderer,
             "body_temperature": 0.0 if body_renderer_adapter else None,
             "body_cache": "claim_label" if body_renderer_adapter else None,
+            "portable_context": bool(portable_context),
             **execution,
         },
         "adapter_map": adapter_map,
@@ -2277,7 +2303,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     if body is not None and not body_is_neutral(body):
                         body, body_warning = None, "body renderer exposed a dialogue move"
                     if body is not None and not body_is_polite_sentence(body):
-                        polite_body = sanitize_exact_claim_politeness(body, record["label"])
+                        polite_body = sanitize_body_politeness(body, record["label"])
                         if polite_body is None:
                             body, body_warning = None, "body renderer did not return a polite complete sentence"
                         else:
@@ -3426,6 +3452,11 @@ def parser() -> argparse.ArgumentParser:
     event_debate.add_argument("--api-url", default=DEFAULT_API_URL)
     event_debate.add_argument("--timeout", type=int, default=180)
     event_debate.add_argument("--out", default="runs")
+    event_debate.add_argument(
+        "--portable-context",
+        action="store_true",
+        help="ledger snapshotと人格metadataをrunへ埋め込む（共有時のデータ範囲に注意）",
+    )
     event_debate.add_argument("--max-turns", type=int, default=10)
     event_debate.add_argument("--reconcile-rounds", type=int, default=2)
     event_debate.add_argument("--max-tokens", type=int, default=600)

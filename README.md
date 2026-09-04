@@ -271,6 +271,8 @@ Claim Body v1は後の監査で、提案を完了事実へ変える文と名詞�
 
 EV 8 event / 最大2 roundは16 model call・54.2秒で完走しました。Weightが凍結claimと完全一致するplain formを返した1件だけ文末を安全に丁寧語化し、公開12発言すべてWeight由来、fallback 0、hard gate通過です。
 
+`--portable-context`を指定したrun JSONにはledger snapshot、人格順、表示名を埋め込めます。ledger本文を複製するため既定はOFFです。台風18号weather runは16/16 Weight発言・hard gate通過後、ExtremeWeatherの純Swift importer、無関係fixtureからの復元、改変ledger拒否、iPhone 16 Simulatorでの画面表示まで確認しました。[実装・画面証跡](docs/extremeweather_portable_import_20260904.md)
+
 Hugging Face向けには、ローカルpathを除いたAdapter設定、Model Card、Weight、SHA256SUMSだけのstaging packageを用意しています。公開前検証とupload境界は [Hugging Face release staging](docs/huggingface_release_claim_body_v3.md) を参照してください。
 
 ## bounded RSI shadow

@@ -118,6 +118,33 @@
       "run_sha256": "3424c66152ab6a225a7ca8ea304af7ab4a516a0362cd337525b5ff3bc9a90f1a"
     }
   },
+  "cross_domain_weather": {
+    "ledger": "data/typhoon18_20260825/claim_ledger.json",
+    "events": 12,
+    "reconciliation_utterances": 4,
+    "weight_utterances": "16/16",
+    "body_renderer_model_calls": 11,
+    "body_renderer_cache_hits": 5,
+    "body_politeness_sanitizations": 8,
+    "fallbacks": 0,
+    "model_calls": 20,
+    "elapsed_seconds": 64.6,
+    "hard_gate_pass": true,
+    "portable_run_sha256": "dd22882123a6c088260afc1be7d3386ed08d3be37c23b1e08ac8a9e94c8eb26a"
+  },
+  "portable_context": {
+    "schema_version": 1,
+    "opt_in_flag": "--portable-context",
+    "default_enabled": false,
+    "embedded_fields": ["ledger_snapshot", "persona_order", "persona_names"],
+    "swift_standalone_check": true,
+    "mismatched_base_fixture_check": true,
+    "tampered_duplicate_claim_rejected": true,
+    "iphone_16_simulator_build_run": true,
+    "simulator_ui_visible": true,
+    "on_device_mlx_inference": false,
+    "documentation": "docs/extremeweather_portable_import_20260904.md"
+  },
   "non_promoted_followup": {
     "candidate": "claim-body-v4 step160",
     "reason": "Runtime-exact continuation kept validity at 15/15 but reduced exact polite transfer from 14/15 to 13/15.",
@@ -127,7 +154,7 @@
     "path": "/Volumes/data4/cod_model_weight/releases/mp-cod-claim-body-v3",
     "adapter_config_sha256": "078a2db9d9eb4d7df1c5fb2db1386d47427aaa05e330cbfdf107b7a46532622f",
     "adapter_weights_sha256": "4ce21e64af220f0ee309599e189fd136e10c4c5cd11440c3d60fd306749a9a92",
-    "model_card_sha256": "3880324e5cfe82b3ef248552c6a41b5bb39e6fe16401140fde21e6b681ec2ca9",
+    "model_card_sha256": "d2cfdc0a0d8b352b65827c66e09b9b62d6f994989ec2c0f2a0f8efb69db632f2",
     "package_smoke_sha256": "fdd712c06427b7c61b86d016c6c4861cf73e2117ac20f03e09b7b894e31f6276",
     "model_card_valid": true,
     "local_paths_absent": true,

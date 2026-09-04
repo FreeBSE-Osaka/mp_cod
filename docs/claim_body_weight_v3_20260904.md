@@ -215,3 +215,7 @@ v4 comparison        44a5bb52fa52b0495af0735855c6a26aed65bd1426e5a49854df9c66fe8
 ```
 
 rawは`/Volumes/data4/cod_model_weight/evaluations/claim-body-v3/`、Weightは`/Volumes/data4/cod_model_weight/adapters/claim-body-v3/shared_step128/`に保存した。Gitにはコード、設定、評価境界だけを置く。
+
+## Weather and iOS portable import
+
+学習から除外したweather domainの台風18号12 event / 1 roundでも、公開16発言すべてWeight由来、fallback 0、hard gate passとなった。run JSONへledger snapshotと人格metadataを埋め込み、ExtremeWeatherの純Swift importerで再検証・Simulator表示まで完走した。詳細と画面証跡は[ExtremeWeather portable CoD import](extremeweather_portable_import_20260904.md)を参照。
