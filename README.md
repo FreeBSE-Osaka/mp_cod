@@ -283,6 +283,8 @@ EV 8 event / 最大2 roundは16 model call・54.2秒で完走しました。Weig
 
 実データshadowとして、台風18号の2026-08-25 15:50 JST固定packetをsource URL・観測/有効時刻付きの[歴史的replay ledger](data/typhoon18_20260825/native_cod_replay_ledger.json)へ縮約し、物理iPhoneで実行しました。4つの直交見解を保持し、北東転向外れの扱いだけを再討論して`unresolved_plurality`を記録。検証済み3 runは13.631〜13.735秒、peak 1,063.425〜1,164.175 MiB、thermal nominal、fallback 0、semantic完全一致です。[会話・性能・失敗履歴](docs/iphone13_a15_native_cod_20260904.md)
 
+物理A15では、ExtremeWeatherのMetal雲・雨shaderを固定試験雲場で描画しながらNative CoDを実行するshadowも通過しました。384×256 / 24 steps / 20 fps目標で、CoD 14.834秒、描画平均19.20 fps、単独実行との意味出力一致。3D切替cancelは1.413秒、模擬メモリ警告cancelは1.384秒で、MLX解放後の描画回復を確認しました。Unity・地図・通信を含む本体全体は未検証です。[実測・停止検証・再現手順](docs/iphone13_a15_3d_shadow_20260907.md)
+
 Hugging Face向けには、ローカルpathを除いたAdapter設定、Model Card、Weight、SHA256SUMSだけのstaging packageを用意しています。公開前検証とupload境界は [Hugging Face release staging](docs/huggingface_release_claim_body_v3.md) を参照してください。
 
 ## bounded RSI shadow

@@ -12,7 +12,11 @@ import Tokenizers
 struct ClaimBodyDeviceHarnessApp: App {
     var body: some Scene {
         WindowGroup {
-            ClaimBodyDeviceHarnessView()
+            if ProcessInfo.processInfo.arguments.contains("--3d-shadow") {
+                CoD3DShadowView()
+            } else {
+                ClaimBodyDeviceHarnessView()
+            }
         }
     }
 }

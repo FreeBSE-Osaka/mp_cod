@@ -27,6 +27,10 @@ targets:
       - path: Resources/Adapter
         type: folder
         buildPhase: resources
+      - path: Resources/Shadow
+        type: folder
+        buildPhase: resources
+        optional: true
       - path: ../../data/typhoon18_20260825/native_cod_replay_ledger.json
         buildPhase: resources
     dependencies:

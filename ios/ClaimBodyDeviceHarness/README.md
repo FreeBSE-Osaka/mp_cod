@@ -99,6 +99,49 @@ python3.11 tools/validate_iphone_native_cod.py \
 
 `--autorun --native-cod --weather-replay`は、bundle内の監査済み台風18号歴史replay JSONを読み込みます。ledger SHA不一致を拒否し、直交する進路・強度・防災claimを単一勝者へ潰さず、明示的な`contradicts`だけを再討論します。物理A15の検証済み3 runは13.631〜13.735秒、fallback 0、thermal nominal、semantic完全一致でhard gateを通過しました。
 
+## 3D shadow on a physical iPhone
+
+`CoD3DShadow.swift`はExtremeWeatherの現行Metal volume / precipitation shaderを、
+固定の合成雲場で動かす独立試験です。384×256、24 ray steps、20 fps目標で、
+GPU完了時刻・frame間隔・thermal・task/MLX memoryを保存します。
+Unity、ArcGIS地図、通信、実際の気象データを含む本体全体の負荷試験とは区別します。
+
+ローカルのExtremeWeather sourceからshaderを抽出してからprojectを生成します。
+元sourceとshaderのSHA-256を保存し、端末でshader hashを再確認します。
+準備したshader packetはGit管理外で、他projectのsourceをmp_codへ再配布しません。
+
+```sh
+python3.11 tools/prepare_iphone_3d_shadow.py \
+  /path/to/typhon_exweather/ExtremeWeather/ExtremeWeather/Features/Regional3D/Regional3DMetalVolumeView.swift
+xcodegen generate --spec ios/ClaimBodyDeviceHarness/project.yml
+```
+
+上記の実機build/install後、次のlaunch argumentsで実行します。
+
+| Arguments | Test | Documents result |
+|---|---|---|
+| `--3d-shadow` | 3Dのみ3秒 → CoDと3D同時 → 3Dのみ3秒 | `mp_cod_a15_3d_concurrent.json` |
+| `--3d-shadow --3d-handoff` | 3D要求でCoD停止 → MLX解放確認 → 3D再開 | `mp_cod_a15_3d_handoff.json` |
+| `--3d-shadow --simulate-memory-warning` | メモリ警告通知を模擬 → 同じ停止処理 → 3D回復 | `mp_cod_a15_3d_memory_warning_simulated.json` |
+
+初回downloadを含む試行とcache済み試行は別ファイルでMacへ回収します。
+開始thermalはnominal必須。512 MiB未満のheadroom、serious/critical thermal、
+OS memory warning、app非active化は停止理由として記録します。
+模擬通知には固有metadataを付け、OSからの実通知と区別します。
+開始できなかった場合も`status=hold`のJSONで前回結果を置き換えます。
+各再実行前に必要な端末resultを回収してください。
+
+```sh
+python3.11 tools/validate_iphone_3d_shadow.py /path/to/device_result.json \
+  --shader-packet ios/ClaimBodyDeviceHarness/Resources/Shadow/shadow_renderer.json \
+  --reference /path/to/accepted_native_typhoon18_replay.json
+```
+
+外部validatorは描画15 fps以上、最大stall 1秒以下、同時実行時のp95 gap 150ms以下、
+CoDの既存contract/35秒gate、512 MiB headroom、停止後MLX cache 0を検査します。
+切替では3Dが推論中に動かないこと、3秒以内のcancel、解放後の描画回復を確認します。
+rawの`production_integration_allowed=false`は、この試験に通っても維持します。
+
 ## Boundary
 
 - 学習しない

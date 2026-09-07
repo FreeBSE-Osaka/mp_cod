@@ -18,6 +18,8 @@ adapters/
 # Generated iOS device harness project and build products
 ios/ClaimBodyDeviceHarness/ClaimBodyDeviceHarness.xcodeproj/
 ios/ClaimBodyDeviceHarness/DerivedData/
+# Optional local weather shader; the source is not redistributed with mp_cod.
+ios/ClaimBodyDeviceHarness/Resources/Shadow/
 
 # Third-party plots are not redistributed
 data/typhoon18_20260825/*.png

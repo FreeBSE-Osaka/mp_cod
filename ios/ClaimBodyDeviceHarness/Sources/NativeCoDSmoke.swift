@@ -1684,7 +1684,7 @@ enum NativeCoDSmokeRunner {
         return String(decoding: try encoder.encode(value), as: UTF8.self)
     }
 
-    private static func memorySample(stage: String) throws -> NativeCoDMemorySample {
+    static func memorySample(stage: String) throws -> NativeCoDMemorySample {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(
             MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size
@@ -1706,7 +1706,7 @@ enum NativeCoDSmokeRunner {
         )
     }
 
-    private static func save<T: Encodable>(_ value: T, named filename: String) throws {
+    static func save<T: Encodable>(_ value: T, named filename: String) throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.keyEncodingStrategy = .convertToSnakeCase
@@ -1726,7 +1726,7 @@ enum NativeCoDSmokeRunner {
             + Double(duration.components.attoseconds) / 1_000_000_000_000_000_000
     }
 
-    private static func thermalName(_ state: ProcessInfo.ThermalState) -> String {
+    static func thermalName(_ state: ProcessInfo.ThermalState) -> String {
         switch state {
         case .nominal: "nominal"
         case .fair: "fair"
