@@ -285,6 +285,8 @@ EV 8 event / 最大2 roundは16 model call・54.2秒で完走しました。Weig
 
 物理A15では、ExtremeWeatherのMetal雲・雨shaderを固定試験雲場で描画しながらNative CoDを実行するshadowも通過しました。384×256 / 24 steps / 20 fps目標で、CoD 14.834秒、描画平均19.20 fps、単独実行との意味出力一致。3D切替cancelは1.413秒、模擬メモリ警告cancelは1.384秒で、MLX解放後の描画回復を確認しました。Unity・地図・通信を含む本体全体は未検証です。[実測・停止検証・再現手順](docs/iphone13_a15_3d_shadow_20260907.md)
 
+続く本文cache miss試験では、0.6B判断後に1.7B + Claim Body v3から全6本文を新規生成し、3D同時実行36.041秒・19.56 fps、peak 1,549 MiBで外部gateを通過しました。本文生成中のcancelは3D要求2.241秒、模擬memory warning 0.935秒。既存cacheは変更せず、Base判断と公開発言の一致も確認しています。[本文新規生成・解放・再現手順](docs/iphone13_a15_fresh_body_20260908.md)
+
 Hugging Face向けには、ローカルpathを除いたAdapter設定、Model Card、Weight、SHA256SUMSだけのstaging packageを用意しています。公開前検証とupload境界は [Hugging Face release staging](docs/huggingface_release_claim_body_v3.md) を参照してください。
 
 ## bounded RSI shadow

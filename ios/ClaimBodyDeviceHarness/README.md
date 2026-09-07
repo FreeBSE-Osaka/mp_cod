@@ -142,6 +142,24 @@ CoDの既存contract/35秒gate、512 MiB headroom、停止後MLX cache 0を検�
 切替では3Dが推論中に動かないこと、3秒以内のcancel、解放後の描画回復を確認します。
 rawの`production_integration_allowed=false`は、この試験に通っても維持します。
 
+### Body-cache miss
+
+各modeに`--fresh-body`を追加すると、既存の本文cacheを読み書きせず、0.6Bの判断後に
+1.7B + Claim Body v3をloadし、全6 claimをその場で生成します。同一run内の再利用は維持します。
+result filenameには`_fresh_body`を付け、通常cache/resultを保護します。
+
+`--3d-shadow --fresh-body`は3Dと本文生成を同時実行します。
+`--3d-shadow --fresh-body --3d-handoff`と
+`--3d-shadow --fresh-body --simulate-memory-warning`は、最初のLoRA本文生成開始後に停止を要求します。
+`stop_inference_progress`で構造判断より後の本文生成まで到達したことを検査します。
+
+同じvalidatorが`fresh_body=true`を識別し、body model/LoRA load、全claimの実生成raw、
+`body_cache_bypassed=true`、`body_cache_persisted=false`を必須にします。
+処理時間は追加の本文生成を含め60秒、cache利用時は従来の35秒です。
+描画15 fps、512 MiB headroom、cancel 3秒、解放後のcache 0は共通です。
+`--reference`ではBaseの判断一致を必須にし、新しく生成した本文の字面の一致は別指標として記録します。
+データを含む最初のmodel downloadはwarm性能と別runに保存してください。
+
 ## Boundary
 
 - 学習しない

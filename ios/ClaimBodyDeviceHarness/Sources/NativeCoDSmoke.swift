@@ -256,6 +256,8 @@ struct NativeCoDResult: Encodable {
     let bodyAdapterLoaded: Bool
     let bodyAdapterLoadedAfterStructuralCalls: Bool
     let bodyCachePrimeMode: Bool
+    let bodyCacheBypassed: Bool
+    let bodyCachePersisted: Bool
     let adapterUnloaded: Bool
     let hardGatePass: Bool
     let baseLoadSeconds: Double
@@ -544,6 +546,7 @@ enum NativeCoDSmokeRunner {
     static func run(
         scenario kind: NativeCoDScenarioKind = .syntheticBalanced,
         allowBodyCachePrime: Bool = false,
+        bypassBodyCache: Bool = false,
         progress: (String) -> Void
     ) async throws -> NativeCoDResult {
         let scenario = try loadScenario(kind)
@@ -552,13 +555,17 @@ enum NativeCoDSmokeRunner {
         let personas = ledger.personas
         let rolePreferences = ledger.rolePreferences
         let totalStart = ContinuousClock.now
+        let primeBodyCache = allowBodyCachePrime || bypassBodyCache
+        let resultFilename = bypassBodyCache
+            ? scenario.resultFilename.replacingOccurrences(of: ".json", with: "_fresh_body.json")
+            : scenario.resultFilename
         let startThermalState = thermalName(ProcessInfo.processInfo.thermalState)
-        var persistentBodyCache = try loadOrSeedBodyCache(scenario)
+        var persistentBodyCache = bypassBodyCache ? nil : try loadOrSeedBodyCache(scenario)
         let cacheComplete = Set(claimRuntimes.map(\.claim.code)).isSubset(
             of: Set(persistentBodyCache?.entries.keys ?? Dictionary<String, NativeBodyCacheEntry>().keys)
         )
         guard startThermalState == "nominal"
-                || (startThermalState == "fair" && (cacheComplete || allowBodyCachePrime)) else {
+                || (startThermalState == "fair" && !bypassBodyCache && (cacheComplete || allowBodyCachePrime)) else {
             throw NativeCoDError.deviceTooHot(startThermalState)
         }
         Memory.peakMemory = 0
@@ -763,7 +770,7 @@ enum NativeCoDSmokeRunner {
         let requiredCodes = Set(
             (initialPositions + reconciliationPositions).map(\.claim)
         )
-        let cacheTargetCodes = allowBodyCachePrime
+        let cacheTargetCodes = primeBodyCache
             ? Set(claimRuntimes.map(\.claim.code))
             : requiredCodes
         var persistentEntries = persistentBodyCache?.entries ?? [:]
@@ -826,7 +833,7 @@ enum NativeCoDSmokeRunner {
             var cacheHits = 0
             var events: [NativeCoDEvent] = []
 
-            if allowBodyCachePrime {
+            if primeBodyCache {
                 for runtime in claimRuntimes where cache[runtime.claim.code] == nil {
                     try Task.checkCancellation()
                     guard let container else {
@@ -932,7 +939,9 @@ enum NativeCoDSmokeRunner {
             guard bodyCacheIsValid(savedBodyCache, claimRuntimes: claimRuntimes) else {
                 throw NativeCoDError.invalidBody("永続cacheの再検証に失敗しました")
             }
-            try save(savedBodyCache, named: scenario.cacheFilename)
+            if !bypassBodyCache {
+                try save(savedBodyCache, named: scenario.cacheFilename)
+            }
             persistentBodyCache = savedBodyCache
 
             let bodyFallbacks = bodyCalls.filter(\.fallback).count
@@ -955,7 +964,7 @@ enum NativeCoDSmokeRunner {
                 schemaVersion: 3,
                 createdAt: Date(),
                 mode: "native_cod_one_round",
-                resultFilename: scenario.resultFilename,
+                resultFilename: resultFilename,
                 model: modelID,
                 bodyModel: bodyModelID,
                 bodyModelLoaded: bodyModelRequired,
@@ -987,7 +996,9 @@ enum NativeCoDSmokeRunner {
                 bodyAdapterLoadRequired: bodyAdapterLoadRequired,
                 bodyAdapterLoaded: bodyAdapterLoaded,
                 bodyAdapterLoadedAfterStructuralCalls: bodyAdapterLoaded,
-                bodyCachePrimeMode: allowBodyCachePrime,
+                bodyCachePrimeMode: primeBodyCache,
+                bodyCacheBypassed: bypassBodyCache,
+                bodyCachePersisted: !bypassBodyCache,
                 adapterUnloaded: adapterUnloaded,
                 hardGatePass: hardGatePass,
                 baseLoadSeconds: baseLoadSeconds,
@@ -1000,7 +1011,7 @@ enum NativeCoDSmokeRunner {
                 minimumLimitBytesRemaining: memorySamples.map(\.limitBytesRemaining).min() ?? 0,
                 memorySamples: memorySamples
             )
-            try save(result, named: scenario.resultFilename)
+            try save(result, named: resultFilename)
             return result
         } catch {
             if let adapter, let container, !adapterUnloaded {
@@ -1251,6 +1262,7 @@ enum NativeCoDSmokeRunner {
             maxTokens: 96,
             container: container
         )
+        print("MP_COD_NATIVE_BODY claim=\(runtime.claim.code) speaker=\(speaker) raw=\(generation.raw)")
         do {
             let validated = try validateBody(generation.raw, runtime: runtime)
             return bodyCall(

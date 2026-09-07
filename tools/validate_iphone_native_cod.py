@@ -50,6 +50,22 @@ def validate_position(position: dict, claims: dict[str, dict], data_ids: set[str
     require(1 <= position["confidence"] <= 100, "confidence is outside 1...100")
 
 
+def validate_fresh_body_contract(result: dict) -> None:
+    if result.get("body_cache_bypassed") is not True:
+        return
+    require(result.get("body_cache_persisted") is False, "fresh-body test overwrote the persistent cache")
+    require(result.get("body_cache_prime_mode") is True, "fresh-body run did not prime every claim")
+    require(result.get("start_thermal_state") == "nominal", "fresh-body run started too hot")
+    require(result.get("body_model_loaded") is True and result.get("body_adapter_loaded") is True,
+            "fresh-body run did not load the body model and LoRA")
+    claims = {row["code"] for row in result["ledger"]["claims"]}
+    calls = result.get("body_calls", [])
+    require(len(calls) == len(claims) and {call.get("claim") for call in calls} == claims,
+            "fresh-body run did not generate each claim exactly once")
+    require(all("persistent" not in event.get("body_origin", "") for event in result.get("events", [])),
+            "fresh-body run reused a persistent body")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("result", type=Path)
@@ -66,6 +82,7 @@ def main() -> None:
     require(result.get("body_model") == BODY_MODEL, "unexpected body model")
     require(result.get("adapter_weights_sha256") == WEIGHT_SHA256, "Weight SHA mismatch")
     require(result.get("hard_gate_pass") is True, "hard gate did not pass")
+    validate_fresh_body_contract(result)
     start_thermal = result.get("start_thermal_state")
     require(start_thermal in {"nominal", "fair"}, "run started too hot")
     if start_thermal == "fair":

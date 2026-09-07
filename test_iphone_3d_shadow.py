@@ -2,10 +2,42 @@ import copy
 import unittest
 
 from tools.prepare_iphone_3d_shadow import shader_packet
-from tools.validate_iphone_3d_shadow import audit
+from tools.validate_iphone_3d_shadow import audit, compare_reference, validate_body_workload
+from tools.validate_iphone_native_cod import validate_fresh_body_contract
 
 
 class IPhone3DShadowTest(unittest.TestCase):
+    def test_fresh_body_requires_actual_calls_and_preserves_cache(self):
+        native = {"body_cache_bypassed": True, "body_cache_persisted": False,
+                  "body_cache_prime_mode": True, "start_thermal_state": "nominal",
+                  "body_model_loaded": True, "body_adapter_loaded": True,
+                  "ledger": {"claims": [{"code": "A"}, {"code": "B"}]},
+                  "body_calls": [{"claim": "A"}, {"claim": "B"}],
+                  "events": [{"body_origin": "model_body_v2_cache", "utterance": "新しい本文です。"}]}
+        result = {"mode": "concurrent", "fresh_body": True, "cod_result": native}
+        self.assertTrue(validate_body_workload(result))
+        validate_fresh_body_contract(native)
+        for key, value in (("body_calls", []), ("body_cache_persisted", True), ("body_model_loaded", False)):
+            with self.subTest(key=key):
+                bad = copy.deepcopy(result)
+                bad["cod_result"][key] = value
+                with self.assertRaises(ValueError):
+                    validate_body_workload(bad)
+                with self.assertRaises(SystemExit):
+                    validate_fresh_body_contract(bad["cod_result"])
+        bad = {**native, "events": [{"body_origin": "model_body_v2_persistent_cache"}]}
+        with self.assertRaises(SystemExit):
+            validate_fresh_body_contract(bad)
+        with self.assertRaises(ValueError):
+            validate_body_workload({"mode": "handoff", "fresh_body": True,
+                                    "stop_inference_progress": "盲検選択: 役A"})
+        reference = {**native, "hard_gate_pass": True, "events": [{"utterance": "以前の本文です。"}]}
+        self.assertFalse(compare_reference(native, reference, True)["utterances_identical"])
+        with self.assertRaisesRegex(ValueError, "reference hard gate"):
+            compare_reference(native, {**reference, "hard_gate_pass": False}, True)
+        with self.assertRaisesRegex(ValueError, "Base decisions"):
+            compare_reference({**native, "initial_tally": {"B": 4}}, reference, True)
+
     def test_shader_extraction_rejects_interpolation_and_is_auditable(self):
         source = b'''let source = """
         vertex void regional_volume_vertex() {}

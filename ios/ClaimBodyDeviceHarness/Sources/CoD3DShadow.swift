@@ -251,6 +251,7 @@ private struct ShadowResult: Encodable {
     let createdAt = Date()
     let mode: String
     let physicalDevice: Bool
+    let freshBody: Bool
     let renderer: String
     let inputKind: String
     let sourceSHA256: String
@@ -263,6 +264,7 @@ private struct ShadowResult: Encodable {
     let cancelled: Bool
     let stopReason: String?
     let stopRequestedAt: Double?
+    let stopInferenceProgress: String?
     let inferenceFinishedAt: Double
     let codResult: NativeCoDResult?
     let error: String?
@@ -291,11 +293,14 @@ private final class ShadowController: ObservableObject {
     private var samples: [ShadowSample] = []
     private var stopReason: String?
     private var stopRequestedAt: Double?
+    private var inferenceProgress = ""
+    private var stopInferenceProgress: String?
 
     func stop(_ reason: String) {
         guard running, stopReason == nil else { return }
         stopReason = reason
         stopRequestedAt = ProcessInfo.processInfo.systemUptime
+        stopInferenceProgress = inferenceProgress
         renderer?.view.isPaused = true
         inference?.cancel()
         log += "stop_requested=\(reason)\n"
@@ -316,9 +321,11 @@ private final class ShadowController: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = true
         defer { running = false; UIApplication.shared.isIdleTimerDisabled = false }
         let arguments = ProcessInfo.processInfo.arguments
+        let freshBody = arguments.contains("--fresh-body")
         let mode = arguments.contains("--3d-handoff") ? "handoff"
             : arguments.contains("--simulate-memory-warning") ? "memory_warning_simulated" : "concurrent"
-        let filename = "mp_cod_a15_3d_\(mode).json"
+        let suffix = freshBody ? "_fresh_body" : ""
+        let filename = "mp_cod_a15_3d_\(mode)\(suffix).json"
         var monitoring: Task<Void, Never>?
         defer { monitoring?.cancel() }
         do {
@@ -330,7 +337,7 @@ private final class ShadowController: ObservableObject {
             }
             let renderer = try ShadowRenderer()
             self.renderer = renderer
-            log = "mode=\(mode)\nshader_sha256=\(renderer.packet.shaderSha256)\n"
+            log = "mode=\(mode) fresh_body=\(freshBody)\nshader_sha256=\(renderer.packet.shaderSha256)\n"
             var phases: [ShadowPhase] = []
             func begin(_ name: String) -> Double {
                 phase = name
@@ -355,17 +362,19 @@ private final class ShadowController: ObservableObject {
             try await Task.sleep(for: .seconds(3))
             try await renderer.pause()
             finish("baseline_3d", baselineStart)
-            try renderer.saveImage(named: "mp_cod_a15_3d_\(mode).png")
+            try renderer.saveImage(named: "mp_cod_a15_3d_\(mode)\(suffix).png")
             if let stopReason { throw ShadowError.invalid("事前gate: \(stopReason)") }
             let inferenceStart = begin("inference")
             renderer.view.isPaused = mode != "concurrent"
             var trigger: Task<Void, Never>?
             defer { trigger?.cancel() }
             inference = Task { @MainActor in
-                try await NativeCoDSmokeRunner.run(scenario: .typhoon18Replay) { progress in
+                try await NativeCoDSmokeRunner.run(scenario: .typhoon18Replay, bypassBodyCache: freshBody) { progress in
                     self.status = progress
+                    self.inferenceProgress = progress
                     print("MP_COD_3D_PHASE \(progress)")
-                    if mode != "concurrent", trigger == nil, progress.hasPrefix("盲検選択:") {
+                    let triggerPrefix = freshBody ? "本文cache prime:" : "盲検選択:"
+                    if mode != "concurrent", trigger == nil, progress.hasPrefix(triggerPrefix) {
                         trigger = Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(250))
                             guard !Task.isCancelled else { return }
@@ -401,10 +410,11 @@ private final class ShadowController: ObservableObject {
             try await renderer.pause()
             finish("recovery_3d", recoveryStart)
             sample()
-            let report = ShadowResult(mode: mode, physicalDevice: true,
+            let report = ShadowResult(mode: mode, physicalDevice: true, freshBody: freshBody,
                 renderer: renderer.packet.renderer, inputKind: renderer.packet.inputKind,
                 sourceSHA256: renderer.packet.sourceSha256, shaderSHA256: renderer.packet.shaderSha256,
                 cancelled: cancelled, stopReason: stopReason, stopRequestedAt: stopRequestedAt,
+                stopInferenceProgress: stopInferenceProgress,
                 inferenceFinishedAt: finishedAt, codResult: result, error: errorText,
                 phases: phases, samples: samples, frames: renderer.frames, skippedFrames: renderer.skippedFrames)
             try NativeCoDSmokeRunner.save(report, named: filename)

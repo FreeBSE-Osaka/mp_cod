@@ -39,6 +39,37 @@ def phase_metrics(result, phase):
     }
 
 
+def validate_body_workload(result):
+    fresh = result.get("fresh_body", False)
+    require(isinstance(fresh, bool), "fresh_body must be boolean")
+    if result["mode"] == "concurrent":
+        native = result.get("cod_result") or {}
+        require(native.get("body_cache_bypassed", False) is fresh, "body workload provenance mismatch")
+        if fresh:
+            require(native.get("body_model_loaded") is True
+                    and native.get("body_adapter_loaded") is True, "fresh-body model was not loaded")
+            require(native.get("body_cache_persisted") is False, "fresh-body cache was overwritten")
+            claims = {c["code"] for c in native.get("ledger", {}).get("claims", [])}
+            calls = native.get("body_calls", [])
+            require(claims and len(calls) == len(claims)
+                    and {call.get("claim") for call in calls} == claims, "fresh-body calls are missing")
+    elif fresh:
+        require(str(result.get("stop_inference_progress", "")).startswith("本文cache prime:"),
+                "fresh-body cancellation did not reach LoRA generation")
+    return fresh
+
+
+def compare_reference(native, reference, fresh):
+    require(reference.get("hard_gate_pass") is True, "reference hard gate failed")
+    keys = ("ledger", "initial_positions", "reconciliation_positions", "initial_tally", "final_tally",
+            "consensus_claim", "outcome_status", "reconciliation_model_speakers", "retained_initial_votes")
+    require(all(native.get(k) == reference.get(k) for k in keys), "Base decisions changed from reference")
+    utterances_identical = [e["utterance"] for e in native["events"]] == [e["utterance"] for e in reference["events"]]
+    if not fresh:
+        require(utterances_identical, "cached utterances changed")
+    return {"base_decisions_identical": True, "utterances_identical": utterances_identical}
+
+
 def audit(result):
     require(result.get("schema_version") == 1, "unknown shadow schema")
     require(result.get("physical_device") is True, "not a physical-device run")
@@ -74,6 +105,7 @@ def audit(result):
         require(phases[name]["seconds"] >= 3 and phases[name]["fps"] >= 15, f"3D frame rate too low: {name}")
         require(phases[name]["maximum_gap_ms"] <= 1000, f"3D stall: {name}")
     mode = result["mode"]
+    fresh = validate_body_workload(result)
     latency = None
     if mode == "concurrent":
         require(result.get("cancelled") is False and result.get("stop_reason") is None, "concurrent run stopped")
@@ -92,7 +124,7 @@ def audit(result):
         require(finite_number(requested) and finite_number(finished), "missing cancellation clock")
         latency = finished - requested
         require(0 <= latency <= 3, "cancellation latency exceeded 3 seconds")
-    return {"mode": mode, "status": "valid", "phases": phases, "peak_footprint_mib": peak,
+    return {"mode": mode, "fresh_body": fresh, "status": "valid", "phases": phases, "peak_footprint_mib": peak,
             "minimum_headroom_mib": headroom, "cancellation_seconds": latency}
 
 
@@ -114,12 +146,18 @@ def main():
                 nested.write_text(json.dumps(result["cod_result"], ensure_ascii=False))
                 native = Path(__file__).with_name("validate_iphone_native_cod.py")
                 ledger = native.parents[1] / "data/typhoon18_20260825/native_cod_replay_ledger.json"
-                command = [sys.executable, str(native), str(nested), "--ledger", str(ledger)]
-                if args.reference:
+                fresh = result.get("fresh_body", False)
+                command = [sys.executable, str(native), str(nested), "--ledger", str(ledger),
+                           "--maximum-seconds", "60" if fresh else "35"]
+                if args.reference and not fresh:
                     command += ["--repeat", str(args.reference)]
                 completed = subprocess.run(command, text=True, capture_output=True)
                 require(completed.returncode == 0, completed.stdout + completed.stderr)
                 summary["native_cod"] = json.loads(completed.stdout)
+                if args.reference:
+                    summary["reference"] = compare_reference(
+                        result["cod_result"], json.loads(args.reference.read_text()), fresh
+                    )
     except (ValueError, KeyError, TypeError) as error:
         raise SystemExit(f"INVALID: {error}")
     print(json.dumps(summary, ensure_ascii=False))
