@@ -29,8 +29,11 @@ def cases(path, splits):
         seen.add(topic["id"])
         for i, row in enumerate(topic["examples"]):
             if topic["split"] in splits:
+                speaker = row.get("speaker", names[i % len(names)])
+                if speaker not in names:
+                    raise ValueError("unknown evaluation speaker")
                 result.append({**row, "case": f"{topic['id']}:{i + 1}", "topic": topic["id"],
-                               "split": topic["split"], "speaker": names[i % len(names)]})
+                               "split": topic["split"], "speaker": speaker})
     return result
 
 
@@ -170,10 +173,13 @@ def build(args):
 
 
 def evaluate(args):
+    check_isolation = getattr(args, "check_adapter_isolation", False)
+    if check_isolation and not args.adapter:
+        raise ValueError("adapter isolation check requires --adapter")
     import mlx.core as mx
     from mlx_lm import load, generate
     from mlx_lm.sample_utils import make_sampler
-    from mlx_lm.tuner.utils import load_adapters
+    from mlx_lm.tuner.utils import load_adapters, remove_lora_layers
     evaluation = cases(args.curated, set(args.split))
     if args.legacy:
         evaluation.extend(legacy_cases(args.legacy))
@@ -181,6 +187,14 @@ def evaluate(args):
     if args.out.exists():
         raise ValueError("evaluation output already exists")
     model, tokenizer = load(str(args.model))
+    probe = None
+    if check_isolation:
+        model.eval()
+        first = evaluation[0]
+        prompt = tokenizer.apply_chat_template(example(first["claim"], "unused", first["speaker"])["messages"][:2],
+            tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        before = generate(model, tokenizer, prompt=prompt, max_tokens=160, sampler=make_sampler(temp=0), verbose=False)
+        probe = {"case": first["case"], "prompt": prompt, "base_before": before}
     if args.adapter:
         model = load_adapters(model, str(args.adapter))
     model.eval()
@@ -205,6 +219,13 @@ def evaluate(args):
         mx.clear_cache()
         args.out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
     result["summary"] = summarize(result["results"])
+    if probe is not None:
+        model = remove_lora_layers(model)
+        model.eval()
+        after = generate(model, tokenizer, prompt=probe["prompt"], max_tokens=160, sampler=make_sampler(temp=0), verbose=False)
+        result["adapter_isolation"] = {"case": probe["case"], "base_before": probe["base_before"],
+            "base_after": after, "identical": probe["base_before"] == after,
+            "scope": "one deterministic body probe; not full structural non-regression"}
     args.out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(result["summary"]))
 
@@ -222,6 +243,7 @@ def main():
         elif name == "evaluate":
             p.add_argument("--model", type=Path, required=True)
             p.add_argument("--adapter", type=Path)
+            p.add_argument("--check-adapter-isolation", action="store_true")
             p.add_argument("--split", nargs="+", choices=("valid", "test"), default=["valid"])
             p.add_argument("--legacy", type=Path)
         else:

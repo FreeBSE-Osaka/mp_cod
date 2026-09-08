@@ -139,6 +139,7 @@ BODY_POLITE_SUFFIXES = (
     ("設けない", "設けません"), ("認めない", "認めません"),
     ("言えない", "言えません"), ("できない", "できません"), ("使わない", "使いません"),
     ("伝える", "伝えます"), ("決める", "決めます"), ("認める", "認めます"), ("戻す", "戻します"),
+    ("含める", "含めます"), ("出す", "出します"),
     ("持つ", "持ちます"), ("置く", "置きます"), ("出る", "出ます"),
     ("なる", "なります"), ("である", "です"), ("ある", "あります"),
     ("しない", "しません"), ("留める", "留めます"), ("設ける", "設けます"),
@@ -1606,7 +1607,15 @@ def dialogue_numbers_are_grounded(utterance: str, payload: dict) -> bool:
         re.findall(r"\d+(?:\.\d+)?", unicodedata.normalize("NFKC", value))
     )
     source = json.dumps(payload, ensure_ascii=False)
-    return numbers(utterance).issubset(numbers(source))
+    # Preserve explicit ratio units: 18% is not 18割.
+    ratios = lambda value: {
+        (Fraction(number), "%" if unit == "パーセント" else unit)
+        for number, unit in re.findall(
+            r"([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*(%|パーセント|割)",
+            unicodedata.normalize("NFKC", value),
+        )
+    }
+    return numbers(utterance).issubset(numbers(source)) and ratios(utterance).issubset(ratios(source))
 
 
 def independent_utterance_is_aligned(utterance: str, code: str, claims: list[dict]) -> bool:

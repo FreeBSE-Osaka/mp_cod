@@ -258,6 +258,8 @@ Horse renderer v1は競馬固有の限定表現を対象にv4 step160から48 it
 
 既存のMLX Qwen3.5-4B-4bitもbatch 1 / last 4 layers / rank 4で確認しました。学習はOOMしませんでしたが約0.081 iteration/秒で、難所3 moveはBaseとstep20が同じ1/3だったため停止しました。設定、memory、Weight、全SHAは [Qwen3.5-4B renderer smoke](docs/qwen35_4b_renderer_smoke_20260904.md) にあります。
 
+2026-09-08には別方式のQwen3.5-4B本文専用LoRAをBaseから新規学習しました。step32（約4.07MB）は既存15問がBase 1/15→15/15、新規12問が6/12→7/12（語尾補正込み9/12）。ただし新規テーマの意味変化が残り、研究用HOLDです。96ステップ予定の学習は88の報告後にMetal内部エラーで終了し、保存済み32/64を比較しました。[学習・検証・全制約](docs/qwen35_claim_body_v1_20260908.md)に記録しています。既定Weightの置換、iPhone配備、Weight公開はしていません。
+
 Natural specialist v5ではQwen3-14B teacherから実行役event-agreeの直接合格自然文を3件得ましたが、親step160からの専用継続はholdout 1/3のまま、Base specialistは0/3でした。move別few-shotもobjectへ賛同例が混入したためruntimeへ採用せず、全結果を [General Dialogue natural specialist v5実験記録](docs/general_dialogue_weight_v5_20260904.md) に残しています。
 
 Natural specialists v6では12の異なるtopicから仮説object 12件・実行event-agree 13件を集め、人格・phase・move別LoRAとrepair LoRAを評価しました。数値創作を拒否するgrounding guardは採用しましたが、全Weightが未学習holdoutで親同等以下だったため非昇格です。全target、評価、SHA、停止理由は [General Dialogue natural specialists v6実験記録](docs/general_dialogue_weight_v6_20260904.md) にあります。

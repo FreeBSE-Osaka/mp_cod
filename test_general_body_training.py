@@ -9,10 +9,32 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 import cod_model as cod
-from tools.general_body_training import body_checks, cases, rescore, valid
+from tools.general_body_training import body_checks, cases, evaluate, rescore, valid
 
 
 class GeneralDiscussionTest(unittest.TestCase):
+    def test_percentage_units_and_signs_cannot_change(self):
+        payload = {"claim": "電力費18%とCO2 11%の削減を優先する"}
+        self.assertFalse(cod.dialogue_numbers_are_grounded("電力費18割とCO2 11割の削減を優先します。", payload))
+        self.assertFalse(cod.dialogue_numbers_are_grounded("電力費-18%の削減を優先します。", payload))
+        self.assertTrue(cod.dialogue_numbers_are_grounded("電力費１８％とCO2 １１パーセントの削減を優先します。", payload))
+        self.assertTrue(cod.dialogue_numbers_are_grounded("費用を2割削減します。", {"claim": "費用を2割削減する"}))
+
+    def test_adapter_isolation_requires_an_adapter_before_loading_mlx(self):
+        with self.assertRaisesRegex(ValueError, "requires --adapter"):
+            evaluate(SimpleNamespace(check_adapter_isolation=True, adapter=None))
+
+    def test_qwen35_fresh_holdout_covers_all_eight_speakers(self):
+        source = Path(__file__).parent / "data/general_body_qwen35_v1_holdout/curated.json"
+        rows = cases(source, {"test"})
+        self.assertEqual(len(rows), 12)
+        self.assertEqual(len({row["speaker"] for row in rows}), 8)
+        old = cases(Path(__file__).parent / "data/general_body_v5/curated.json", {"train", "valid", "test"})
+        self.assertFalse({row["claim"] for row in rows} & {row["claim"] for row in old})
+        for row in rows:
+            with self.subTest(case=row["case"]):
+                self.assertTrue(valid(body_checks(row["body"], row)))
+
     def test_saved_raw_rescore_keeps_source_immutable(self):
         curated = Path(__file__).parent / "data/general_body_v5/curated.json"
         case = cases(curated, {"valid"})[0]
@@ -30,7 +52,8 @@ class GeneralDiscussionTest(unittest.TestCase):
                 rescore(args)
 
     def test_verb_plus_desu_is_not_a_polite_conjugation(self):
-        for text in ("元の運用へ戻すです。", "仮の予定として伝えるです。", "状況を確認するです。"):
+        for text in ("元の運用へ戻すです。", "仮の予定として伝えるです。", "状況を確認するです。",
+                     "質問の時間も含めるです。", "仮の案内だけを出すです。"):
             self.assertFalse(cod.body_is_polite_sentence(text))
         for text in ("元の運用へ戻します。", "費用が高いです。", "無断では使わないです。"):
             self.assertTrue(cod.body_is_polite_sentence(text))

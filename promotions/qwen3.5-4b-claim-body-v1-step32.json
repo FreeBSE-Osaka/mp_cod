@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "status": "research_hold_claim_body_renderer",
+  "evaluated_at": "2026-09-08",
+  "promotion_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "base_model": "Qwen3.5-4B-4bit (local MLX)",
+  "base_weights_sha256": "5fb9acd0246866381cf8c5c354c6db1019f6498eec4ccb4f5edcc71ffeacb2db",
+  "resume_adapter": null,
+  "local_adapter_path": "/Volumes/data4/cod_model_weight/adapters/claim-body-qwen35-4b-v1/step32",
+  "adapter_bytes": 4065793,
+  "adapter_weights_sha256": "be663bcb69fde2161061bf4a2b6f02b3e6b687b11e7c4f1b3bd87aa6c9ad7b04",
+  "adapter_config_sha256": "4c891bd0ae11b30776e06460ddf8be2a2ad93aae657f83628b101e6e774fb741",
+  "training_config": "configs/claim-body-qwen35-4b-v1.yaml",
+  "training_config_sha256": "7adc903e7f644a7af90a5cb4f1bc5ecaad0aee457a27688bd2f881cba584fc19",
+  "dataset_manifest_sha256": "200b9bf132217d5f108eea7cf313e073b745b5f563544d1a423874a9d88e1281",
+  "new_holdout_sha256": "35536f2a27aedb6d8c10149c5b1dc50d498a47386c57cb342ed493ec0206951a",
+  "training": {
+    "planned_iterations": 96,
+    "last_reported_iteration": 88,
+    "saved_checkpoints": [
+      32,
+      64
+    ],
+    "selected_checkpoint": 32,
+    "terminated_by": "Metal Internal Error (0000000e)",
+    "peak_memory_gb": 7.521,
+    "initial_validation_loss": 0.616,
+    "step32_validation_loss": 0.2,
+    "step64_validation_loss": 0.108
+  },
+  "scope": "shared body-only LoRA; Base retains claim/evidence/vote decisions",
+  "evaluation_root": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v1",
+  "selected_before_final_holdout_generation": true,
+  "fresh_test_case_count": 12,
+  "fresh_test_topic_count": 3,
+  "fresh_test_speaker_count": 8,
+  "final_comparison": {
+    "base": {
+      "summary": {
+        "legacy": {
+          "total": 15,
+          "direct_valid": 1,
+          "with_sanitizer_valid": 1,
+          "strict_schema": 15,
+          "anchor_pass": 7,
+          "competing": 0
+        },
+        "test": {
+          "total": 12,
+          "direct_valid": 6,
+          "with_sanitizer_valid": 6,
+          "strict_schema": 12,
+          "anchor_pass": 9,
+          "competing": 0
+        }
+      },
+      "rescore_file": "base_final_guard_v2.json",
+      "rescore_sha256": "17445ebe9e1688516de95bc61ceddcf4f6423b8621cacf0b8978516daa1a4086",
+      "raw_sha256": "4daf7ceaa34b0a4578c6acfc4eb3a9b8b57d07b879799c6635e9dd7d77a3c595"
+    },
+    "step32": {
+      "summary": {
+        "legacy": {
+          "total": 15,
+          "direct_valid": 15,
+          "with_sanitizer_valid": 15,
+          "strict_schema": 15,
+          "anchor_pass": 15,
+          "competing": 0
+        },
+        "test": {
+          "total": 12,
+          "direct_valid": 7,
+          "with_sanitizer_valid": 9,
+          "strict_schema": 12,
+          "anchor_pass": 9,
+          "competing": 0
+        }
+      },
+      "rescore_file": "step32_final_guard_v2.json",
+      "rescore_sha256": "6e94df369cd0e62c6957e6b179f97bfd9502e44e1b078782bf623c2d8e9320c9",
+      "raw_sha256": "0b8b4228ddab5906a4ad4d459f6018ef6af2c730527a9ac61af4f671fe94d518"
+    }
+  },
+  "adapter_isolation_one_probe_identical": true,
+  "cod_eight_persona_runtime_tested": false,
+  "iphone_tested": false,
+  "hold_reasons": [
+    "fresh-topic claim meaning changed in a generated body",
+    "fresh direct validity improves only from 6/12 to 7/12 on this small set",
+    "grammatical repairs are not direct Weight gains",
+    "automated guards are conservative proxies, not complete semantics",
+    "planned training did not finish; no step96 artifact",
+    "full CoD and native deployment untested"
+  ],
+  "documentation": "docs/qwen35_claim_body_v1_20260908.md"
+}
