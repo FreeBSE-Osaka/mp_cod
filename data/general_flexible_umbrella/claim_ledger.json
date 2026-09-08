@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "synthetic_discussion_example",
+  "topic": "架空の相談: 空が暗い日に15分だけ外出するなら傘をどうするか。現在の天気予報ではない。",
+  "data": [
+    {"id": "D01", "text": "架空の場面では空に暗い雲が広がっている。降り出す時刻を示す観測はない。"},
+    {"id": "D02", "text": "この架空の予報には雨の可能性があるとだけ書かれ、降水開始時刻と確率の数値はない。"},
+    {"id": "D03", "text": "今回の外出予定は徒歩で往復15分。傘を持つと荷物は増える。"},
+    {"id": "D04", "text": "選べるのは普段の傘を持つ、傘を置く、小さな折り畳み傘を持つという案である。この架空の設定では折り畳み傘は普段の傘よりかさばらない。"},
+    {"id": "D05", "text": "本人は荷物を減らしたい一方、濡れる不便も避けたいと述べている。"},
+    {"id": "D06", "text": "外出直前に空の様子と予報をもう一度確認できる。新しい結果自体はまだ得ていない。"}
+  ],
+  "claim_catalog": [
+    {"code": "TAKE_UMBRELLA", "label": "雨が降る可能性を考えて傘を持って出る", "kind": "proposal", "supported_by": ["D01", "D02", "D05"], "contradicts": ["LEAVE_UMBRELLA"], "priority": 4},
+    {"code": "LEAVE_UMBRELLA", "label": "外出が15分と短いので濡れるリスクを受け入れて傘を置く", "kind": "proposal", "supported_by": ["D03", "D05"], "contradicts": ["TAKE_UMBRELLA"], "priority": 4},
+    {"code": "UNKNOWN_RAIN_TIME", "label": "降り出す時刻が分からないので短時間でも濡れないとは言えない", "kind": "critique", "supported_by": ["D01", "D02", "D03"], "challenges": ["LEAVE_UMBRELLA"], "priority": 4},
+    {"code": "CLOUDS_NOT_CERTAINTY", "label": "暗い雲があるだけでは外出中に雨が降ると断定できない", "kind": "critique", "supported_by": ["D01", "D02"], "challenges": ["TAKE_UMBRELLA"], "priority": 3},
+    {"code": "REDUCE_LUGGAGE", "label": "荷物の軽さを優先するなら傘を置く選択にも理由がある", "kind": "support", "supported_by": ["D03", "D05"], "extends": ["LEAVE_UMBRELLA"], "priority": 3},
+    {"code": "AVOID_GETTING_WET", "label": "濡れる不便を避けたいという希望も傘を持つ理由になる", "kind": "support", "supported_by": ["D02", "D05"], "extends": ["TAKE_UMBRELLA"], "priority": 3},
+    {"code": "COMPACT_UMBRELLA", "label": "濡れる備えを残しながら荷物を抑えるため折り畳み傘を持つ", "kind": "improvement", "supported_by": ["D04", "D05"], "extends": ["TAKE_UMBRELLA"], "priority": 3},
+    {"code": "CHECK_BEFORE_LEAVING", "label": "出発直前に空の様子と予報を再確認して持ち物を決める", "kind": "condition", "supported_by": ["D01", "D02", "D06"], "priority": 2}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["TAKE_UMBRELLA", "LEAVE_UMBRELLA", "COMPACT_UMBRELLA", "CHECK_BEFORE_LEAVING", "UNKNOWN_RAIN_TIME", "CLOUDS_NOT_CERTAINTY", "REDUCE_LUGGAGE", "AVOID_GETTING_WET"],
+    "falsifier": ["UNKNOWN_RAIN_TIME", "CLOUDS_NOT_CERTAINTY", "COMPACT_UMBRELLA", "TAKE_UMBRELLA", "LEAVE_UMBRELLA", "REDUCE_LUGGAGE", "AVOID_GETTING_WET", "CHECK_BEFORE_LEAVING"],
+    "empirical_auditor": ["UNKNOWN_RAIN_TIME", "CLOUDS_NOT_CERTAINTY", "CHECK_BEFORE_LEAVING", "TAKE_UMBRELLA", "LEAVE_UMBRELLA", "COMPACT_UMBRELLA", "REDUCE_LUGGAGE", "AVOID_GETTING_WET"],
+    "pragmatic_operator": ["LEAVE_UMBRELLA", "COMPACT_UMBRELLA", "CHECK_BEFORE_LEAVING", "TAKE_UMBRELLA", "UNKNOWN_RAIN_TIME", "CLOUDS_NOT_CERTAINTY", "REDUCE_LUGGAGE", "AVOID_GETTING_WET"],
+    "user_advocate": ["TAKE_UMBRELLA", "AVOID_GETTING_WET", "REDUCE_LUGGAGE", "LEAVE_UMBRELLA", "COMPACT_UMBRELLA", "CHECK_BEFORE_LEAVING", "UNKNOWN_RAIN_TIME", "CLOUDS_NOT_CERTAINTY"],
+    "resource_planner": ["LEAVE_UMBRELLA", "REDUCE_LUGGAGE", "COMPACT_UMBRELLA", "TAKE_UMBRELLA", "AVOID_GETTING_WET", "CHECK_BEFORE_LEAVING", "UNKNOWN_RAIN_TIME", "CLOUDS_NOT_CERTAINTY"],
+    "long_horizon_reviewer": ["TAKE_UMBRELLA", "AVOID_GETTING_WET", "CHECK_BEFORE_LEAVING", "LEAVE_UMBRELLA", "COMPACT_UMBRELLA", "REDUCE_LUGGAGE", "UNKNOWN_RAIN_TIME", "CLOUDS_NOT_CERTAINTY"],
+    "integrative_designer": ["COMPACT_UMBRELLA", "TAKE_UMBRELLA", "LEAVE_UMBRELLA", "CHECK_BEFORE_LEAVING", "AVOID_GETTING_WET", "REDUCE_LUGGAGE", "UNKNOWN_RAIN_TIME", "CLOUDS_NOT_CERTAINTY"]
+  }
+}

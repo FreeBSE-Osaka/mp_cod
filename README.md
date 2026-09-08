@@ -13,7 +13,8 @@
 
 - 各人格は、他者の文章を見ずに初期見解を独立生成
 - 通常討論は、相互反証 → 司会 → 独立監査まで実行
-- イベント討論は、順番制ではなく `異議あり！` → `賛同＋補足` → 新規主張の優先順で発言
+- イベント討論は、順番制ではなく異議・賛同などの反応を新規主張より優先して発言
+- Generalは8つの専門観点を用意。賛否を役に固定せず、同じ意見の複数人支持・指摘だけの反論・賛同と改善を許可
 - イベント討論では、固定台帳にある主張コードと `D01` 形式の証拠IDだけを許可
 - 内部の証拠文 `statement` と、表示専用の会話文 `utterance` を分離し、LoRAは後者だけに限定
 - 異議・賛同は相手の原文ではなく構造化主張だけを見て会話調で応答
@@ -114,7 +115,7 @@ live shadow向けの軽量経路:
 - `statement`: D番号付きの内部証拠文
 - `utterance`: D番号や内部codeを読まない、UI・実況用の会話文
 
-異議なら相手の見落としを指摘した後に、代案・修正版・採用条件のいずれかを必須とします。賛同は追加観点を伴い、見解変更は複数の自然な言い回しを人格・ラウンドごとに使い分けます。相手の原文は見せず、対象claimのlabelだけを渡すため、文章コピーによる擬似合意を避けます。
+従来のstructuredモードでは、異議に代案・修正版・採用条件を必須とし、賛同は追加観点を伴います。Generalの既定はflexibleモードで、指摘だけの反論や同意だけも許可し、同じ意見を複数人が支持しても減点しません。相手の原文は見せず、対象claimのlabelを渡します。同意人数を独立した証拠の数とは扱いません。
 
 不正なD番号は拒否し、選択済みDだけで `statement` を一度修復します。本文は使えてD表記だけが欠けた場合は `model_sanitized` とします。すり合わせ修復文が会話本文へD根拠句を出した場合は根拠句だけを除去し、agree / maintain / revise等のmove表現が欠ける場合は検証済み定型句を補います。モデル本文と修復rawは残し、会話化できない場合だけ証拠文由来の表示へ戻します。初回raw、反応raw、修復rawはすべて保存します。
 
@@ -130,7 +131,9 @@ live shadow向けの軽量経路:
 
 `--prompt-profile` は `baseline`、`orthogonal`、`orthogonal_bare`、`orthogonal_fewshot` から選べます。既定値は目的関数と1件の形式例を使う `orthogonal_fewshot` です。`orthogonal_bare`はWeight評価用で、人格別speech例とfew-shotを外します。
 
-Generalは既存台帳では従来の3人格を保ちます。`role_preferences`に`pragmatic_operator`を含むv2台帳だけ、4人目の「実行設計者」が参加します。4人時の合意閾値は3票です。
+Generalは仮説構築・批判的設計・実証監査・実行設計・利用者体験・資源制約・長期影響・横断的設計の8観点です。イベント討論の参加者は台帳の`role_preferences`で指定し、既存の3人・4人台帳も維持します。有効なモデル主張を持つ役が最低2人必要で、欠けた意見をコードで作って人数や主張数を埋めません。合意閾値は参加者数の3/4切り上げ（4人なら3票、8人なら6票）です。
+
+`--discussion-style structured`で従来の発話方針を選べます。8人の架空の傘相談、`challenges` / `extends`関係、他プロジェクトとの互換性は [Generalの柔軟な討論](docs/general_flexible_discussion_20260908.md) にあります。台帳にない主張も生成する通常討論は `python3.11 cod_model.py debate --domain general "相談テーマ"` ですが、固定台帳の証拠検証と同等ではありません。
 
 ### utterance renderer LoRA
 
@@ -264,6 +267,8 @@ Natural specialists v6では12の異なるtopicから仮説object 12件・実行
 Claim Body v1は後の監査で、提案を完了事実へ変える文と名詞断片を通していたためsupersededにしました。[v1記録](docs/claim_body_weight_v1_20260904.md)と[旧昇格記録](promotions/qwen3-1.7b-claim-body-v1-step64.json)は履歴として残しています。
 
 現行のClaim Body v3 step128は、17 train topic・585件のclean targetでBaseから学習しました。完全除外したemail / EV / bike 15ケースでcontract valid `15/15`、strict schema `15/15`、競合claim `0`です。3 topicの1 round実走はいずれも公開6発言全てがWeight由来、fallback 0、hard gate通過でした。設定、v2/v4停止理由、会話全文、SHAは [Claim Body Weight v3](docs/claim_body_weight_v3_20260904.md)、運用境界は [現行昇格記録](promotions/qwen3-1.7b-claim-body-v3-step128.json) にあります。
+
+2026-09-08にGeneral本文用v5/v5bを実際に追加学習しました。v5b step256は新しい未学習12問の直接合格が親v3の4件から7件へ改善しましたが、語尾補正込みでは親9件・候補8件で、意味の変化も残るため **HOLD・既定置換なし** です。上記v3の`15/15`は当時の条件での値で、今回の明示的な丁寧語promptと追加guardによる既存15問の再評価は親・候補とも`13/15`です。実Weight、8人実走の不合格箇所、Qwen3.5-4B Base比較は [General Claim Body v5実験記録](docs/general_weight_v5_20260908.md) を参照してください。
 
 未学習の競馬システム改善ledgerでもClaim Body v3はfull runの本文`20/20`、reaction失敗0、矛盾summary 0でhard gateを通過しました。転移で見つかった対立グラフ整合性と凍結claim-aware validationの修正、判断権限の境界は [Horse Claim Body transfer v2](docs/horse_claim_body_transfer_v2_20260905.md) にあります。
 

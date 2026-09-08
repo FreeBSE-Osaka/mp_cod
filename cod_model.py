@@ -27,6 +27,21 @@ DEFAULT_API_URL = "http://127.0.0.1:11434/api/chat"
 PROFILE_PATH = Path(__file__).with_name("personas.json")
 STANCES = ["主案", "対案", "条件付き", "保留"]
 EVENT_PROMPT_PROFILES = ("baseline", "orthogonal", "orthogonal_bare", "orthogonal_fewshot")
+DISCUSSION_KINDS = {"proposal", "critique", "improvement", "condition", "observation", "support"}
+GENERAL_DISCUSSION_RULE = (
+    "専門観点は賛否の役割ではない。同じ結論を複数人で支持してもよい。"
+    "指摘だけの反論、対案付き反論、賛同だけ、賛同しつつ改善、条件付き支持、保留を根拠に応じて選ぶ。"
+    "違う意見や対案を無理に作らず、同意するときも参照した根拠を示す。"
+)
+FLEXIBLE_MOVE_PREFIXES = {
+    "object": ("その前提には懸念があります。", "そこには異議があります。", "ただ、気になる点があります。"),
+    "counterproposal": ("代わりの案として、", "別の進め方として、", "修正案として、"),
+    "agree": ("その案に賛成です。", "私も同じ見方です。", "そこは同意します。"),
+    "improve": ("その案を活かすなら、", "その方向を土台に、", "改善点として、"),
+    "elaborate": ("理由を補足すると、", "この点を補うと、"),
+    "maintain": ("見方は変わりません。", "この判断を維持します。"),
+    "revise": ("前の見方を修正します。", "考え直しました。"),
+}
 MECHANICAL_UTTERANCE_PHRASES = (
     "この点を今後の判断の軸",
     "現時点では、",
@@ -98,6 +113,7 @@ MOVE_UTTERANCE_PREFIXES = {
 }
 BODY_RENDERER_SYSTEM = (
     "各itemのspeakerとして、検証済みclaimを自然な日本語一文で述べる本文renderer。"
+    "文末は必ずです・ます調で完結させ、常体や名詞断片のまま出力しない。"
     "claimの内容、時制、数字を変更・追加せず、moveや賛否は表現しない。"
     "入力itemsと同じidを一度ずつ返す。"
     "出力はbodiesだけをキーに持つJSONで、各要素のキーはidとbodyだけ。"
@@ -119,6 +135,12 @@ BODY_FRAGMENT_ENDINGS = (
     "ことを提案。", "ことを検討。", "ことを監査。", "ことを評価。",
 )
 BODY_POLITE_SUFFIXES = (
+    ("取り消さない", "取り消しません"), ("貸し出さない", "貸し出しません"),
+    ("設けない", "設けません"), ("認めない", "認めません"),
+    ("言えない", "言えません"), ("できない", "できません"), ("使わない", "使いません"),
+    ("伝える", "伝えます"), ("決める", "決めます"), ("認める", "認めます"), ("戻す", "戻します"),
+    ("持つ", "持ちます"), ("置く", "置きます"), ("出る", "出ます"),
+    ("なる", "なります"), ("である", "です"), ("ある", "あります"),
     ("しない", "しません"), ("留める", "留めます"), ("設ける", "設けます"),
     ("留まる", "留まります"),
     ("調べる", "調べます"), ("増やす", "増やします"), ("残す", "残します"),
@@ -193,7 +215,7 @@ VERIFIER_SCHEMA = {
 }
 
 
-def review_schema(other_ids: list[str]) -> dict:
+def review_schema(other_ids: list[str], flexible: bool = False) -> dict:
     return {
         "type": "object",
         "additionalProperties": False,
@@ -201,7 +223,8 @@ def review_schema(other_ids: list[str]) -> dict:
             "target_persona": {"type": "string", "enum": other_ids},
             "rebuttal_type": {
                 "type": "string",
-                "enum": ["前提の否定", "反例の提示", "トレードオフの指摘"],
+                "enum": ["前提の否定", "反例の提示", "トレードオフの指摘"]
+                + (["指摘のみ", "対案付き反論", "賛同", "賛同と改善", "条件付き支持", "保留", "補足"] if flexible else []),
             },
             "challenge": short_string(),
             "response": short_string(),
@@ -506,7 +529,7 @@ def run_debate(args: argparse.Namespace) -> int:
         if persona["id"] not in run["blind"]:
             continue
         other_ids = [item["id"] for item in personas if item["id"] != persona["id"] and item["id"] in run["blind"]]
-        print(f"[反論] {persona['name']} -> {args.model}", file=sys.stderr, flush=True)
+        print(f"[{'討論' if args.domain == 'general' else '反論'}] {persona['name']} -> {args.model}", file=sys.stderr, flush=True)
         system = persona_system(persona, "相互反論。全員の盲検初期見解だけを同時に受け取った。")
         user = f"""テーマ:
 {args.topic}
@@ -520,12 +543,21 @@ def run_debate(args: argparse.Namespace) -> int:
 相手の文章の言い換えではなく、壊れる前提・反例・代償を一つ特定してください。
 その反証を踏まえ、自分の初期見解を維持するか修正するかも明示してください。
 全員が同意していても、共通の隠れた前提を一つ攻撃してください。"""
+        if args.domain == "general":
+            system = persona_system(persona, "相互討論。全員の盲検初期見解を受け取った。")
+            user = (
+                f"テーマ:\n{args.topic}\n\n盲検初期見解:\n{blind_context}\n\n"
+                + GENERAL_DISCUSSION_RULE
+                + "\n応答したい一人を選び、問題の指摘、賛同、改善、条件整理など最も有用な発言をする。"
+                "反論がなければchallengeは空文字でよい。responseに発言を入れ、自分の見解を維持するか修正するか示す。"
+                "全員一致でも反論を作る必要はない。多数決自体を新しい証拠として数えない。"
+            )
         try:
             response, meta = ask_ollama(
                 model=args.model,
                 system=system,
                 user=user,
-                schema=review_schema(other_ids),
+                schema=review_schema(other_ids, flexible=args.domain == "general"),
                 api_url=args.api_url,
                 timeout=args.timeout,
                 num_predict=args.num_predict,
@@ -536,8 +568,8 @@ def run_debate(args: argparse.Namespace) -> int:
             run["calls"].append(call_record("review", persona["id"], system, user, response, meta))
             target_name = next(item["name"] for item in personas if item["id"] == response["target_persona"])
             print(f"\n### {persona['name']} → {target_name}")
-            print(response["challenge"])
-            print(f"修正後: {response['revised_recommendation']}")
+            print(response["response"] if args.domain == "general" else response["challenge"])
+            print(f"{'変更後' if response['changed'] else '現在の見解'}: {response['revised_recommendation']}")
         except RuntimeError as exc:
             run["errors"].append({"phase": "review", "persona_id": persona["id"], "error": str(exc)})
             print(f"[失敗] {persona['name']}: {exc}", file=sys.stderr, flush=True)
@@ -1095,6 +1127,12 @@ def load_claim_ledger(path: Path) -> dict:
             raise ValueError(f"{claim['code']}: invalid supported_by")
         if not isinstance(contradicts, list) or not set(contradicts).issubset(known_codes):
             raise ValueError(f"{claim['code']}: invalid contradicts")
+        if claim.get("kind", "proposal") not in DISCUSSION_KINDS:
+            raise ValueError(f"{claim['code']}: invalid discussion kind")
+        for relation in ("extends", "challenges"):
+            targets = claim.get(relation, [])
+            if not isinstance(targets, list) or not set(targets).issubset(known_codes) or claim["code"] in targets:
+                raise ValueError(f"{claim['code']}: invalid {relation}")
     return ledger
 
 
@@ -1178,7 +1216,7 @@ def validate_dialogue_utterance(utterance: object) -> tuple[str | None, str | No
     return normalized, None
 
 
-def renderer_system(persona: dict | None) -> str:
+def renderer_system(persona: dict | None, flexible: bool = False) -> str:
     if persona is None:
         identity = "各itemのspeakerとして発言する。"
     else:
@@ -1188,11 +1226,17 @@ def renderer_system(persona: dict | None) -> str:
             f"あなたは{persona['name']}。最大化する効用: {utility}。"
             f"最小化する損失: {loss}。"
         )
+    dialogue_rules = (
+        "objectは問題点のみの指摘でよく、対案を強制しない。counterproposalは対案、improveは相手の案を土台に改善を述べる。"
+        "agreeは同意だけでもよい。根拠のない補足を作らない。maintainは見解維持、reviseは判断変更を述べる。"
+        if flexible else
+        "objectは異議に加えて代案・修正版・採用条件のいずれかを述べる。"
+        "agreeは賛同に自分の観点を加え、maintainは維持理由、reviseは判断変更を率直に述べる。"
+    )
     return (
         f"{identity}検証済みの構造化判断を会話文へ描画する専用rendererである。"
         "主張、選択、根拠、moveを変更・再評価・追加してはならない。"
-        "objectは異議に加えて代案・修正版・採用条件のいずれかを述べる。"
-        "agreeは賛同に自分の観点を加え、maintainは維持理由、reviseは判断変更を率直に述べる。"
+        + dialogue_rules +
         "code、D番号、内部キーを読み上げず、12〜320字の自然な日本語で完結させる。"
         "入力itemsと同じidを順不同で一度ずつ返す。"
         "出力はutterancesだけをキーに持つJSONで、各要素のキーはidとutteranceだけ。"
@@ -1205,7 +1249,15 @@ def renderer_event_move(action: object) -> str:
     )
 
 
-def renderer_move_instruction(move: object) -> str:
+def renderer_move_instruction(move: object, flexible: bool = False) -> str:
+    if flexible and move in {"object", "agree", "counterproposal", "improve", "elaborate"}:
+        return {
+            "object": "相手の案の問題点をown_claimで指摘する。対案の追加は不要。",
+            "agree": "相手に同意しown_claimを述べる。補足を捏造しない。",
+            "counterproposal": "own_claimを別案として述べる。",
+            "improve": "相手の案を土台にown_claimの改善を述べる。",
+            "elaborate": "自分の先行発言にown_claimの理由を補足する。他人への賛同を装わない。",
+        }[move]
     return {
         "propose": "own_claimを自分の提案として述べる。",
         "object": "target_claimへ異議を示し、own_claimを代案・修正版・採用条件として述べる。",
@@ -1228,6 +1280,10 @@ RENDERER_POSITIVE_ACTIONS = {
     "実施": r"実施(?:する|します|しよう)",
     "使用": r"使用(?:する|します|しよう)",
     "使": r"使(?:う|います|おう)",
+    "貸し出": r"貸し出(?:す|します)",
+    "取り消": r"取り消(?:す|します)",
+    "保存": r"保存(?:する|します)",
+    "廃棄": r"廃棄(?:する|します)",
 }
 
 
@@ -1341,10 +1397,12 @@ def mask_frozen_internal_tokens(text: str, label: str) -> tuple[str | None, str 
     return text, None
 
 
-def normalize_renderer_body(body: object, label: str = "") -> tuple[str | None, str | None]:
+def normalize_renderer_body(body: object, label: str = "", *, speaker: str = "") -> tuple[str | None, str | None]:
     if not isinstance(body, str):
         return None, "body must be a string"
     normalized = re.sub(r"\s+", " ", body).strip()
+    if speaker and speaker in normalized and speaker not in label:
+        return None, "body introduces speaker attribution"
     if normalized and normalized[-1] not in "。！？!?":
         normalized += "。"
     validation_text, reason = mask_frozen_internal_tokens(normalized, label)
@@ -1359,12 +1417,25 @@ def body_is_neutral(body: str) -> bool:
 
 
 def body_is_polite_sentence(body: str) -> bool:
-    return body.rstrip("。！？!?").endswith(("です", "ます", "ません", "でした", "ました"))
+    ending = body.rstrip("。！？!?")
+    malformed = any(
+        ending.endswith(plain + "です")
+        for plain, polite in BODY_POLITE_SUFFIXES
+        if not plain.endswith("ない") and polite != plain + "です"
+    )
+    return not malformed and ending.endswith(("です", "ます", "ません", "でした", "ました"))
 
 
 def body_matches_claim(body: str, label: str) -> bool:
+    negative_conditions = ("なければ", "ない場合", "ないなら", "ないとき", "ない時")
+    past_body = body.rstrip("。！？!?").endswith(("ました", "でした"))
+    past_claim = label.rstrip("。！？!?").endswith(("た", "んだ", "いだ", "済み", "完了"))
     return (
         dialogue_matches_claim(body, label)
+        and (not past_body or past_claim)
+        and len(re.findall(r"[。！？!?]", body)) <= 1
+        and (not any(cue in label for cue in negative_conditions) or any(cue in body for cue in negative_conditions))
+        and ("最長" not in label or any(cue in body for cue in ("最長", "最大", "上限", "以内", "まで")))
         and not dialogue_reverses_restriction(body, label)
         and dialogue_preserves_restriction(body, label)
         and not any(marker in body and marker not in label for marker in BODY_MODALITY_SHIFT_MARKERS)
@@ -1449,7 +1520,7 @@ def dialogue_move_example(label: str, move: str, variant: int = 0) -> str:
 
 
 def validate_dialogue_move(
-    utterance: object, move: str, frozen_claim: str = ""
+    utterance: object, move: str, frozen_claim: str = "", *, flexible: bool = False
 ) -> tuple[str | None, str | None]:
     validation_input = utterance
     if isinstance(utterance, str) and frozen_claim:
@@ -1469,9 +1540,11 @@ def validate_dialogue_move(
     ):
         return None, "propose must not pretend to answer or revise another claim"
     markers = {
+        "counterproposal": ("代わり", "代案", "別の", "修正案"),
+        "improve": ("活かす", "土台", "改善", "加え", "補う"),
         "object": (
             "いえ", "ただ", "しかし", "その見方", "見落と", "抜け", "懸念",
-            "不十分", "問題", "欠陥", "反対", "異議", "危険", "難しい", "許容範囲を超え",
+            "不十分", "問題", "欠陥", "反対", "異議", "危険", "難しい", "許容範囲を超え", "気になる",
         ),
         "agree": ("賛成", "賛同", "同意", "同感", "支持", "私も", "同じ見方", "同じ結論"),
         "maintain": (
@@ -1482,7 +1555,7 @@ def validate_dialogue_move(
     required = markers.get(move)
     if required and not any(marker in normalized for marker in required):
         return None, f"utterance does not express dialogue move: {move}"
-    if move == "object" and not any(
+    if move == "object" and not flexible and not any(
         marker in normalized
         for marker in ("代わり", "代案", "提案", "条件", "なら", "まず", "先に", "修正", "べき", "した上で", "案を")
     ):
@@ -1497,7 +1570,7 @@ def is_mechanical_utterance(utterance: str) -> bool:
 def reaction_is_aligned(utterance: str, own_label: str, target_label: str, action: str) -> bool:
     if not dialogue_is_aligned(utterance, own_label, [target_label]):
         return False
-    if action != "object":
+    if action not in {"object", "counterproposal"}:
         return True
     return not dialogue_selects_competing_claim(utterance, [target_label])
 
@@ -1547,20 +1620,20 @@ def dialogue_fallback(statement: str) -> str:
     return f"{visible}。"
 
 
-def compose_dialogue_body(body: str, label: str, move: str, variant: int = 0) -> str | None:
+def compose_dialogue_body(body: str, label: str, move: str, variant: int = 0, *, flexible: bool = False) -> str | None:
     if body.startswith(label) and body[len(label) :].startswith("を"):
         body = f"『{label}』{body[len(label):]}"
-    prefixes = MOVE_UTTERANCE_PREFIXES.get(move)
+    prefixes = (FLEXIBLE_MOVE_PREFIXES if flexible else MOVE_UTTERANCE_PREFIXES).get(move)
     candidate = f"{prefixes[variant % len(prefixes)]}{body}" if prefixes else body
-    normalized, _ = validate_dialogue_move(candidate, move, label)
+    normalized, _ = validate_dialogue_move(candidate, move, label, flexible=flexible)
     return normalized if normalized is not None and dialogue_is_aligned(normalized, label, []) else None
 
 
 def compose_dialogue_fallback(
-    statement: str, label: str, move: str, variant: int = 0
+    statement: str, label: str, move: str, variant: int = 0, *, flexible: bool = False
 ) -> tuple[str, str]:
     body = dialogue_fallback(statement)
-    composed = compose_dialogue_body(body, label, move, variant)
+    composed = compose_dialogue_body(body, label, move, variant, flexible=flexible)
     if composed is not None:
         return composed, "composed_statement_fallback"
     if move in MOVE_UTTERANCE_TEMPLATES:
@@ -1569,7 +1642,7 @@ def compose_dialogue_fallback(
 
 
 def sanitize_dialogue_move(
-    utterance: object, move: str, frozen_claim: str = ""
+    utterance: object, move: str, frozen_claim: str = "", *, flexible: bool = False
 ) -> str | None:
     if not isinstance(utterance, str):
         return None
@@ -1580,7 +1653,7 @@ def sanitize_dialogue_move(
     if not visible:
         return None
     visible = f"{visible}。"
-    normalized, _ = validate_dialogue_move(visible, move, frozen_claim)
+    normalized, _ = validate_dialogue_move(visible, move, frozen_claim, flexible=flexible)
     if normalized is not None:
         return normalized
     if move == "object" and visible.startswith("その案には、"):
@@ -1599,8 +1672,9 @@ def sanitize_dialogue_move(
         "maintain": "結論は変わりません。",
         "revise": "前の見方を修正します。",
     }
-    candidate = f"{prefixes.get(move, '')}{visible}"
-    normalized, _ = validate_dialogue_move(candidate, move, frozen_claim)
+    prefix = FLEXIBLE_MOVE_PREFIXES.get(move, ("",))[0] if flexible else prefixes.get(move, "")
+    candidate = f"{prefix}{visible}"
+    normalized, _ = validate_dialogue_move(candidate, move, frozen_claim, flexible=flexible)
     return normalized
 
 
@@ -1635,10 +1709,23 @@ def claim_reaction(events: list[dict], candidate: dict, catalog: dict[str, dict]
         previous = event["code"]
         if code in catalog[previous].get("contradicts", []) or previous in catalog[code].get("contradicts", []):
             return "object", event["claim_id"]
+        if previous in catalog[code].get("challenges", []):
+            return "object", event["claim_id"]
     for event in reversed(events):
-        if code == event["code"]:
+        if code == event["code"] or event["code"] in catalog[code].get("extends", []):
             return "agree_extend", event["claim_id"]
     return "new", None
+
+
+def flexible_event_move(event: dict, target: dict | None, catalog: dict) -> str:
+    kind = catalog[event["code"]].get("kind")
+    if event["action"] == "object":
+        return "counterproposal" if kind in {"proposal", "improvement"} else "object"
+    if event["action"] == "agree_extend":
+        if target and target.get("persona_id") == event.get("persona_id") and event.get("persona_id"):
+            return "improve" if kind == "improvement" else "elaborate"
+        return "improve" if kind == "improvement" and target and event["code"] != target["code"] else "agree"
+    return "propose"
 
 
 def prior_pair_choice(claims: list[dict], pair: tuple[str, str], prior_vote: dict) -> str | None:
@@ -1896,13 +1983,14 @@ def event_run_metrics(run: dict) -> dict:
     near_duplicate_rate = near_duplicates / len(statement_pairs) if statement_pairs else 0.0
     evidence_validity_rate = model_claims / model_attempts if model_attempts else 0.0
     summary_conflict_free = event_summary_conflict_free(run.get("summary") or {})
+    flexible = run.get("discussion_style") == "flexible"
     score = 100 * (
         0.15 * model_claim_rate
         + 0.1 * model_statement_rate
         + 0.15 * model_utterance_rate
         + 0.15 * raw_record_rate
-        + 0.1 * distinct_code_rate
-        + 0.05 * action_diversity
+        + 0.1 * (evidence_validity_rate if flexible else distinct_code_rate)
+        + 0.05 * (1.0 - fallback_rate if flexible else action_diversity)
         + 0.1 * (1.0 - near_duplicate_rate)
         + 0.1 * (1.0 - dialogue_near_duplicate_rate)
         + 0.1 * (1.0 - mechanical_utterance_rate)
@@ -1951,6 +2039,7 @@ def event_run_metrics(run: dict) -> dict:
         "near_duplicate_pairs": near_duplicates,
         "near_duplicate_rate": round(near_duplicate_rate, 4),
         "summary_conflict_free": summary_conflict_free,
+        "metric_policy": "flexible_evidence_v1" if flexible else "structured_v1",
         "shadow_score": round(score, 2),
         "hard_gate_pass": (
             rejected == 0
@@ -2066,6 +2155,8 @@ def run_rsi_shadow(args: argparse.Namespace) -> int:
         for field in ("model", "domain"):
             if parent.get(field) != candidate.get(field):
                 raise ValueError(f"{parent_name}/{candidate_name}: {field} must match")
+        if parent.get("discussion_style", "structured") != candidate.get("discussion_style", "structured"):
+            raise ValueError("RSI discussion styles must match")
         if ledger_hashes[parent_name] != ledger_hashes[candidate_name]:
             raise ValueError(f"{parent_name}/{candidate_name}: ledger content must match")
     holdout_distinct = ledger_hashes["parent_dev"] != ledger_hashes["parent_holdout"]
@@ -2095,6 +2186,8 @@ def run_rsi_shadow(args: argparse.Namespace) -> int:
 def run_event_debate(args: argparse.Namespace) -> int:
     runtime_started = time.perf_counter()
     ledger = load_claim_ledger(Path(args.ledger))
+    requested_style = getattr(args, "discussion_style", "auto")
+    flexible = requested_style == "flexible" or (requested_style == "auto" and args.domain == "general")
     domains = load_domains()
     domain_personas = domains[args.domain]["personas"]
     preferences = ledger.get("role_preferences", {})
@@ -2261,6 +2354,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
         "domain": args.domain,
         **portable_context,
         "prompt_profile": args.prompt_profile,
+        "discussion_style": "flexible" if flexible else "structured",
         "seed": args.seed,
         "execution": {
             "fast": bool(getattr(args, "fast", False)),
@@ -2307,6 +2401,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
             if body_renderer_adapter
             else None
         ),
+        "body_renderer_system_sha256": hashlib.sha256(BODY_RENDERER_SYSTEM.encode()).hexdigest(),
         "independent": {},
         "events": [],
         "reconciliation": [],
@@ -2343,7 +2438,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     values, schema_warning, schema_repaired = parse_renderer_bodies(
                         parsed, [renderer_id]
                     )
-                    body, body_warning = normalize_renderer_body(values.get(renderer_id), record["label"])
+                    body, body_warning = normalize_renderer_body(
+                        values.get(renderer_id), record["label"], speaker=persona_configs[record["persona_id"]]["name"]
+                    )
                     body_sanitized = False
                     if body is not None and not body_is_neutral(body):
                         body, body_warning = None, "body renderer exposed a dialogue move"
@@ -2354,7 +2451,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         else:
                             body = polite_body
                             body_sanitized = True
-                            body_warning = "normalized exact claim to a polite sentence"
+                            body_warning = "normalized claim-aligned body to a polite sentence"
                     if body is not None and not body_matches_claim(body, record["label"]):
                         body, body_warning = None, "body renderer does not match the frozen claim"
                     if body is not None and not dialogue_numbers_are_grounded(body, item):
@@ -2400,6 +2497,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         record["label"],
                         record.get("validation_move") or "propose",
                         record_index,
+                        flexible=flexible,
                     )
                     if body is not None
                     else None
@@ -2457,13 +2555,13 @@ def run_event_debate(args: argparse.Namespace) -> int:
             items = []
             for record in batch:
                 item = {"id": record["id"], **record["payload"]}
-                item["speech_act"] = renderer_move_instruction(item.get("move"))
+                item["speech_act"] = renderer_move_instruction(item.get("move"), flexible=flexible)
                 if persona is None:
                     source = persona_configs[record["persona_id"]]
                     item["speaker"] = source["name"]
                 items.append(item)
             raw, parsed = ask_json(
-                renderer_system(persona),
+                renderer_system(persona, flexible=flexible),
                 json.dumps({"items": items}, ensure_ascii=False),
                 min(args.max_tokens, max(220, 80 + 90 * len(items))),
                 f"renderer:{phase}:{group_key}:{chunk_index}",
@@ -2488,7 +2586,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 candidate = restore_claim_label(values.get(record["id"]), record["label"])
                 move = record.get("validation_move")
                 if move:
-                    utterance, warning = validate_dialogue_move(candidate, move, record["label"])
+                    utterance, warning = validate_dialogue_move(candidate, move, record["label"], flexible=flexible)
                 else:
                     utterance, warning = validate_dialogue_utterance(candidate)
                 if utterance is not None and not dialogue_is_aligned(
@@ -2507,13 +2605,13 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 if (
                     utterance is not None
                     and target_label
-                    and move in {"object", "agree"}
+                    and move in {"object", "agree", "counterproposal", "improve"}
                     and not reaction_is_aligned(utterance, record["label"], target_label, move)
                 ):
                     utterance, warning = None, "renderer utterance follows the target instead of its own claim"
                 sanitized = False
                 if utterance is None and candidate is not None:
-                    repaired = sanitize_dialogue_move(candidate, move or "", record["label"])
+                    repaired = sanitize_dialogue_move(candidate, move or "", record["label"], flexible=flexible)
                     if (
                         repaired is not None
                         and dialogue_is_aligned(
@@ -2524,7 +2622,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         )
                         and dialogue_numbers_are_grounded(repaired, record["payload"])
                     ):
-                        if not target_label or move not in {"object", "agree"} or reaction_is_aligned(
+                        if not target_label or move not in {"object", "agree", "counterproposal", "improve"} or reaction_is_aligned(
                             repaired, record["label"], target_label, move
                         ):
                             utterance = repaired
@@ -2548,7 +2646,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
         adapter_path = adapter_map.get(persona["id"])
         available_codes = [code for code in preferences.get(persona["id"], []) if code in catalog]
         available_catalog = [
-            {"code": code, "label": catalog[code]["label"], "supported_by": catalog[code]["supported_by"]}
+            {"code": code, "label": catalog[code]["label"], "supported_by": catalog[code]["supported_by"],
+             **({key: catalog[code][key] for key in ("kind", "extends", "challenges") if key in catalog[code]} if flexible else {})}
             for code in available_codes
         ]
         objective = (
@@ -2563,20 +2662,27 @@ def run_event_debate(args: argparse.Namespace) -> int:
             "会話文は別rendererが作るため生成しない。"
             "指定JSONだけを返す。"
         )
+        if flexible:
+            system += GENERAL_DISCUSSION_RULE
         prompt_payload = {
             "topic": ledger["topic"],
             "data": data_view,
             "claim_catalog": available_catalog,
             "persona_focus": persona["objective"],
             "rule": (
-                f"claim_catalogから重要順に{execution['claims_per_persona']}件返す。JSONはclaims配列のみ。"
+                f"claim_catalogから重要順に{'最大' if flexible else ''}{execution['claims_per_persona']}件返す。JSONはclaims配列のみ。"
                 "各要素のキーはcode, data_ids, confidence, statementだけ。ダミー語CODEは禁止。"
                 "data_idsは選んだcodeのsupported_byから必要なものを選ぶ。"
                 "statementは240字以内の自然な日本語1文で、選んだD番号を[D01]の形で必ず引用し、"
                 "labelの意味やdataにない事実を追加しない。"
             ),
         }
-        if args.prompt_profile == "orthogonal_fewshot" and available_catalog:
+        if flexible:
+            prompt_payload["rule"] += (
+                "confidenceは0から100までの整数(例:75)にする。"
+                "意見は1件か2件でもよく、ない時は空配列にする。件数を満たすために意見を作らない。"
+            )
+        if args.prompt_profile == "orthogonal_fewshot" and available_catalog and not flexible:
             prompt_payload["format_example"] = {
                 "claims": [
                     {
@@ -2624,7 +2730,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 seen_codes.add(normalized["code"])
             else:
                 rejected.append({"claim": claim, "reason": reason or "duplicate code"})
-        for code in preferences.get(persona["id"], []):
+        for code in (() if flexible else preferences.get(persona["id"], [])):
             if len(valid) >= execution["claims_per_persona"]:
                 break
             if code in catalog and code not in seen_codes:
@@ -2667,6 +2773,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
             print(f"  [自然文補完/{item.get('field', 'statement')}] {item['code']}: {item['reason']}", flush=True)
         write_json(partial_path, run)
 
+    if flexible and sum(bool(claims) for claims in persona_claims.values()) < 2:
+        raise ValueError("柔軟な討論には2人格以上の有効なモデル主張が必要です。補完による意見の追加は行いません")
     events = schedule_claim_events(persona_claims, ledger, execution["max_turns"])
     run["events"] = events
     write_json(partial_path, run)
@@ -2675,9 +2783,13 @@ def run_event_debate(args: argparse.Namespace) -> int:
     event_renderer_records = []
     for event_index, event in enumerate(events):
         target_event = event_by_id.get(event["target_claim_id"])
-        move = renderer_event_move(event["action"])
+        move = flexible_event_move(event, target_event, catalog) if flexible else renderer_event_move(event["action"])
+        event["dialogue_move"] = move
+        if flexible:
+            event["action_label"] = {"object": "問題の指摘", "counterproposal": "対案", "agree": "同意",
+                                      "improve": "改善", "elaborate": "補足", "propose": "論点提示"}[move]
         move_fallback, fallback_origin = compose_dialogue_fallback(
-            event["statement"], event["label"], move, event_index
+            event["statement"], event["label"], move, event_index, flexible=flexible
         )
         event_renderer_records.append(
             {
@@ -2746,24 +2858,27 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 pair_data_ids = sorted(set(catalog[pair[0]]["supported_by"]) | set(catalog[pair[1]]["supported_by"]))
                 prior_vote = previous_votes.get(key, {}).get(persona["id"], {})
                 previous_choice = prior_pair_choice(persona_claims[persona["id"]], pair, prior_vote)
+                side_pair = pair[::-1] if flexible and persona_rank[persona["id"]] % 2 else pair
+                choice_transport = {"LEFT": side_pair[0], "RIGHT": side_pair[1]} if flexible else {}
+                input_choice = {value: name for name, value in choice_transport.items()}
                 user = json.dumps(
                     {
                         "left": {
-                            "code": pair[0],
-                            "label": catalog[pair[0]]["label"],
-                            "supported_by": catalog[pair[0]]["supported_by"],
+                            "code": input_choice.get(side_pair[0], side_pair[0]),
+                            "label": catalog[side_pair[0]]["label"],
+                            "supported_by": catalog[side_pair[0]]["supported_by"],
                         },
                         "right": {
-                            "code": pair[1],
-                            "label": catalog[pair[1]]["label"],
-                            "supported_by": catalog[pair[1]]["supported_by"],
+                            "code": input_choice.get(side_pair[1], side_pair[1]),
+                            "label": catalog[side_pair[1]]["label"],
+                            "supported_by": catalog[side_pair[1]]["supported_by"],
                         },
                         "data": [item for item in data_view if item["id"] in pair_data_ids],
-                        "own_initial_codes": [claim["code"] for claim in persona_claims[persona["id"]]],
-                        "own_previous_choice": previous_choice,
-                        "previous_tally": previous_tally.get(key, {}),
+                        "own_initial_codes": [input_choice.get(claim["code"], claim["code"]) for claim in persona_claims[persona["id"]] if not flexible or claim["code"] in pair],
+                        "own_previous_choice": input_choice.get(previous_choice, previous_choice),
+                        "previous_tally": {input_choice.get(code, code): count for code, count in previous_tally.get(key, {}).items()},
                         "rule": (
-                            f"choiceは {pair[0]} または {pair[1]} または BOTH または ABSTAIN。"
+                            f"choiceは {input_choice.get(pair[0], pair[0])} または {input_choice.get(pair[1], pair[1])} または BOTH または ABSTAIN。"
                             "data_idsは表示したdataから1〜2件。statementは240字以内の自然な日本語1文で、"
                             "選択したcodeのsupported_byにあるD番号だけを[D01]形式で引用する。"
                             "change_reasonは前ラウンドから選択を変えた時だけ、その理由とD番号を書く。"
@@ -2783,7 +2898,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                                 else ""
                             ),
                         }
-                        if args.prompt_profile == "orthogonal_fewshot"
+                        if args.prompt_profile == "orthogonal_fewshot" and not flexible
                         else None,
                     },
                     ensure_ascii=False,
@@ -2796,10 +2911,15 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 )
                 allowed_choices = {*pair, "BOTH", "ABSTAIN"}
                 choice = parsed.get("choice") if isinstance(parsed, dict) else None
+                if not isinstance(choice, str):
+                    choice = None
+                choice = choice_transport.get(choice, choice)
                 choice_origin = "model_json"
                 if choice not in allowed_choices:
                     matches = [code for code in pair if code in raw]
-                    if len(matches) == 1:
+                    if flexible:
+                        choice = "ABSTAIN"
+                    elif len(matches) == 1:
                         choice = matches[0]
                     elif "BOTH" in raw or len(matches) == 2:
                         choice = "BOTH"
@@ -2961,6 +3081,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                                 change_reason = sanitized_reason
                                 change_reason_origin = "model_sanitized"
                 vote = {
+                    "choice_transport": choice_transport,
                     "choice": choice,
                     "choice_origin": choice_origin,
                     "data_ids": data_ids,
@@ -2999,6 +3120,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     selected_label,
                     vote["dialogue_move"],
                     persona_rank[persona_id] + round_no,
+                    flexible=flexible,
                 )
                 reconciliation_renderer_records.append(
                     {
@@ -3508,6 +3630,8 @@ def parser() -> argparse.ArgumentParser:
     event_debate.add_argument("--temperature", type=float, default=0.1)
     event_debate.add_argument("--seed", type=int, default=20260825)
     event_debate.add_argument("--prompt-profile", choices=EVENT_PROMPT_PROFILES, default="orthogonal_fewshot")
+    event_debate.add_argument("--discussion-style", choices=("auto", "structured", "flexible"), default="auto",
+                              help="auto: Generalは柔軟な討論、それ以外は既存の構造化討論。structuredで旧動作を再現")
     event_debate.add_argument(
         "--adapter-map",
         help="persona idからutterance renderer v3用MLX LoRA directoryへのJSON map（判断には不使用）",
