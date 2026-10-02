@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "status": "research_hold_claim_body_renderer",
+  "evaluated_at": "2026-10-02",
+  "promotion_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "base_model": "Qwen3.5-4B-4bit",
+  "parent": "promotions/qwen3.5-4b-claim-body-v2-mlp-step48.json",
+  "local_adapter_path": "/Volumes/data4/cod_model_weight/adapters/claim-body-qwen35-4b-v3/step64",
+  "adapter_bytes": 754632,
+  "adapter_weights_sha256": "409e6575eb403cea56a2d5a04bac9e1f1a0c3518b0130b0931213db44b9997c6",
+  "adapter_config_sha256": "1c2a9f9663a273ea7cea3142f57c9c282773608c5373e46288f99577aea44011",
+  "training_config": "configs/claim-body-qwen35-4b-v3.yaml",
+  "training_config_sha256": "ee226718ff8c37bf2b1b01cadaf19b274b2c79730da66d2f301529a1e0e53224",
+  "corpus_sha256": "6b0ada588d61295b895f630ff28c231dee3ca13b47f49a44c2c4e387c9f8dd6d",
+  "completed_iterations": 64,
+  "selected_iteration": 64,
+  "fresh16": {
+    "test": {
+      "total": 16,
+      "direct_valid": 14,
+      "with_sanitizer_valid": 14,
+      "strict_schema": 16,
+      "anchor_pass": 14,
+      "competing": 0
+    }
+  },
+  "scope16": {
+    "test": {
+      "total": 16,
+      "direct_valid": 13,
+      "with_sanitizer_valid": 13,
+      "strict_schema": 16,
+      "anchor_pass": 13,
+      "competing": 0
+    }
+  },
+  "original_cases": {
+    "legacy": {
+      "total": 15,
+      "direct_valid": 15,
+      "with_sanitizer_valid": 15,
+      "strict_schema": 15,
+      "anchor_pass": 15,
+      "competing": 0
+    },
+    "test": {
+      "total": 12,
+      "direct_valid": 11,
+      "with_sanitizer_valid": 11,
+      "strict_schema": 12,
+      "anchor_pass": 11,
+      "competing": 0
+    }
+  },
+  "adapter_isolation_identical": true,
+  "audit_root": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v3_20261002",
+  "hold_reasons": [
+    "one fresh case adds unsupported verification completion",
+    "four speaker-specific runtime bodies shift a proposal into ongoing action",
+    "one Base unsupported evidence id remains",
+    "speaker-specific cache increases calls without sufficient natural variation"
+  ],
+  "documentation": "docs/qwen35_claim_body_v3_20261002.md"
+}

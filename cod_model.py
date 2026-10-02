@@ -2229,6 +2229,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
         raise ValueError("MLX backend requires --model-path")
     shared_renderer_adapter = getattr(args, "renderer_adapter", None)
     body_renderer_adapter = getattr(args, "body_adapter", None)
+    body_cache_scope = getattr(args, "body_cache_scope", "claim")
+    if body_cache_scope == "speaker" and not body_renderer_adapter:
+        raise ValueError("speaker body cache requires --body-adapter")
     no_renderer = bool(getattr(args, "no_renderer", False))
     if sum(bool(value) for value in (args.adapter_map, shared_renderer_adapter, body_renderer_adapter)) > 1:
         raise ValueError("--adapter-map, --renderer-adapter, and --body-adapter are mutually exclusive")
@@ -2384,7 +2387,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
             "fast": bool(getattr(args, "fast", False)),
             "no_renderer": no_renderer,
             "body_temperature": 0.0 if body_renderer_adapter else None,
-            "body_cache": "claim_label" if body_renderer_adapter else None,
+            "body_cache": ("speaker_claim_label" if body_cache_scope == "speaker" else "claim_label") if body_renderer_adapter else None,
             "portable_context": bool(portable_context),
             **execution,
         },
@@ -2433,14 +2436,15 @@ def run_event_debate(args: argparse.Namespace) -> int:
     }
     persona_configs = {persona["id"]: persona for persona in personas}
     persona_names = {persona["id"]: persona["name"] for persona in personas}
-    body_render_cache: dict[str, dict] = {}
+    body_render_cache: dict[str | tuple[str, str], dict] = {}
 
     def render_utterance_records(records: list[dict], phase: str) -> None:
         if not records:
             return
         if body_renderer_adapter:
             for record_index, record in enumerate(records):
-                cache_entry = body_render_cache.get(record["label"])
+                cache_key = (record["label"], record["persona_id"]) if body_cache_scope == "speaker" else record["label"]
+                cache_entry = body_render_cache.get(cache_key)
                 cache_hit = cache_entry is not None
                 if cache_entry is None:
                     adapter_path = activate_persona_adapter("body")
@@ -2505,7 +2509,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         "adapter": adapter_path,
                     }
                     if body is not None:
-                        body_render_cache[record["label"]] = cache_entry
+                        body_render_cache[cache_key] = cache_entry
                 else:
                     cache_entry["batch"]["record_ids"].append(record["id"])
                     cache_entry["batch"]["cache_hits"] += 1
@@ -3676,6 +3680,8 @@ def parser() -> argparse.ArgumentParser:
         "--body-adapter",
         help="検証済みclaim本文だけを生成し、moveをコード合成するclaim-body v2 MLX LoRA directory",
     )
+    event_debate.add_argument("--body-cache-scope", choices=("claim", "speaker"), default="claim",
+                              help="claim: 本文を共有、speaker: 話者別に生成し同一話者の再発言で再利用")
     event_debate.add_argument(
         "--fast",
         action="store_true",

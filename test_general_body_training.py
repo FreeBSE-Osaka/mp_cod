@@ -13,6 +13,20 @@ from tools.general_body_training import body_checks, build, cases, evaluate, res
 
 
 class GeneralDiscussionTest(unittest.TestCase):
+    def test_v3_temporal_corpus_keeps_plan_ongoing_and_unverified_effect_distinct(self):
+        rows = cases(Path(__file__).parent / "data/general_body_qwen35_v3/curated.json", {"train", "valid", "test"})
+        self.assertEqual({s: sum(r["split"] == s for r in rows) for s in ("train", "valid", "test")},
+                         {"train": 32, "valid": 8, "test": 16})
+        self.assertEqual(len(rows), len({r["claim"] for r in rows}))
+        self.assertEqual(len({r["speaker"] for r in rows if r["split"] == "test"}), 8)
+        old = cases(Path(__file__).parent / "data/general_body_qwen35_v2/curated.json", {"train", "valid", "test"})
+        self.assertFalse({r["claim"] for r in rows} & {r["claim"] for r in old})
+        for row in rows:
+            with self.subTest(case=row["case"]):
+                self.assertTrue(valid(body_checks(row["body"], row)))
+                if row.get("counterexample"):
+                    self.assertFalse(valid(body_checks(row["counterexample"], row)))
+
     def test_body_failure_fallback_does_not_publish_unverified_base_reason(self):
         label = "共通コアを試験導入して将来の移植に備える"
         text, origin = cod.compose_dialogue_fallback(
@@ -153,6 +167,10 @@ class GeneralDiscussionTest(unittest.TestCase):
             args = cod.parser().parse_args(["event-debate", "--domain", "general", "--backend", "ollama",
                                            "--no-renderer", "--ledger", str(source), "--out", str(Path(directory)/"runs"),
                                            "--reconcile-rounds", "1"])
+            args.body_cache_scope = "speaker"
+            with self.assertRaisesRegex(ValueError, "requires --body-adapter"):
+                cod.run_event_debate(args)
+            args.body_cache_scope = "claim"
             counter = 0
             def respond(**kwargs):
                 nonlocal counter
