@@ -1269,7 +1269,7 @@ def renderer_move_instruction(move: object, flexible: bool = False) -> str:
 
 
 RENDERER_RESTRICTIONS = (
-    "ない", "ません", "禁止", "不可", "避け", "控え", "限定", "留め", "のみ", "だけ", "専用",
+    "ない", "ません", "せず", "禁止", "不可", "避け", "控え", "限定", "留め", "のみ", "だけ", "専用",
     "危険", "問題", "反対", "異議",
 )
 RENDERER_POSITIVE_ACTIONS = {
@@ -1289,16 +1289,26 @@ RENDERER_POSITIVE_ACTIONS = {
 
 
 def _restriction_near(text: str, start: int, end: int) -> bool:
-    window = text[max(0, start - 6) : end + 12]
+    boundaries = r"[、,。！？!?;；]"
+    before = re.split(boundaries, text[max(0, start - 6) : start])[-1]
+    after = re.split(boundaries, text[end : end + 12])[0]
+    window = before + text[start:end] + after
     return any(marker in window for marker in RENDERER_RESTRICTIONS + ("却下",))
 
 
 def _restricted_action_stems(label: str) -> set[str]:
-    return {
+    restricted = {
         stem
         for stem in RENDERER_POSITIVE_ACTIONS
-        if any(_restriction_near(label, match.start(), match.end()) for match in re.finditer(re.escape(stem), label))
+        if any(_restriction_near(label, match.start(), match.end())
+               for match in re.finditer(re.escape(stem) + r"(?=[しすせさういわでをにはがものへ]|禁止|不可)", label))
     }
+    uses = list(re.finditer("使用|使", label))
+    operation_prefixes = tuple(f"{stem}{suffix}" for stem in restricted - {"使用", "使"}
+                               for suffix in ("に", "には", "のために"))
+    if uses and operation_prefixes and all(label[:match.start()].endswith(operation_prefixes) for match in uses):
+        restricted -= {"使用", "使"}
+    return restricted
 
 
 def dialogue_selects_competing_claim(utterance: str, competitors: list[str]) -> bool:
@@ -1329,10 +1339,12 @@ def dialogue_reverses_restriction(utterance: str, label: str) -> bool:
 
 def dialogue_preserves_restriction(utterance: str, label: str) -> bool:
     restricted = _restricted_action_stems(label)
-    return not restricted or any(
-        _restriction_near(utterance, match.start(), match.end())
+    return all(
+        any(
+            _restriction_near(utterance, match.start(), match.end())
+            for match in re.finditer("使用|使" if stem in {"使用", "使"} else re.escape(stem), utterance)
+        )
         for stem in restricted
-        for match in re.finditer(re.escape(stem), utterance)
     )
 
 
@@ -1431,9 +1443,12 @@ def body_matches_claim(body: str, label: str) -> bool:
     negative_conditions = ("なければ", "ない場合", "ないなら", "ないとき", "ない時")
     past_body = body.rstrip("。！？!?").endswith(("ました", "でした"))
     past_claim = label.rstrip("。！？!?").endswith(("た", "んだ", "いだ", "済み", "完了"))
+    progressive_body = body.rstrip("。！？!?").endswith(("ています", "でいます", "ております", "でおります"))
+    progressive_claim = label.rstrip("。！？!?").endswith(("ている", "でいる", "進行中", "継続中", "実施中"))
     return (
         dialogue_matches_claim(body, label)
         and (not past_body or past_claim)
+        and (not progressive_body or progressive_claim)
         and len(re.findall(r"[。！？!?]", body)) <= 1
         and (not any(cue in label for cue in negative_conditions) or any(cue in body for cue in negative_conditions))
         and ("最長" not in label or any(cue in body for cue in ("最長", "最大", "上限", "以内", "まで")))
@@ -1639,15 +1654,15 @@ def compose_dialogue_body(body: str, label: str, move: str, variant: int = 0, *,
 
 
 def compose_dialogue_fallback(
-    statement: str, label: str, move: str, variant: int = 0, *, flexible: bool = False
+    statement: str, label: str, move: str, variant: int = 0, *, flexible: bool = False, frozen_only: bool = False
 ) -> tuple[str, str]:
-    body = dialogue_fallback(statement)
+    body = (sanitize_body_politeness(label + "。", label) or label + "。") if frozen_only else dialogue_fallback(statement)
     composed = compose_dialogue_body(body, label, move, variant, flexible=flexible)
     if composed is not None:
-        return composed, "composed_statement_fallback"
+        return composed, "frozen_claim_fallback" if frozen_only else "composed_statement_fallback"
     if move in MOVE_UTTERANCE_TEMPLATES:
         return dialogue_move_example(label, move, variant), "template_fallback"
-    return body, "statement_fallback"
+    return body, "frozen_claim_fallback" if frozen_only else "statement_fallback"
 
 
 def sanitize_dialogue_move(
@@ -2679,7 +2694,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
             "claim_catalog": available_catalog,
             "persona_focus": persona["objective"],
             "rule": (
-                f"claim_catalogから重要順に{'最大' if flexible else ''}{execution['claims_per_persona']}件返す。JSONはclaims配列のみ。"
+                f"claim_catalogから重要順に{'最大' if flexible else ''}{execution['claims_per_persona']}件返す。"
+                "返すJSONは最上位キーがclaimsだけのobjectとし、その値に主張の配列を入れる。配列だけを返してはいけない。"
                 "各要素のキーはcode, data_ids, confidence, statementだけ。ダミー語CODEは禁止。"
                 "data_idsは選んだcodeのsupported_byから必要なものを選ぶ。"
                 "statementは240字以内の自然な日本語1文で、選んだD番号を[D01]の形で必ず引用し、"
@@ -2687,6 +2703,11 @@ def run_event_debate(args: argparse.Namespace) -> int:
             ),
         }
         if flexible:
+            prompt_payload["response_contract"] = {
+                "type": "object", "additionalProperties": False, "required": ["claims"],
+                "properties": {"claims": {"type": "array", "items": {
+                    "type": "object", "required": ["code", "data_ids", "confidence", "statement"]}}},
+            }
             prompt_payload["rule"] += (
                 "confidenceは0から100までの整数(例:75)にする。"
                 "意見は1件か2件でもよく、ない時は空配列にする。件数を満たすために意見を作らない。"
@@ -2798,7 +2819,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
             event["action_label"] = {"object": "問題の指摘", "counterproposal": "対案", "agree": "同意",
                                       "improve": "改善", "elaborate": "補足", "propose": "論点提示"}[move]
         move_fallback, fallback_origin = compose_dialogue_fallback(
-            event["statement"], event["label"], move, event_index, flexible=flexible
+            event["statement"], event["label"], move, event_index, flexible=flexible,
+            frozen_only=bool(body_renderer_adapter),
         )
         event_renderer_records.append(
             {
@@ -3130,6 +3152,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     vote["dialogue_move"],
                     persona_rank[persona_id] + round_no,
                     flexible=flexible,
+                    frozen_only=bool(body_renderer_adapter),
                 )
                 reconciliation_renderer_records.append(
                     {

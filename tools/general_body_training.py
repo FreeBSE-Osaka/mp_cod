@@ -128,6 +128,9 @@ def example(claim, body, speaker, system=None):
 
 def build(args):
     out = args.out
+    rehearsal_limit = getattr(args, "rehearsal_train_limit", None)
+    if rehearsal_limit is not None and rehearsal_limit < 1:
+        raise ValueError("rehearsal train limit must be positive")
     if out.exists() and any(out.iterdir()):
         raise ValueError("dataset output already contains files")
     training_system = args.renderer_system_file.read_text().strip()
@@ -154,6 +157,8 @@ def build(args):
             if item["claim"] in by_claim:
                 raise ValueError("new corpus overlaps rehearsal")
             rows.append(example(item["claim"], body, item["speaker"], training_system))
+        if split == "train" and rehearsal_limit is not None:
+            rows = random.Random(20260908).sample(rows, min(rehearsal_limit, len(rows)))
         old_count = len(rows)
         for case in corpus:
             if case["split"] == split:
@@ -168,6 +173,10 @@ def build(args):
                 "topics": {s: sorted({c["topic"] for c in corpus if c["split"] == s}) for s in counts},
                 "counts": counts, "sha256": hashes, "renderer_system": training_system,
                 "policy": "authored synthetic targets plus v3 rehearsal; whole-topic split; no mined model outputs"}
+    if rehearsal_limit is not None:
+        manifest["policy"] = "authored synthetic targets plus frozen rehearsal; whole-topic split; no mined model outputs"
+        manifest["rehearsal_sampling"] = {"train_limit": rehearsal_limit, "seed": 20260908,
+            "source": str(args.rehearsal), "source_sha256": {s: sha(args.rehearsal / f"{s}.jsonl") for s in counts}}
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(manifest, ensure_ascii=False))
 
@@ -239,6 +248,7 @@ def main():
         p.add_argument("--out", type=Path, required=True)
         if name == "build":
             p.add_argument("--rehearsal", type=Path, required=True)
+            p.add_argument("--rehearsal-train-limit", type=int)
             p.add_argument("--renderer-system-file", type=Path, default=Path(__file__).resolve().parents[1] / "configs/claim-body-v5-system.txt")
         elif name == "evaluate":
             p.add_argument("--model", type=Path, required=True)

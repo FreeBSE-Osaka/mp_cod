@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "synthetic_tradeoff_discussion",
+  "topic": "架空の設計会議: 最初の版の解析コアをSwiftにするかRustにするか。両案に利点があり、どちらを先に採るか議論する。実在プロジェクトへの変更依頼ではない。",
+  "data": [
+    {"id": "D01", "text": "この架空案件の初版はmacOSとiOSが対象で、期限は6週間。Windows版の時期は未決定。"},
+    {"id": "D02", "text": "同じ機能の架空見積ではSwiftコア案の試作が2週間、Rust共通コアとSwiftUIの案の試作が4週間。両案とも初版の期限内に試せる。"},
+    {"id": "D03", "text": "架空チームにはSwift経験者2人とRust経験者1人がいる。どちらの案にも担当できる人がいる。"},
+    {"id": "D04", "text": "この見積ではRust共通コアの解析部分を将来のWindows版へ再利用できる。Windows側UIの工数はまだ見積もっていない。"},
+    {"id": "D05", "text": "Swiftコア案は初版を早く出せるが、この見積ではWindows向け解析部分の追加工数が未算定。将来の移植を不要とはしていない。"},
+    {"id": "D06", "text": "両案ともmacOSとiOSのUIにはSwiftUIを使う。この架空試作では速度と安全性の優劣はまだ実測していない。"}
+  ],
+  "claim_catalog": [
+    {"code": "SWIFT_FIRST", "kind": "proposal", "label": "最初の版はSwiftのコアで早く仕上げ将来の移植は追加課題として残す", "supported_by": ["D01", "D02", "D03", "D05"], "contradicts": ["RUST_FIRST"], "priority": 4},
+    {"code": "RUST_FIRST", "kind": "proposal", "label": "最初からRustの共通コアとSwiftUIを使い初期工数を増やして将来の移植に備える", "supported_by": ["D01", "D02", "D03", "D04", "D06"], "contradicts": ["SWIFT_FIRST"], "priority": 4}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["RUST_FIRST", "SWIFT_FIRST"],
+    "falsifier": ["SWIFT_FIRST", "RUST_FIRST"],
+    "empirical_auditor": ["RUST_FIRST", "SWIFT_FIRST"],
+    "pragmatic_operator": ["SWIFT_FIRST", "RUST_FIRST"],
+    "user_advocate": ["SWIFT_FIRST", "RUST_FIRST"],
+    "resource_planner": ["SWIFT_FIRST", "RUST_FIRST"],
+    "long_horizon_reviewer": ["RUST_FIRST", "SWIFT_FIRST"],
+    "integrative_designer": ["RUST_FIRST", "SWIFT_FIRST"]
+  }
+}

@@ -9,10 +9,70 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 import cod_model as cod
-from tools.general_body_training import body_checks, cases, evaluate, rescore, valid
+from tools.general_body_training import body_checks, build, cases, evaluate, rescore, valid
 
 
 class GeneralDiscussionTest(unittest.TestCase):
+    def test_body_failure_fallback_does_not_publish_unverified_base_reason(self):
+        label = "共通コアを試験導入して将来の移植に備える"
+        text, origin = cod.compose_dialogue_fallback(
+            "安全性は実測で確認済みなので全面導入します。[D01]", label, "counterproposal",
+            flexible=True, frozen_only=True)
+        self.assertEqual(origin, "frozen_claim_fallback")
+        self.assertNotIn("確認済み", text)
+        self.assertNotIn("全面導入", text)
+        self.assertIn("将来の移植に備える", text)
+
+    def test_v2_scope_corpus_preserves_constraints_and_rejects_counterexamples(self):
+        rows = cases(Path(__file__).parent / "data/general_body_qwen35_v2/curated.json", {"train", "valid", "test"})
+        self.assertEqual({s: sum(r["split"] == s for r in rows) for s in ("train", "valid", "test")},
+                         {"train": 32, "valid": 8, "test": 16})
+        self.assertEqual(len(rows), len({r["claim"] for r in rows}))
+        self.assertEqual(len({r["speaker"] for r in rows if r["split"] == "test"}), 8)
+        old = cases(Path(__file__).parent / "data/general_body_qwen35_v1_holdout/curated.json", {"test"})
+        self.assertFalse({r["claim"] for r in rows} & {r["claim"] for r in old})
+        for row in rows:
+            with self.subTest(case=row["case"]):
+                self.assertTrue(valid(body_checks(row["body"], row)))
+                if row.get("counterexample"):
+                    self.assertFalse(valid(body_checks(row["counterexample"], row)))
+
+    def test_every_restricted_action_must_survive_rendering(self):
+        claim = "安全な共同作業のため個人メモは保存しないし集計結果は公開しない"
+        self.assertFalse(cod.dialogue_preserves_restriction("安全な共同作業のため集計結果は公開しません。", claim))
+        self.assertFalse(cod.body_matches_claim("安全な共同作業のため集計結果は公開しません。", claim))
+        self.assertTrue(cod.body_matches_claim("安全な共同作業のため個人メモは保存せず、集計結果も公開しません。", claim))
+        self.assertTrue(cod.body_matches_claim("未承認の資料は使いません。", "未承認の資料は使用しない"))
+        self.assertFalse(cod.dialogue_preserves_restriction("集計結果は公開しません。", "集計結果は公開しないし未承認の資料は使用しない"))
+        self.assertFalse(cod.body_matches_claim("安全な共同作業のため個人メモは保存し、集計結果は公開しません。", claim))
+
+    def test_rehearsal_limit_is_deterministic_and_rejects_zero(self):
+        curated = Path(__file__).parent / "data/general_body_v5/curated.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old = root / "old"
+            old.mkdir()
+            for split in ("train", "valid", "test"):
+                rows = [{"messages": [{"role": "system", "content": "old"},
+                          {"role": "user", "content": json.dumps({"items": [{"claim": f"過去の教材{split}{i}は確認する", "speaker": "仮説構築者"}]})},
+                          {"role": "assistant", "content": json.dumps({"bodies": [{"body": f"過去の教材{split}{i}は確認します。"}]})}]} for i in range(5)]
+                (old / f"{split}.jsonl").write_text("\n".join(json.dumps(row) for row in rows))
+            args = SimpleNamespace(curated=curated, rehearsal=old, rehearsal_train_limit=2,
+                renderer_system_file=Path(__file__).parent / "configs/claim-body-qwen35-4b-v1-system.txt", out=root / "first")
+            with redirect_stdout(io.StringIO()):
+                build(args)
+                args.out = root / "second"
+                build(args)
+            self.assertEqual((root / "first/train.jsonl").read_bytes(), (root / "second/train.jsonl").read_bytes())
+            manifest = json.loads((args.out / "manifest.json").read_text())
+            self.assertEqual(manifest["counts"]["train"]["rehearsal"], 2)
+            self.assertEqual(manifest["counts"]["valid"]["rehearsal"], 5)
+            self.assertEqual(manifest["counts"]["test"]["rehearsal"], 5)
+            args.rehearsal_train_limit = 0
+            args.out = root / "invalid"
+            with self.assertRaisesRegex(ValueError, "must be positive"):
+                build(args)
+
     def test_percentage_units_and_signs_cannot_change(self):
         payload = {"claim": "電力費18%とCO2 11%の削減を優先する"}
         self.assertFalse(cod.dialogue_numbers_are_grounded("電力費18割とCO2 11割の削減を優先します。", payload))
@@ -72,6 +132,8 @@ class GeneralDiscussionTest(unittest.TestCase):
     def test_renderer_cannot_turn_a_plan_into_a_completed_action(self):
         self.assertFalse(cod.body_matches_claim("雨に備えて傘を持って出しました。", "雨に備えて傘を持って出る"))
         self.assertTrue(cod.body_matches_claim("雨に備えて傘を持って出ました。", "雨に備えて傘を持って出た"))
+        self.assertFalse(cod.body_matches_claim("初期工数を増やして将来の移植に備えています。", "初期工数を増やして将来の移植に備える"))
+        self.assertTrue(cod.body_matches_claim("初期工数を増やして将来の移植に備えています。", "初期工数を増やして将来の移植に備えている"))
         body, reason = cod.normalize_renderer_body(
             "実証監査者にとって、折り畳み傘を持つことは重要です。",
             "荷物を減らすため折り畳み傘を持つ", speaker="実証監査者")
@@ -96,6 +158,8 @@ class GeneralDiscussionTest(unittest.TestCase):
                 nonlocal counter
                 payload = json.loads(kwargs["user"])
                 if "claim_catalog" in payload:
+                    self.assertEqual(payload["response_contract"]["type"], "object")
+                    self.assertEqual(payload["response_contract"]["required"], ["claims"])
                     code = "P" if counter == 0 else "Q"
                     counter += 1
                     result = {"claims": [{"code": code, "data_ids": ["D01"], "confidence": 75,

@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "status": "research_hold_claim_body_renderer",
+  "evaluated_at": "2026-10-02",
+  "promotion_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "base_model": "Qwen3.5-4B-4bit",
+  "base_weights_sha256": "5fb9acd0246866381cf8c5c354c6db1019f6498eec4ccb4f5edcc71ffeacb2db",
+  "local_adapter_path": "/Volumes/data4/cod_model_weight/adapters/claim-body-qwen35-4b-v2/mlp_step48",
+  "adapter_bytes": 754632,
+  "adapter_weights_sha256": "366a0b070bc7014c8201daaab87b380c05be991370d1da905ad63db821ad65f0",
+  "adapter_config_sha256": "238c2607e2af70e032eb54f5a027bee5d73da5ca872cfb99c4a441e4c3f399f9",
+  "training_config": "configs/claim-body-qwen35-4b-v2-mlp.yaml",
+  "training_config_sha256": "a6b9f4bbe7771f11dc88bf2814840c6e83c2a0d49967bd9b2b86f44e30efa44d",
+  "dataset_manifest_sha256": "32bc842bc8edb3749808d2deae695d1a483fa17f3f3e6f6d0ea1bfba1b9af5ac",
+  "curated_sha256": "5196428c26eb27ed4d04a3f04014e49d9fa4f369c68cd87eb79cbb46d2146b65",
+  "training_keys": [
+    "mlp.down_proj"
+  ],
+  "trainable_parameters": 188416,
+  "trained_from_base": true,
+  "selected_iteration": 48,
+  "completed_training_iterations": 64,
+  "fresh16": {
+    "test": {
+      "total": 16,
+      "direct_valid": 11,
+      "with_sanitizer_valid": 13,
+      "strict_schema": 16,
+      "anchor_pass": 13,
+      "competing": 0
+    }
+  },
+  "regression": {
+    "legacy": {
+      "total": 15,
+      "direct_valid": 15,
+      "with_sanitizer_valid": 15,
+      "strict_schema": 15,
+      "anchor_pass": 15,
+      "competing": 0
+    },
+    "test": {
+      "total": 12,
+      "direct_valid": 9,
+      "with_sanitizer_valid": 10,
+      "strict_schema": 12,
+      "anchor_pass": 10,
+      "competing": 0
+    }
+  },
+  "adapter_isolation_probe_identical": true,
+  "audit_root": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v2_20261002",
+  "hold_reasons": [
+    "tradeoff runtime changed a proposal into a present-progress action",
+    "tradeoff Base selected an unsupported D id",
+    "regex passing is not a complete semantic proof",
+    "natural style still uses claim-level cached sentences and code-composed prefixes"
+  ],
+  "documentation": "docs/qwen35_claim_body_v2_20261002.md"
+}
