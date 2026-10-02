@@ -13,6 +13,36 @@ from tools.general_body_training import body_checks, build, cases, evaluate, res
 
 
 class GeneralDiscussionTest(unittest.TestCase):
+    def test_v4_action_does_not_imply_verified_benefit(self):
+        rows = cases(Path(__file__).parent / "data/general_body_qwen35_v4/curated.json", {"train", "valid", "test"})
+        self.assertEqual({s: sum(r["split"] == s for r in rows) for s in ("train", "valid", "test")},
+                         {"train": 32, "valid": 8, "test": 16})
+        self.assertEqual(len(rows), len({r["claim"] for r in rows}))
+        self.assertEqual(len({r["speaker"] for r in rows if r["split"] == "test"}), 8)
+        previous = cases(Path(__file__).parent / "data/general_body_qwen35_v3/curated.json", {"valid", "test"})
+        self.assertFalse({r["claim"] for r in rows if r["split"] == "train"} & {r["claim"] for r in previous})
+        for row in rows:
+            with self.subTest(case=row["case"]):
+                self.assertTrue(valid(body_checks(row["body"], row)))
+                if row.get("counterexample"):
+                    self.assertFalse(valid(body_checks(row["counterexample"], row)))
+
+    def test_empty_custom_renderer_system_fails_before_loading_mlx(self):
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory) / "empty.txt"
+            p.write_text(" ")
+            with self.assertRaisesRegex(ValueError, "empty evaluation renderer system"):
+                evaluate(SimpleNamespace(renderer_system_file=p))
+
+    def test_confirmed_effect_holdout_preserves_explicit_evidence(self):
+        rows = cases(Path(__file__).parent / "data/general_body_qwen35_v4/confirmed_holdout.json", {"test"})
+        self.assertEqual(len(rows), 8)
+        self.assertEqual(len({r["speaker"] for r in rows}), 8)
+        for row in rows:
+            with self.subTest(case=row["case"]):
+                self.assertTrue(valid(body_checks(row["body"], row)))
+                self.assertFalse(valid(body_checks(row["counterexample"], row)))
+
     def test_v3_temporal_corpus_keeps_plan_ongoing_and_unverified_effect_distinct(self):
         rows = cases(Path(__file__).parent / "data/general_body_qwen35_v3/curated.json", {"train", "valid", "test"})
         self.assertEqual({s: sum(r["split"] == s for r in rows) for s in ("train", "valid", "test")},
@@ -127,7 +157,8 @@ class GeneralDiscussionTest(unittest.TestCase):
 
     def test_verb_plus_desu_is_not_a_polite_conjugation(self):
         for text in ("元の運用へ戻すです。", "仮の予定として伝えるです。", "状況を確認するです。",
-                     "質問の時間も含めるです。", "仮の案内だけを出すです。"):
+                     "質問の時間も含めるです。", "仮の案内だけを出すです。", "仮の案内だけを出す、です。",
+                     "状況を確認する, です。", "元の運用へ戻す です。"):
             self.assertFalse(cod.body_is_polite_sentence(text))
         for text in ("元の運用へ戻します。", "費用が高いです。", "無断では使わないです。"):
             self.assertTrue(cod.body_is_polite_sentence(text))
@@ -167,6 +198,16 @@ class GeneralDiscussionTest(unittest.TestCase):
             args = cod.parser().parse_args(["event-debate", "--domain", "general", "--backend", "ollama",
                                            "--no-renderer", "--ledger", str(source), "--out", str(Path(directory)/"runs"),
                                            "--reconcile-rounds", "1"])
+            system = Path(directory) / "empty_system.txt"
+            system.write_text(" ")
+            args.body_system_file = str(system)
+            with self.assertRaisesRegex(ValueError, "custom body system requires --body-adapter"):
+                cod.run_event_debate(args)
+            args.body_adapter = "unused"
+            with self.assertRaisesRegex(ValueError, "empty body renderer system"):
+                cod.run_event_debate(args)
+            args.body_system_file = None
+            args.body_adapter = None
             args.body_cache_scope = "speaker"
             with self.assertRaisesRegex(ValueError, "requires --body-adapter"):
                 cod.run_event_debate(args)
@@ -189,6 +230,7 @@ class GeneralDiscussionTest(unittest.TestCase):
             with patch.object(cod, "ask_ollama", side_effect=respond), redirect_stdout(io.StringIO()):
                 self.assertEqual(cod.run_event_debate(args), 0)
             run = json.loads(next((Path(directory)/"runs").glob("event_debate_*.json")).read_text())
+            self.assertEqual(run["execution"]["decision_temperature"], args.temperature)
             self.assertEqual(len(run["events"]), 2)
             self.assertTrue(all(e["origin"] == "model" for e in run["events"]))
             votes = run["reconciliation"][0]["votes"]["P|Q"]

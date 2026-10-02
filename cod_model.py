@@ -1430,7 +1430,7 @@ def body_is_neutral(body: str) -> bool:
 
 
 def body_is_polite_sentence(body: str) -> bool:
-    ending = body.rstrip("。！？!?")
+    ending = re.sub(r"[、,\s]+(?=です$)", "", body.rstrip("。！？!?"))
     malformed = any(
         ending.endswith(plain + "です")
         for plain, polite in BODY_POLITE_SUFFIXES
@@ -2230,6 +2230,12 @@ def run_event_debate(args: argparse.Namespace) -> int:
     shared_renderer_adapter = getattr(args, "renderer_adapter", None)
     body_renderer_adapter = getattr(args, "body_adapter", None)
     body_cache_scope = getattr(args, "body_cache_scope", "claim")
+    body_system_path = getattr(args, "body_system_file", None)
+    if body_system_path and not body_renderer_adapter:
+        raise ValueError("custom body system requires --body-adapter")
+    body_renderer_system = Path(body_system_path).read_text().strip() if body_system_path else BODY_RENDERER_SYSTEM
+    if not body_renderer_system:
+        raise ValueError("empty body renderer system")
     if body_cache_scope == "speaker" and not body_renderer_adapter:
         raise ValueError("speaker body cache requires --body-adapter")
     no_renderer = bool(getattr(args, "no_renderer", False))
@@ -2386,6 +2392,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
         "execution": {
             "fast": bool(getattr(args, "fast", False)),
             "no_renderer": no_renderer,
+            "decision_temperature": args.temperature,
             "body_temperature": 0.0 if body_renderer_adapter else None,
             "body_cache": ("speaker_claim_label" if body_cache_scope == "speaker" else "claim_label") if body_renderer_adapter else None,
             "portable_context": bool(portable_context),
@@ -2428,7 +2435,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
             if body_renderer_adapter
             else None
         ),
-        "body_renderer_system_sha256": hashlib.sha256(BODY_RENDERER_SYSTEM.encode()).hexdigest(),
+        "body_renderer_system_sha256": hashlib.sha256(body_renderer_system.encode()).hexdigest(),
         "independent": {},
         "events": [],
         "reconciliation": [],
@@ -2457,7 +2464,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         "claim": record["label"],
                     }
                     raw, parsed = ask_json(
-                        BODY_RENDERER_SYSTEM,
+                        body_renderer_system,
                         json.dumps({"items": [item]}, ensure_ascii=False),
                         min(args.max_tokens, 180),
                         f"body-renderer:{phase}:{record['id']}",
@@ -3682,6 +3689,7 @@ def parser() -> argparse.ArgumentParser:
     )
     event_debate.add_argument("--body-cache-scope", choices=("claim", "speaker"), default="claim",
                               help="claim: 本文を共有、speaker: 話者別に生成し同一話者の再発言で再利用")
+    event_debate.add_argument("--body-system-file", help="本文Adapter用の実験system prompt。省略時は既定を使用")
     event_debate.add_argument(
         "--fast",
         action="store_true",

@@ -182,6 +182,10 @@ def build(args):
 
 
 def evaluate(args):
+    system_path = getattr(args, "renderer_system_file", None)
+    renderer_system = system_path.read_text().strip() if system_path else cod.BODY_RENDERER_SYSTEM
+    if not renderer_system:
+        raise ValueError("empty evaluation renderer system")
     check_isolation = getattr(args, "check_adapter_isolation", False)
     if check_isolation and not args.adapter:
         raise ValueError("adapter isolation check requires --adapter")
@@ -200,7 +204,7 @@ def evaluate(args):
     if check_isolation:
         model.eval()
         first = evaluation[0]
-        prompt = tokenizer.apply_chat_template(example(first["claim"], "unused", first["speaker"])["messages"][:2],
+        prompt = tokenizer.apply_chat_template(example(first["claim"], "unused", first["speaker"], renderer_system)["messages"][:2],
             tokenize=False, add_generation_prompt=True, enable_thinking=False)
         before = generate(model, tokenizer, prompt=prompt, max_tokens=160, sampler=make_sampler(temp=0), verbose=False)
         probe = {"case": first["case"], "prompt": prompt, "base_before": before}
@@ -209,13 +213,13 @@ def evaluate(args):
     model.eval()
     mx.random.seed(20260908)
     result = {"schema_version": 1, "curated_sha256": sha(args.curated), "model": str(args.model),
-              "renderer_system": cod.BODY_RENDERER_SYSTEM, "anchor_policy": "bounded_equivalences_v1",
+              "renderer_system": renderer_system, "anchor_policy": "bounded_equivalences_v1",
               "validator_sha256": sha(cod.__file__), "evaluator_sha256": sha(__file__),
               "adapter": str(args.adapter) if args.adapter else None,
               "weights_sha256": sha(args.adapter / "adapters.safetensors") if args.adapter else None,
               "results": []}
     for case in evaluation:
-        prompt = tokenizer.apply_chat_template(example(case["claim"], "unused", case["speaker"])["messages"][:2],
+        prompt = tokenizer.apply_chat_template(example(case["claim"], "unused", case["speaker"], renderer_system)["messages"][:2],
             tokenize=False, add_generation_prompt=True, enable_thinking=False)
         start = time.perf_counter()
         raw = generate(model, tokenizer, prompt=prompt, max_tokens=160, sampler=make_sampler(temp=0), verbose=False)
@@ -253,6 +257,7 @@ def main():
         elif name == "evaluate":
             p.add_argument("--model", type=Path, required=True)
             p.add_argument("--adapter", type=Path)
+            p.add_argument("--renderer-system-file", type=Path)
             p.add_argument("--check-adapter-isolation", action="store_true")
             p.add_argument("--split", nargs="+", choices=("valid", "test"), default=["valid"])
             p.add_argument("--legacy", type=Path)

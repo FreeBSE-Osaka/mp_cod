@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "status": "research_hold_claim_body_renderer",
+  "evaluated_at": "2026-10-02",
+  "promotion_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "base_model": "Qwen3.5-4B-4bit",
+  "parent": "promotions/qwen3.5-4b-claim-body-v3-step64.json",
+  "local_adapter_path": "/Volumes/data4/cod_model_weight/adapters/claim-body-qwen35-4b-v4/corrected_step16",
+  "adapter_bytes": 754632,
+  "adapter_weights_sha256": "7f58610e3cb3aec9b512fd404974addb81b2dddbb0fe51c509d4fa75f8859a04",
+  "adapter_config_sha256": "77278f12001ed4f2a9612a73946491bf6a50e0100a4c933c2bfb3f795cf9e045",
+  "training_config": "configs/claim-body-qwen35-4b-v4.yaml",
+  "training_config_sha256": "49b32fa3ba5b7c6cd2c6e478c680b68f59d979b50e15d1dda6da65c202a17644",
+  "renderer_system_file": "configs/claim-body-qwen35-4b-v4-system.txt",
+  "renderer_system_file_sha256": "9c0ef985b1d0a00b5e534d560428695f6fcaa18fe7baebbd34e0d5a813d27f5d",
+  "corpus_sha256": "9362400f71e98a8a7fe2319f28488320bf699f3707792cef2bdb096b3ea4ae4a",
+  "supplementary_corpus_sha256": "c9ddc34079461b57467fac1132599c3263782083b898df8780745bdbae29c3fe",
+  "completed_iterations": 64,
+  "selected_iteration": 16,
+  "selection_frozen_before_final": true,
+  "draft_training_excluded": true,
+  "scoring_policy": "saved raw rescore with punctuation-aware polite guard; frozen semantic anchors unchanged; original evaluations retained",
+  "fresh16": {
+    "parent_old_system": {
+      "test": {
+        "total": 16,
+        "direct_valid": 14,
+        "with_sanitizer_valid": 14,
+        "strict_schema": 16,
+        "anchor_pass": 14,
+        "competing": 0
+      }
+    },
+    "parent_new_system": {
+      "test": {
+        "total": 16,
+        "direct_valid": 8,
+        "with_sanitizer_valid": 8,
+        "strict_schema": 16,
+        "anchor_pass": 8,
+        "competing": 0
+      }
+    },
+    "selected_new_system": {
+      "test": {
+        "total": 16,
+        "direct_valid": 14,
+        "with_sanitizer_valid": 14,
+        "strict_schema": 16,
+        "anchor_pass": 14,
+        "competing": 0
+      }
+    }
+  },
+  "confirmed8": {
+    "parent_old_system": {
+      "test": {
+        "total": 8,
+        "direct_valid": 8,
+        "with_sanitizer_valid": 8,
+        "strict_schema": 8,
+        "anchor_pass": 8,
+        "competing": 0
+      }
+    },
+    "parent_new_system": {
+      "test": {
+        "total": 8,
+        "direct_valid": 7,
+        "with_sanitizer_valid": 7,
+        "strict_schema": 8,
+        "anchor_pass": 7,
+        "competing": 0
+      }
+    },
+    "selected_new_system": {
+      "test": {
+        "total": 8,
+        "direct_valid": 5,
+        "with_sanitizer_valid": 5,
+        "strict_schema": 8,
+        "anchor_pass": 5,
+        "competing": 0
+      }
+    }
+  },
+  "previous_temporal16": {
+    "test": {
+      "total": 16,
+      "direct_valid": 14,
+      "with_sanitizer_valid": 14,
+      "strict_schema": 16,
+      "anchor_pass": 14,
+      "competing": 0
+    }
+  },
+  "scope16": {
+    "test": {
+      "total": 16,
+      "direct_valid": 13,
+      "with_sanitizer_valid": 13,
+      "strict_schema": 16,
+      "anchor_pass": 13,
+      "competing": 0
+    }
+  },
+  "original_cases": {
+    "legacy": {
+      "total": 15,
+      "direct_valid": 15,
+      "with_sanitizer_valid": 15,
+      "strict_schema": 15,
+      "anchor_pass": 15,
+      "competing": 0
+    },
+    "test": {
+      "total": 12,
+      "direct_valid": 9,
+      "with_sanitizer_valid": 9,
+      "strict_schema": 12,
+      "anchor_pass": 10,
+      "competing": 0
+    }
+  },
+  "adapter_isolation_identical": true,
+  "adapter_isolation_scope": "one deterministic body probe only",
+  "runtime_reference_comparison": {
+    "schema_version": 1,
+    "parent_run": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v3_20261002/language_speaker/event_debate_20261002_103426_315740.json",
+    "parent_sha256": "dc5a50c4e2333775c5dd996f20959f6e79496a0c2124982996fd26f85dbc3f91",
+    "candidate_run": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v4_20261002/language_speaker/event_debate_20261002_113913_829398.json",
+    "candidate_sha256": "772694ad1d60ee148e91a089670b42e90c8714670328036877c763fe2a073001",
+    "candidate_decision_temperature": 0.1,
+    "candidate_body_temperature": 0,
+    "candidate_seed": 20260825,
+    "sampling_provenance": "candidate used CLI default temperature 0.1; parent execution metadata did not record decision temperature, so exact cross-run conditions are not established",
+    "initial_raw_identical": 2,
+    "initial_total": 8,
+    "vote_raw_identical": 2,
+    "vote_total": 8,
+    "choices_identical": true,
+    "candidate_runtime": {
+      "elapsed_seconds": 287.106,
+      "model_call_count": 32
+    },
+    "candidate_metrics": {
+      "event_count": 15,
+      "model_claims": 15,
+      "validated_fallbacks": 0,
+      "rejected_claims": 1,
+      "model_claim_rate": 1,
+      "fallback_rate": 0,
+      "evidence_validity_rate": 0.9375,
+      "model_statement_rate": 1,
+      "event_model_statements": 15,
+      "reconciliation_model_statements": 8,
+      "model_utterance_rate": 0.7826,
+      "event_model_utterances": 10,
+      "body_model_utterance_rate": 0.7826,
+      "body_model_utterances": 18,
+      "body_renderer_model_calls": 15,
+      "body_renderer_cache_hits": 8,
+      "body_politeness_sanitizations": 0,
+      "body_schema_repairs": 0,
+      "dialogue_v2_utterances": 0,
+      "dialogue_v3_utterances": 0,
+      "reaction_events": 14,
+      "reaction_failures": 5,
+      "reconciliation_model_utterances": 8,
+      "dialogue_near_duplicate_pairs": 0,
+      "dialogue_near_duplicate_rate": 0,
+      "mechanical_utterances": 0,
+      "mechanical_utterance_rate": 0,
+      "reconciliation_parse_fallbacks": 0,
+      "reconciliation_model_repairs": 1,
+      "reconciliation_statement_sanitizations": 0,
+      "changed_votes": 0,
+      "model_change_reason_rate": 1,
+      "raw_record_rate": 1,
+      "distinct_code_rate": 0.1333,
+      "action_diversity": 0.6667,
+      "near_duplicate_pairs": 0,
+      "near_duplicate_rate": 0,
+      "summary_conflict_free": true,
+      "metric_policy": "flexible_evidence_v1",
+      "shadow_score": 96.11,
+      "hard_gate_pass": false
+    },
+    "interpretation": "reference comparison only; raw differences exist before any renderer adapter activation, so they cannot establish renderer-induced Base regression or full Base non-regression; one deterministic adapter removal probe is narrower"
+  },
+  "audit_root": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v4_20261002",
+  "hold_reasons": [
+    "No fresh16 improvement over parent old system",
+    "Confirmed8 speaker attribution and exact-anchor failures, 5/8 vs parent 8/8",
+    "Earlier12 regression, 9/12 vs parent 11/12 with the same revised guard",
+    "Five speaker-specific runtime bodies shift proposed action to ongoing fact",
+    "One Base unsupported evidence id and unsupported reason facts remain",
+    "Strict Base raw non-regression not established; current and historical runtime raw differ before adapter activation",
+    "Speaker-specific generation still produces very similar body text"
+  ],
+  "documentation": "docs/qwen35_claim_body_v4_20261002.md"
+}

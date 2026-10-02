@@ -264,6 +264,8 @@ Horse renderer v1は競馬固有の限定表現を対象にv4 step160から48 it
 
 続くv3は時制・確実性の32件で追加学習し、新しい16問が9/16→14/16、既存15問15/15を維持しました。ただし未確認の行為を「検証済み」とする1件が残りHOLDです。`--body-cache-scope speaker`で話者別生成を試せますが、今回の8人実走では呼び出し増に対して文体の差が小さく、時制の不安定さも残りました。[比較・制約・再現](docs/qwen35_claim_body_v3_20261002.md)を参照してください。
 
+v4は行為と効果確認を区別する教材で追加学習し、step16（約0.755MB）を最終検証前に選定しました。「試している→検証済み」は修正できましたが、新規16問は旧構成と同じ14/16、確認済み事実8問は8/8→5/8、共通の改訂guardで以前の12問は11/12→9/12となりHOLDです。`--body-system-file`で実験promptを指定でき、不正活用「出す、です」も共通検査で拒否します。[プロンプト対Weight比較・元raw・制約](docs/qwen35_claim_body_v4_20261002.md)に記録しています。既定Weightの置換やWeight公開はしていません。
+
 Natural specialist v5ではQwen3-14B teacherから実行役event-agreeの直接合格自然文を3件得ましたが、親step160からの専用継続はholdout 1/3のまま、Base specialistは0/3でした。move別few-shotもobjectへ賛同例が混入したためruntimeへ採用せず、全結果を [General Dialogue natural specialist v5実験記録](docs/general_dialogue_weight_v5_20260904.md) に残しています。
 
 Natural specialists v6では12の異なるtopicから仮説object 12件・実行event-agree 13件を集め、人格・phase・move別LoRAとrepair LoRAを評価しました。数値創作を拒否するgrounding guardは採用しましたが、全Weightが未学習holdoutで親同等以下だったため非昇格です。全target、評価、SHA、停止理由は [General Dialogue natural specialists v6実験記録](docs/general_dialogue_weight_v6_20260904.md) にあります。

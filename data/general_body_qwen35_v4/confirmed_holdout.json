@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "scope": "Supplementary authored fictional holdout, frozen after checkpoint selection and before its generation. Explicitly confirmed benefits must not become uncertain. Never used for training or checkpoint selection.",
+  "topics": [
+    {"id": "confirmed_poster", "split": "test", "examples": [
+      {"speaker": "仮説構築者", "claim": "掲示位置の変更による読み違いの減少を検証した", "body": "掲示位置の変更による読み違いの減少を検証しました。", "required": ["読み違いの減少を検証しました"], "counterexample": "掲示位置の変更による読み違いの減少は未検証です。"}
+    ]},
+    {"id": "confirmed_parts", "split": "test", "examples": [
+      {"speaker": "批判的設計者", "claim": "部品の分類方法を変更して識別ミスが減ったことを確認した", "body": "部品の分類方法を変更して、識別ミスが減ったことを確認しました。", "required": ["分類方法を変更", "識別ミスが減ったことを確認しました"], "counterexample": "部品の分類方法を変更しましたが、識別ミスが減ったかは未確認です。"}
+    ]},
+    {"id": "confirmed_volume", "split": "test", "examples": [
+      {"speaker": "実証監査者", "claim": "音量設定の変更による聴取の負担軽減は検証済み", "body": "音量設定の変更による聴取の負担軽減は検証済みです。", "required": ["負担軽減は検証済み"], "counterexample": "音量設定の変更による聴取の負担軽減は未確認です。"}
+    ]},
+    {"id": "confirmed_workbench", "split": "test", "examples": [
+      {"speaker": "実行設計者", "claim": "作業台の高さ変更で負担が減ったと実測で確認した", "body": "作業台の高さ変更で負担が減ったと、実測で確認しました。", "required": ["負担が減った", "実測で確認しました"], "counterexample": "作業台の高さ変更で負担が減ると予想しています。"}
+    ]},
+    {"id": "confirmed_schedule", "split": "test", "examples": [
+      {"speaker": "利用者体験研究者", "claim": "工程票の整理で抜け漏れが減ったことを検証した", "body": "工程票の整理で抜け漏れが減ったことを検証しました。", "required": ["抜け漏れが減ったことを検証しました"], "counterexample": "工程票の整理で抜け漏れが減ったかは未検証です。"}
+    ]},
+    {"id": "confirmed_contacts", "split": "test", "examples": [
+      {"speaker": "資源・制約設計者", "claim": "連絡先一覧の修正で折り返しの誤りが減ったことを確認した", "body": "連絡先一覧の修正で折り返しの誤りが減ったことを確認しました。", "required": ["折り返しの誤りが減ったことを確認しました"], "counterexample": "連絡先一覧の修正で折り返しの誤りが減ったかはまだ確認していません。"}
+    ]},
+    {"id": "confirmed_chairs", "split": "test", "examples": [
+      {"speaker": "長期影響評価者", "claim": "椅子の間隔変更による通り抜けやすさの改善は検証済み", "body": "椅子の間隔変更による通り抜けやすさの改善は検証済みです。", "required": ["通り抜けやすさの改善は検証済み"], "counterexample": "椅子の間隔変更による通り抜けやすさの改善は未測定です。"}
+    ]},
+    {"id": "confirmed_tools", "split": "test", "examples": [
+      {"speaker": "横断的設計者", "claim": "工具の配列変更で探し間違いが減ったと確認した", "body": "工具の配列変更で探し間違いが減ったと確認しました。", "required": ["探し間違いが減ったと確認しました"], "counterexample": "工具の配列変更で探し間違いが減ったかは未確認です。"}
+    ]}
+  ]
+}
