@@ -10,10 +10,69 @@ from unittest.mock import patch
 from types import ModuleType, SimpleNamespace
 
 import cod_model as cod
-from tools.general_body_training import body_checks, build, cases, evaluate, guarded_job, rescore, train, valid
+from tools.general_body_training import body_checks, build, cases, evaluate, example, guarded_job, rescore, train, valid
 
 
 class GeneralDiscussionTest(unittest.TestCase):
+    def test_renderer_hints_are_source_only_and_default_contract_is_unchanged(self):
+        claim = "予算は1900円までで人数は最低7名"
+        old = example(claim, "TARGET_SENTINEL", "仮説構築者")
+        self.assertEqual(json.loads(old["messages"][1]["content"]),
+                         {"items": [{"id": "B01", "speaker": "仮説構築者", "claim": claim}]})
+        new = example(claim, "TARGET_SENTINEL", "仮説構築者", constraint_hints=True, kind="condition")
+        payload = json.loads(new["messages"][1]["content"])
+        item = payload["items"][0]
+        self.assertEqual(item, cod.body_input_item("B01", "仮説構築者", claim,
+                                                  constraint_hints=True, kind="condition"))
+        self.assertEqual(item["rendering_hints"], {
+            "claim_kind": "condition", "quantity_bounds": [
+                {"value_fraction": "7", "unit": "人", "relation": ">="},
+                {"value_fraction": "1900", "unit": "円", "relation": "<="},
+            ]})
+        self.assertNotIn("TARGET_SENTINEL", new["messages"][1]["content"])
+        self.assertNotIn("required", new["messages"][1]["content"])
+        self.assertNotIn("body", item)
+        unknown = cod.body_input_item("B01", "仮説構築者", "方法を変えて混雑に備える", constraint_hints=True)
+        self.assertEqual(unknown["rendering_hints"]["claim_kind"], "unspecified")
+        for kind in ("fact", [], 5):
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "unknown source claim kind"):
+                cod.body_input_item("B01", "A", claim, constraint_hints=True, kind=kind)
+
+    def test_renderer_hints_require_adapter_before_any_model_load(self):
+        ledger = Path(__file__).parent / "data/general_language_choice/claim_ledger.json"
+        args = cod.parser().parse_args(["event-debate", "--domain", "general", "--backend", "mlx",
+                                       "--model-path", "unused", "--ledger", str(ledger)])
+        self.assertFalse(args.body_constraint_hints)
+        args.body_constraint_hints = True
+        with self.assertRaisesRegex(ValueError, "hints require --body-adapter"):
+            cod.run_event_debate(args)
+
+    def test_v6_hints_corpus_has_new_topics_and_eight_speakers(self):
+        root = Path(__file__).parent
+        new = cases(root / "data/general_body_qwen35_v6/curated.json", {"train", "valid", "test"})
+        self.assertEqual({s: sum(r["split"] == s for r in new) for s in ("train", "valid", "test")},
+                         {"train": 32, "valid": 8, "test": 16})
+        self.assertEqual(len(new), len({r["claim"] for r in new}))
+        for split in ("valid", "test"):
+            self.assertEqual(len({r["speaker"] for r in new if r["split"] == split}), 8)
+        old = []
+        for path in root.glob("data/general_body*/curated.json"):
+            if path.parent.name != "general_body_qwen35_v6":
+                old.extend(cases(path, {"train", "valid", "test"}))
+        old.extend(cases(root / "data/pdca_general_body/curated.json", {"valid", "test"}))
+        self.assertFalse({r["claim"] for r in new} & {r["claim"] for r in old})
+        for row in new:
+            with self.subTest(case=row["case"]):
+                self.assertIn(row["kind"], cod.DISCUSSION_KINDS)
+                self.assertTrue(valid(body_checks(row["body"], row)))
+                if row.get("counterexample"):
+                    self.assertFalse(valid(body_checks(row["counterexample"], row)))
+                request = example(row["claim"], "unused", row["speaker"],
+                                  constraint_hints=True, kind=row["kind"])["messages"][1]["content"]
+                self.assertNotIn('"required"', request)
+                self.assertNotIn('"counterexample"', request)
+                self.assertNotIn('"body"', request)
+
     def test_v5_corpus_is_frozen_separated_and_preserves_each_target(self):
         root = Path(__file__).parent
         rows = cases(root / "data/general_body_qwen35_v5/curated.json", {"train", "valid", "test"})

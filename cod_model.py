@@ -1509,6 +1509,21 @@ def body_numeric_relations(text: str) -> set[tuple[Fraction, str, str]]:
     return result
 
 
+def body_input_item(item_id: str, speaker: str, claim: str, *, constraint_hints: bool = False,
+                    kind: str | None = None) -> dict:
+    """Source-only renderer input; never accept a target sentence or evaluation anchors."""
+    item = {"id": item_id, "speaker": speaker, "claim": claim}
+    if constraint_hints:
+        if kind is not None and (not isinstance(kind, str) or kind not in DISCUSSION_KINDS):
+            raise ValueError("unknown source claim kind for renderer hints")
+        item["rendering_hints"] = {
+            "claim_kind": kind if kind is not None else "unspecified",
+            "quantity_bounds": [{"value_fraction": str(number), "unit": unit, "relation": relation}
+                                for number, unit, relation in sorted(body_numeric_relations(claim))],
+        }
+    return item
+
+
 def body_matches_claim(body: str, label: str) -> bool:
     confirmation_states = body_confirmation_states(label)
     negative_conditions = ("なければ", "ない場合", "ないなら", "ないとき", "ない時")
@@ -2312,9 +2327,12 @@ def run_event_debate(args: argparse.Namespace) -> int:
     shared_renderer_adapter = getattr(args, "renderer_adapter", None)
     body_renderer_adapter = getattr(args, "body_adapter", None)
     body_cache_scope = getattr(args, "body_cache_scope", "claim")
+    body_constraint_hints = bool(getattr(args, "body_constraint_hints", False))
     body_system_path = getattr(args, "body_system_file", None)
     if body_system_path and not body_renderer_adapter:
         raise ValueError("custom body system requires --body-adapter")
+    if body_constraint_hints and not body_renderer_adapter:
+        raise ValueError("body constraint hints require --body-adapter")
     body_renderer_system = Path(body_system_path).read_text().strip() if body_system_path else BODY_RENDERER_SYSTEM
     if not body_renderer_system:
         raise ValueError("empty body renderer system")
@@ -2476,6 +2494,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
             "no_renderer": no_renderer,
             "decision_temperature": args.temperature,
             "body_temperature": 0.0 if body_renderer_adapter else None,
+            "body_constraint_hints": body_constraint_hints,
             "body_cache": ("speaker_claim_label" if body_cache_scope == "speaker" else "claim_label") if body_renderer_adapter else None,
             "portable_context": bool(portable_context),
             **execution,
@@ -2525,14 +2544,17 @@ def run_event_debate(args: argparse.Namespace) -> int:
     }
     persona_configs = {persona["id"]: persona for persona in personas}
     persona_names = {persona["id"]: persona["name"] for persona in personas}
-    body_render_cache: dict[str | tuple[str, str], dict] = {}
+    body_render_cache: dict[str | tuple, dict] = {}
 
     def render_utterance_records(records: list[dict], phase: str) -> None:
         if not records:
             return
         if body_renderer_adapter:
             for record_index, record in enumerate(records):
+                source_kind = record.get("source_kind")
                 cache_key = (record["label"], record["persona_id"]) if body_cache_scope == "speaker" else record["label"]
+                if body_constraint_hints:
+                    cache_key = (cache_key, source_kind)
                 cache_entry = body_render_cache.get(cache_key)
                 cache_hit = cache_entry is not None
                 if cache_entry is None:
@@ -2540,11 +2562,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     batch_number = len(run["renderer_batches"]) + 1
                     batch_id = f"RB{batch_number:02d}"
                     renderer_id = "B01"
-                    item = {
-                        "id": renderer_id,
-                        "speaker": persona_configs[record["persona_id"]]["name"],
-                        "claim": record["label"],
-                    }
+                    item = body_input_item(renderer_id, persona_configs[record["persona_id"]]["name"],
+                                           record["label"], constraint_hints=body_constraint_hints,
+                                           kind=source_kind)
                     raw, parsed = ask_json(
                         body_renderer_system,
                         json.dumps({"items": [item]}, ensure_ascii=False),
@@ -2921,6 +2941,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 "persona_id": event["persona_id"],
                 "target": event,
                 "label": event["label"],
+                "source_kind": catalog[event["code"]].get("kind"),
                 "target_label": target_event["label"] if target_event else None,
                 "validation_move": move,
                 "fallback": move_fallback,
@@ -3253,6 +3274,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         "persona_id": persona_id,
                         "target": vote,
                         "label": selected_label,
+                        "source_kind": catalog.get(choice, {}).get("kind"),
                         "target_label": None,
                         "competitor_labels": [
                             catalog[code]["label"]
@@ -3772,6 +3794,8 @@ def parser() -> argparse.ArgumentParser:
     event_debate.add_argument("--body-cache-scope", choices=("claim", "speaker"), default="claim",
                               help="claim: 本文を共有、speaker: 話者別に生成し同一話者の再発言で再利用")
     event_debate.add_argument("--body-system-file", help="本文Adapter用の実験system prompt。省略時は既定を使用")
+    event_debate.add_argument("--body-constraint-hints", action="store_true",
+                              help="本文入力へ既存kindと数量比較の補助情報を追加（実験用、既定OFF）")
     event_debate.add_argument(
         "--fast",
         action="store_true",

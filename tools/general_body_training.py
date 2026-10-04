@@ -120,16 +120,18 @@ def rescore(args):
     print(json.dumps(result["summary"]))
 
 
-def example(claim, body, speaker, system=None):
+def example(claim, body, speaker, system=None, *, constraint_hints=False, kind=None):
+    item = cod.body_input_item("B01", speaker, claim, constraint_hints=constraint_hints, kind=kind)
     return {"messages": [
         {"role": "system", "content": cod.BODY_RENDERER_SYSTEM if system is None else system},
-        {"role": "user", "content": json.dumps({"items": [{"id": "B01", "speaker": speaker, "claim": claim}]}, ensure_ascii=False)},
+        {"role": "user", "content": json.dumps({"items": [item]}, ensure_ascii=False)},
         {"role": "assistant", "content": json.dumps({"bodies": [{"id": "B01", "body": body}]}, ensure_ascii=False)},
     ]}
 
 
 def build(args):
     out = args.out
+    constraint_hints = bool(getattr(args, "constraint_hints", False))
     rehearsal_limit = getattr(args, "rehearsal_train_limit", None)
     if rehearsal_limit is not None and rehearsal_limit < 1:
         raise ValueError("rehearsal train limit must be positive")
@@ -158,13 +160,17 @@ def build(args):
             body = json.loads(old[2]["content"])["bodies"][0]["body"]
             if item["claim"] in by_claim:
                 raise ValueError("new corpus overlaps rehearsal")
-            rows.append(example(item["claim"], body, item["speaker"], training_system))
+            old_kind = item.get("rendering_hints", {}).get("claim_kind")
+            old_kind = None if old_kind == "unspecified" else old_kind
+            rows.append(example(item["claim"], body, item["speaker"], training_system,
+                                constraint_hints=constraint_hints, kind=old_kind))
         if split == "train" and rehearsal_limit is not None:
             rows = random.Random(20260908).sample(rows, min(rehearsal_limit, len(rows)))
         old_count = len(rows)
         for case in corpus:
             if case["split"] == split:
-                rows.extend(example(case["claim"], case["body"], speaker, training_system) for speaker in speakers)
+                rows.extend(example(case["claim"], case["body"], speaker, training_system,
+                                    constraint_hints=constraint_hints, kind=case.get("kind")) for speaker in speakers)
         random.Random(20260908).shuffle(rows)
         path = out / f"{split}.jsonl"
         path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows))
@@ -174,6 +180,7 @@ def build(args):
                 "personas_sha256": sha(cod.PROFILE_PATH), "speakers": speakers,
                 "topics": {s: sorted({c["topic"] for c in corpus if c["split"] == s}) for s in counts},
                 "counts": counts, "sha256": hashes, "renderer_system": training_system,
+                "constraint_hints": constraint_hints,
                 "policy": "authored synthetic targets plus v3 rehearsal; whole-topic split; no mined model outputs"}
     if rehearsal_limit is not None:
         manifest["policy"] = "authored synthetic targets plus frozen rehearsal; whole-topic split; no mined model outputs"
@@ -184,6 +191,7 @@ def build(args):
 
 
 def evaluate(args):
+    constraint_hints = bool(getattr(args, "constraint_hints", False))
     system_path = getattr(args, "renderer_system_file", None)
     renderer_system = system_path.read_text().strip() if system_path else cod.BODY_RENDERER_SYSTEM
     if not renderer_system:
@@ -206,7 +214,8 @@ def evaluate(args):
     if check_isolation:
         model.eval()
         first = evaluation[0]
-        prompt = tokenizer.apply_chat_template(example(first["claim"], "unused", first["speaker"], renderer_system)["messages"][:2],
+        prompt = tokenizer.apply_chat_template(example(first["claim"], "unused", first["speaker"], renderer_system,
+            constraint_hints=constraint_hints, kind=first.get("kind"))["messages"][:2],
             tokenize=False, add_generation_prompt=True, enable_thinking=False)
         before = generate(model, tokenizer, prompt=prompt, max_tokens=160, sampler=make_sampler(temp=0), verbose=False)
         probe = {"case": first["case"], "prompt": prompt, "base_before": before}
@@ -216,17 +225,21 @@ def evaluate(args):
     mx.random.seed(20260908)
     result = {"schema_version": 1, "curated_sha256": sha(args.curated), "model": str(args.model),
               "renderer_system": renderer_system, "anchor_policy": "bounded_equivalences_v1",
+              "constraint_hints": constraint_hints,
               "validator_sha256": sha(cod.__file__), "evaluator_sha256": sha(__file__),
               "adapter": str(args.adapter) if args.adapter else None,
               "weights_sha256": sha(args.adapter / "adapters.safetensors") if args.adapter else None,
               "results": []}
     for case in evaluation:
-        prompt = tokenizer.apply_chat_template(example(case["claim"], "unused", case["speaker"], renderer_system)["messages"][:2],
+        messages = example(case["claim"], "unused", case["speaker"], renderer_system,
+                           constraint_hints=constraint_hints, kind=case.get("kind"))["messages"][:2]
+        prompt = tokenizer.apply_chat_template(messages,
             tokenize=False, add_generation_prompt=True, enable_thinking=False)
         start = time.perf_counter()
         raw = generate(model, tokenizer, prompt=prompt, max_tokens=160, sampler=make_sampler(temp=0), verbose=False)
         row = {"case": case["case"], "topic": case["topic"], "split": case["split"],
                "claim": case["claim"], "speaker": case["speaker"], "raw": raw,
+               "request": messages,
                **score_output(raw, case),
                "seconds": time.perf_counter() - start}
         result["results"].append(row)
@@ -346,10 +359,12 @@ def main():
         p.add_argument("--min-free-gib", type=float, default=20.0)
         p.add_argument("--resource-check-seconds", type=float, default=2.0)
         if name == "build":
+            p.add_argument("--constraint-hints", action="store_true")
             p.add_argument("--rehearsal", type=Path, required=True)
             p.add_argument("--rehearsal-train-limit", type=int)
             p.add_argument("--renderer-system-file", type=Path, default=Path(__file__).resolve().parents[1] / "configs/claim-body-v5-system.txt")
         elif name == "evaluate":
+            p.add_argument("--constraint-hints", action="store_true")
             p.add_argument("--model", type=Path, required=True)
             p.add_argument("--adapter", type=Path)
             p.add_argument("--renderer-system-file", type=Path)

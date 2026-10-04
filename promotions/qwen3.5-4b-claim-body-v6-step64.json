@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "status": "research_hold_claim_body_renderer",
+  "evaluated_at": "2026-10-05",
+  "promotion_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "base_model": "Qwen3.5-4B-4bit",
+  "parent": "promotions/qwen3.5-4b-claim-body-v3-step64.json",
+  "local_adapter_path": "/Volumes/data4/cod_model_weight/adapters/claim-body-qwen35-4b-v6/step64",
+  "adapter_bytes": 754632,
+  "adapter_weights_sha256": "e49bb27ee11f020c3e863123c7a8e0737280dfd6bd718df9eaed4cb7e4010f15",
+  "adapter_config_sha256": "f2d349d383c52ef0008c721603bae285a045851b425f528141846c4e8331e980",
+  "completed_iterations": 128,
+  "selected_iteration": 64,
+  "selection_frozen_before_final": true,
+  "training_enable_thinking": false,
+  "constraint_hints_required": true,
+  "input_hints_scope": "explicit source kind or unspecified plus literal source quantity relations; no target/anchor leakage",
+  "default_input_changed": false,
+  "training_config": "configs/claim-body-qwen35-4b-v6.yaml",
+  "training_config_sha256": "05efd34fa83eca6c25d25105f677c262847387d90a3a8ec3c3d0b35aa4cd6773",
+  "renderer_system_file": "configs/claim-body-qwen35-4b-v6-system.txt",
+  "renderer_system_file_sha256": "72f42872e15132dcf411960856a681f089a8499cc0b3c5808f8dc34375087ade",
+  "corpus_sha256": "a6c25ab409c35f2a6e606b355a845f529f2bfdc63aef03dea5b2240c9d64a6c6",
+  "development": {
+    "old_parent": 6,
+    "new_prompt_parent": 5,
+    "new_prompt_hints_parent": 5,
+    "selected": 8,
+    "total": 8
+  },
+  "fresh16": {
+    "old_parent": 14,
+    "new_prompt_hints_parent": 11,
+    "selected": 16,
+    "total": 16
+  },
+  "regressions": {
+    "parent_old": {
+      "prior_v5_16": 15,
+      "confirmed8": 8,
+      "action_effect16": 14,
+      "temporal16": 14,
+      "scope16": 13,
+      "earlier12": 11,
+      "legacy15": 15
+    },
+    "selected": {
+      "prior_v5_16": 14,
+      "confirmed8": 7,
+      "action_effect16": 9,
+      "temporal16": 15,
+      "scope16": 12,
+      "earlier12": 10,
+      "legacy15": 15
+    }
+  },
+  "Base_adapter_removal_probe_identical": true,
+  "probe_scope": "one deterministic body probe",
+  "runtime_comparison": {
+    "initial_raw_identical": 8,
+    "initial_total": 8,
+    "vote_raw_identical": 8,
+    "vote_total": 8,
+    "choices_identical": true,
+    "scope": "one paired deterministic eight-persona fixture; not arbitrary future behavior",
+    "parent_seconds": 238.105,
+    "selected_seconds": 211.9,
+    "parent_body_model_utterances": 19,
+    "selected_body_model_utterances": 23,
+    "public_utterances": 23,
+    "parent_fallbacks": 4,
+    "selected_fallbacks": 0,
+    "Base_rejected_claims": 1,
+    "whole_discussion_hard_gate_pass": false
+  },
+  "hold_reasons": [
+    "Prior v5 set regresses 15/16 to 14/16",
+    "Confirmed effect set regresses 8/8 to 7/8",
+    "Prior action/effect set regresses 14/16 to 9/16 with malformed conjugations and wording failures",
+    "Scope16 regresses 13/16 to 12/16; earlier12 direct regresses 11/12 to 10/12",
+    "The legacy cold-depot body passes coarse checks but changes a source relative clause into a potentially misleading main predicate; numeric/token checks are not a semantic proof",
+    "Base D05/D06 interpretations still unsupported; whole-discussion hard gate fails despite direct renderer improvement",
+    "Body phrasing is very similar across speakers; arbitrary natural free-discussion quality not established"
+  ],
+  "audit_root": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v6_20261005",
+  "documentation": "docs/qwen35_claim_body_v6_20261005.md"
+}
