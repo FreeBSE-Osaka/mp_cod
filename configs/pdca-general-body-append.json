@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "objective": "本文rendererの固定の基本指示へ追記する汎用規則を改善する。変更できるcandidateはadditional_instructionのみで、基本指示の全文やJSON出力例をコピーせず、実測失敗を防ぐ具体的な追加規則を300文字以内で提案する。基本指示は、claimを自然な日本語一文・ですます調・bodies JSONへ変換し、条件・時制・数字・確実性を変更しないもの。特定の試験問題の答えや数字は列挙せず、他のclaimにも使える規則にする。missing_anchorsとrawを照合し、固定表現の不一致だけで文法や意味の誤りと断定しない。しない→しません、試す→試しますは正しい丁寧化である。採点器・コーパス・基本指示は変更できない。",
+  "domain": "general",
+  "project_root": "..",
+  "initial_candidate": {
+    "additional_instruction": ""
+  },
+  "candidate_schema": {
+    "type": "object",
+    "properties": {
+      "additional_instruction": {
+        "type": "string",
+        "minLength": 0,
+        "maxLength": 300
+      }
+    },
+    "required": ["additional_instruction"],
+    "additionalProperties": false
+  },
+  "experiment": {
+    "argv": [
+      "python3.11", "tools/pdca_body_experiment.py",
+      "--curated", "data/pdca_general_body/curated.json", "--split", "valid",
+      "--model", "qwen3.5:4b", "--base-task", "configs/pdca-general-body.json"
+    ],
+    "timeout_seconds": 540
+  },
+  "holdout": {
+    "argv": [
+      "python3.11", "tools/pdca_body_experiment.py",
+      "--curated", "data/pdca_general_body/curated.json", "--split", "test",
+      "--model", "qwen3.5:4b", "--base-task", "configs/pdca-general-body.json"
+    ],
+    "timeout_seconds": 540
+  },
+  "target_score": 1.0
+}

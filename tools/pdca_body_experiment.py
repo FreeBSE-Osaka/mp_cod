@@ -27,13 +27,36 @@ def model_identity(api_url, model):
     return {key: identity.get(key) for key in ("name", "digest", "size", "details")}
 
 
-def evaluate_candidate(args, request):
-    candidate = request.get("candidate")
-    if not isinstance(candidate, dict) or set(candidate) != {"system_prompt"}:
-        raise ValueError("candidate must contain only system_prompt")
-    system = candidate["system_prompt"]
+def candidate_system(candidate, base_task=None):
+    key = "additional_instruction" if base_task is not None else "system_prompt"
+    if not isinstance(candidate, dict) or set(candidate) != {key}:
+        raise ValueError(f"candidate must contain only {key}")
+    system = candidate[key]
+    source = {}
+    if base_task is not None:
+        if not isinstance(system, str) or len(system) > 400 or (system and not system.strip()):
+            raise ValueError("additional_instruction must contain 0..400 characters")
+        base_path = Path(base_task).resolve()
+        base_bytes = base_path.read_bytes()
+        base_data = json.loads(base_bytes)
+        base_candidate = base_data.get("initial_candidate") if isinstance(base_data, dict) else None
+        if not isinstance(base_candidate, dict) or set(base_candidate) != {"system_prompt"}:
+            raise ValueError("base task must have an initial system_prompt candidate")
+        base_system = base_candidate["system_prompt"]
+        if not isinstance(base_system, str) or not base_system.strip():
+            raise ValueError("base system_prompt must be nonempty")
+        source = {"base_task_path": str(base_path),
+                  "base_task_sha256": hashlib.sha256(base_bytes).hexdigest(),
+                  "base_system_sha256": hashlib.sha256(base_system.encode()).hexdigest(),
+                  "additional_instruction": system}
+        system = base_system + ("\n追加規則: " + system if system.strip() else "")
     if not isinstance(system, str) or not 1 <= len(system.strip()) <= 2400:
         raise ValueError("system_prompt must contain 1..2400 characters")
+    return system, source
+
+
+def evaluate_candidate(args, request):
+    system, source = candidate_system(request.get("candidate"), getattr(args, "base_task", None))
     expected_phase = "development" if args.split == "valid" else "holdout"
     if request.get("phase") != expected_phase:
         raise ValueError("experiment split does not match phase")
@@ -54,7 +77,7 @@ def evaluate_candidate(args, request):
         "validator_sha256": sha(cod.__file__), "evaluator_sha256": sha(__file__),
         "scorer_sha256": sha(training.__file__),
         "renderer_system": system, "system_sha256": hashlib.sha256(system.encode()).hexdigest(),
-        "results": [],
+        "results": [], **source,
     }
     cod.write_json(artifact, audit)
     started = time.perf_counter()
@@ -116,6 +139,8 @@ def main():
     parser.add_argument("--curated", type=Path, required=True)
     parser.add_argument("--split", choices=("valid", "test"), required=True)
     parser.add_argument("--model", default="qwen3.5:4b")
+    parser.add_argument("--base-task", type=Path,
+                        help="Freeze this task's initial system_prompt; optimize additional_instruction only")
     parser.add_argument("--api-url", default=cod.DEFAULT_API_URL)
     parser.add_argument("--timeout", type=int, default=90)
     parser.add_argument("--num-predict", type=int, default=180)

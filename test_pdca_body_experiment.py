@@ -11,6 +11,7 @@ from tools.general_body_training import body_checks, cases, score_output, valid
 
 
 CORPUS = Path(__file__).parent / "data/pdca_general_body/curated.json"
+BASE_TASK = Path(__file__).parent / "configs/pdca-general-body.json"
 
 
 class BodyExperimentTest(unittest.TestCase):
@@ -114,6 +115,54 @@ class BodyExperimentTest(unittest.TestCase):
             experiment.evaluate_candidate(args, {"candidate": {"system_prompt": "x", "command": "bad"}})
         with self.assertRaisesRegex(ValueError, "split does not match"):
             experiment.evaluate_candidate(args, {"candidate": {"system_prompt": "x"}, "phase": "holdout"})
+
+    def test_append_candidate_keeps_base_exact_and_rejects_other_keys(self):
+        base = json.loads(BASE_TASK.read_text())["initial_candidate"]["system_prompt"]
+        for rule in ("", "進行中・未確認の節を省略せず保持する。"):
+            with self.subTest(rule=rule):
+                system, source = experiment.candidate_system({"additional_instruction": rule}, BASE_TASK)
+                self.assertEqual(system, base + ("\n追加規則: " + rule if rule else ""))
+                self.assertEqual(source["base_task_sha256"], experiment.sha(BASE_TASK))
+                self.assertEqual(source["additional_instruction"], rule)
+        for candidate in ({"system_prompt": "replace base"},
+                          {"additional_instruction": "x", "command": "bad"},
+                          {"additional_instruction": 3}, {"additional_instruction": "x" * 401},
+                          {"additional_instruction": " \n "}):
+            with self.subTest(candidate=candidate), self.assertRaises(ValueError):
+                experiment.candidate_system(candidate, BASE_TASK)
+        with tempfile.TemporaryDirectory() as directory:
+            malformed = Path(directory) / "base.json"
+            for value in ([], {"initial_candidate": {"command": "bad"}}):
+                malformed.write_text(json.dumps(value))
+                with self.subTest(base=value), self.assertRaisesRegex(ValueError, "initial system_prompt"):
+                    experiment.candidate_system({"additional_instruction": ""}, malformed)
+
+    def test_append_experiment_records_frozen_base_and_only_claim_inputs(self):
+        rows = {r["claim"]: r for r in cases(CORPUS, {"valid"})}
+        requests = []
+        rule = "条件・時制・確実性を表す全ての節を落とさない。"
+        expected, _ = experiment.candidate_system({"additional_instruction": rule}, BASE_TASK)
+        def ask(**kwargs):
+            requests.append(kwargs)
+            item = json.loads(kwargs["user"])["items"][0]
+            raw = json.dumps({"bodies": [{"id": "B01", "body": rows[item["claim"]]["body"]}]},
+                             ensure_ascii=False)
+            return json.loads(raw), {"_raw_content": raw}
+        with tempfile.TemporaryDirectory() as directory:
+            args = SimpleNamespace(curated=CORPUS, split="valid", model="test", base_task=BASE_TASK,
+                                   api_url="http://unused/api/chat", seed=19, timeout=1, num_predict=180)
+            with patch.object(experiment, "model_identity", return_value={"name": "test", "digest": "fixed"}), \
+                 patch.object(cod, "ask_ollama", side_effect=ask):
+                result = experiment.evaluate_candidate(args, {
+                    "candidate": {"additional_instruction": rule}, "phase": "development",
+                    "output_dir": directory})
+            audit = json.loads(Path(result["artifacts"][0]).read_text())
+            self.assertTrue(result["passed"])
+            self.assertEqual(audit["base_task_sha256"], experiment.sha(BASE_TASK))
+            self.assertEqual(audit["renderer_system"], expected)
+            self.assertTrue(all(r["system"] == expected for r in requests))
+            self.assertEqual({json.loads(r["user"])["items"][0]["claim"] for r in requests}, set(rows))
+            self.assertFalse(any("required" in r["user"] or '"body"' in r["user"] for r in requests))
 
 
 if __name__ == "__main__":
