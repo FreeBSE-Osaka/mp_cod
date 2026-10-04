@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "objective": "検証済みclaimを条件・数字・時制・確実性を保った自然な日本語一文へ変換する本文system promptを改善する。出力契約は {\"bodies\":[{\"id\":\"B01\",\"body\":\"本文\"}]}。各itemのspeakerは発言者名であり、本文に名前を加えない。です・ます調で完結する。賛否や根拠にない情報を追加しない。測定失敗を検討し、特定の試験問題の答えを列挙せず他のclaimにも使える指示を提案する。anchorsは空白や語形を含む固定表現の検査なので、不一致だけで文法や意味の誤りと断定しない。missing_anchorsとrawを照合する。しない→しません、試す→試しますは正しい丁寧化であり、完了形への変更ではない。",
+  "domain": "general",
+  "project_root": "..",
+  "initial_candidate": {
+    "system_prompt": "各itemのspeakerとして、検証済みclaimを自然な日本語一文で述べる本文renderer。文末は必ずです・ます調で完結させ、常体や名詞断片のまま出力しない。claimの内容、時制、数字を変更・追加せず、moveや賛否は表現しない。入力itemsと同じidを一度ずつ返す。出力はbodiesだけをキーに持つJSONで、各要素のキーはidとbodyだけ。必ず {\"bodies\":[{\"id\":\"入力id\",\"body\":\"本文\"}]} の形で返し、idをJSONキーにしてはならない。提案や計画を実現済み・検証済み等の完了事実へ変えず、claimの時制と確実性を保つ。"
+  },
+  "candidate_schema": {
+    "type": "object",
+    "properties": {
+      "system_prompt": {
+        "type": "string",
+        "minLength": 20,
+        "maxLength": 700
+      }
+    },
+    "required": [
+      "system_prompt"
+    ],
+    "additionalProperties": false
+  },
+  "experiment": {
+    "argv": [
+      "python3.11",
+      "tools/pdca_body_experiment.py",
+      "--curated",
+      "data/pdca_general_body/curated.json",
+      "--split",
+      "valid",
+      "--model",
+      "qwen3.5:4b"
+    ],
+    "timeout_seconds": 540
+  },
+  "holdout": {
+    "argv": [
+      "python3.11",
+      "tools/pdca_body_experiment.py",
+      "--curated",
+      "data/pdca_general_body/curated.json",
+      "--split",
+      "test",
+      "--model",
+      "qwen3.5:4b"
+    ],
+    "timeout_seconds": 540
+  },
+  "target_score": 1.0
+}

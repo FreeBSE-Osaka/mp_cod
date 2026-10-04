@@ -290,6 +290,24 @@ class CodModelTest(unittest.TestCase):
         self.assertIsNone(reason)
         self.assertEqual(valid["confidence"], 85)
 
+    def test_statement_sanitizer_never_reassigns_evidence(self):
+        for statement in (
+            "Swiftコアなら移植不要で安全性も確保されています。根拠は[D05]です。",
+            "Swiftコアなら移植不要です。根拠は[D05,D99]です。",
+            "Swiftコアなら移植不要です。D05とD99を参照します。",
+            "Swiftコアなら移植不要です。",
+            "JSONキーを返します。根拠は[D06]です。",
+        ):
+            with self.subTest(statement=statement):
+                self.assertIsNone(cod_model.sanitize_model_statement(statement, ["D06"]))
+        statement = "速度と安全性の優劣はまだ実測していません。根拠は[D06]です。"
+        self.assertEqual(cod_model.sanitize_model_statement(statement, ["D06"]), statement)
+        self.assertIsNone(cod_model.sanitize_model_statement(statement, []))
+        ledger = {"claim_catalog": [{"code": "SAFE", "label": "優劣は未実測", "supported_by": ["D06"]}]}
+        fallback = cod_model.label_statement("SAFE", ["D06"], ledger)
+        self.assertEqual(cod_model.validate_public_statement(fallback, ["D06"]), (fallback, None))
+        self.assertNotIn("移植不要", fallback)
+
     def test_public_statement_requires_a_selected_data_id(self):
         statement, reason = cod_model.validate_public_statement("主経路を採ります。根拠は[D01]です。", ["D01"])
         self.assertIsNone(reason)
@@ -306,13 +324,12 @@ class CodModelTest(unittest.TestCase):
             "北東転向外れを独立シナリオとして残す。根拠は[D08]です。",
             ["D09"],
         )
-        self.assertEqual(sanitized, "北東転向外れを独立シナリオとして残す。根拠は[D09]です。")
+        self.assertIsNone(sanitized)
         sanitized = cod_model.sanitize_model_statement(
             "複数断層の評価は[D02]を統合した[ D13]で確認できます。",
             ["D13"],
         )
-        self.assertNotIn("D02", sanitized)
-        self.assertIn("D13", sanitized)
+        self.assertIsNone(sanitized)
         utterance, reason = cod_model.validate_dialogue_utterance(
             "いえ、その見方では大陸側の高気圧の影響を見落としてしまいます。"
         )

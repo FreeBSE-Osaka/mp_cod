@@ -24,6 +24,7 @@
 - 証拠のない主張は自動失格し、対立は最大ラウンド内で3/4に達した時点で終了
 - 人格ごとに効用と損失を分け、反論は前提否定・反例・トレードオフの型を使用
 - prompt/configだけを比較するbounded RSI shadow gateを同梱
+- 複数人格の提案・批評、実験の実測、反省と修正を自律反復する`pdca`を同梱
 - 全呼び出しをJSON保存し、人間が承認した発言だけをLoRA用JSONLへ変換
 
 ## 必要環境
@@ -301,6 +302,20 @@ EV 8 event / 最大2 roundは16 model call・54.2秒で完走しました。Weig
 続く本文cache miss試験では、0.6B判断後に1.7B + Claim Body v3から全6本文を新規生成し、3D同時実行36.041秒・19.56 fps、peak 1,549 MiBで外部gateを通過しました。本文生成中のcancelは3D要求2.241秒、模擬memory warning 0.935秒。既存cacheは変更せず、Base判断と公開発言の一致も確認しています。[本文新規生成・解放・再現手順](docs/iphone13_a15_fresh_body_20260908.md)
 
 Hugging Face向けには、ローカルpathを除いたAdapter設定、Model Card、Weight、SHA256SUMSだけのstaging packageを用意しています。公開前検証とupload境界は [Hugging Face release staging](docs/huggingface_release_claim_body_v3.md) を参照してください。
+
+## 議論と実測のPDCA
+
+複数人格が改善案を出し、実験コマンドの測定結果を使って次の案を修正します。
+同梱例はCoD本文プロンプトの改善で、開発用の失敗を議論し、最終候補だけ別topicでも検証します。
+
+```sh
+python3.11 cod_model.py pdca \
+  --task configs/pdca-general-body.json --out runs/pdca-body-001 \
+  --model qwen3.5:4b --min-rounds 2 --max-rounds 3
+```
+
+Generalは既定8人格。参加者・モデル・回数を変更でき、他プロジェクトの測定器にも接続できます。
+[使い方・実験JSON・採用ルール・実測記録](docs/pdca_20261004.md)を参照してください。
 
 ## bounded RSI shadow
 

@@ -27,6 +27,80 @@ class GeneralDiscussionTest(unittest.TestCase):
                 if row.get("counterexample"):
                     self.assertFalse(valid(body_checks(row["counterexample"], row)))
 
+    def test_runtime_preserves_confirmation_without_evaluation_anchors(self):
+        rows = cases(Path(__file__).parent / "data/general_body_qwen35_v4/confirmed_holdout.json", {"test"})
+        for row in rows:
+            with self.subTest(case=row["case"]):
+                self.assertTrue(cod.body_matches_claim(row["body"], row["claim"]))
+                self.assertFalse(cod.body_matches_claim(row["counterexample"], row["claim"]))
+                self.assertFalse(body_checks(row["counterexample"], row)["aligned"])
+        claim = "音量設定の変更による聴取の負担軽減は検証済み"
+        for body in (
+            "音量設定の変更による聴取の負担軽減は未確認です。",
+            "音量設定の変更による聴取の負担軽減です。",
+            "音量設定の変更による聴取の負担軽減は検証済みではありません。",
+        ):
+            with self.subTest(body=body):
+                self.assertFalse(cod.body_matches_claim(body, claim))
+                self.assertIsNone(cod.sanitize_body_politeness(body, claim))
+        self.assertTrue(cod.body_matches_claim("音量設定の変更による聴取の負担軽減は、検証済みです。", claim))
+        self.assertTrue(cod.body_matches_claim("音量設定の変更による聴取の負担軽減を確認しました。", claim))
+        self.assertTrue(cod.body_matches_claim("負担の軽減を検証済みです。", "負担の軽減を確認した"))
+        self.assertFalse(cod.body_matches_claim("負担の軽減を確認しました。", "負担の軽減は未確認"))
+        self.assertTrue(cod.body_matches_claim("負担の軽減はまだ確認していません。", "負担の軽減は未確認"))
+        self.assertTrue(cod.body_matches_claim("負担の軽減を試しています。", "負担の軽減を試している"))
+        fallback, origin = cod.compose_dialogue_fallback(
+            "音量設定の変更による聴取の負担軽減は未確認です。", claim,
+            "agree", flexible=True, frozen_only=True)
+        self.assertEqual(origin, "frozen_claim_fallback")
+        self.assertIn("検証済み", fallback)
+        self.assertNotIn("未確認", fallback)
+
+    def test_runtime_citation_failure_keeps_frozen_fallback_after_repair(self):
+        roster = cod.load_domains()["general"]["personas"][:2]
+        ledger = {"schema_version": 1, "topic": "架空の引用検査",
+                  "data": [{"id": "D05", "text": "移植工数は未算定。"},
+                           {"id": "D06", "text": "安全性の優劣は未実測。"}],
+                  "claim_catalog": [{"code": code, "label": label, "kind": "proposal",
+                                     "supported_by": ["D06"], "contradicts": [other]}
+                                    for code, other, label in (("P", "Q", "安全性の実測を先に行う"),
+                                                               ("Q", "P", "安全性の検証計画を先に整理する"))],
+                  "role_preferences": {p["id"]: ["P", "Q"] for p in roster}}
+        malicious = "Swiftコアなら移植不要で安全性も確保されています。根拠は[D05]です。"
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "ledger.json"
+            source.write_text(json.dumps(ledger))
+            args = cod.parser().parse_args(["event-debate", "--domain", "general", "--backend", "ollama",
+                                           "--no-renderer", "--ledger", str(source), "--out", str(Path(directory)/"runs"),
+                                           "--reconcile-rounds", "1"])
+            counter = 0
+            def respond(**kwargs):
+                nonlocal counter
+                payload = json.loads(kwargs["user"])
+                if "claim_catalog" in payload:
+                    code = "P" if counter == 0 else "Q"
+                    counter += 1
+                    result = {"claims": [{"code": code, "data_ids": ["D06"], "confidence": 75,
+                                          "statement": malicious}]}
+                else:
+                    result = {"choice": "LEFT", "data_ids": ["D06"],
+                              "statement": malicious, "change_reason": malicious}
+                return result, {"_raw_content": json.dumps(result)}
+            with patch.object(cod, "ask_ollama", side_effect=respond), redirect_stdout(io.StringIO()):
+                self.assertEqual(cod.run_event_debate(args), 0)
+            run = json.loads(next((Path(directory)/"runs").glob("event_debate_*.json")).read_text())
+            claims = [claim for entry in run["independent"].values() for claim in entry["valid"]]
+            votes = list(run["reconciliation"][0]["votes"]["P|Q"].values())
+            self.assertEqual(len(claims), 2)
+            self.assertEqual(len(votes), 2)
+            for row in claims + votes:
+                with self.subTest(row=row):
+                    self.assertEqual(row["statement_origin"], "label_fallback")
+                    self.assertNotIn("移植不要", row["statement"])
+                    self.assertNotIn("D05", row["statement"])
+                    self.assertEqual(cod.validate_public_statement(row["statement"], ["D06"])[1], None)
+            self.assertTrue(all(v["repair_raw"] for v in votes))
+
     def test_empty_custom_renderer_system_fails_before_loading_mlx(self):
         with tempfile.TemporaryDirectory() as directory:
             p = Path(directory) / "empty.txt"

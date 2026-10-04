@@ -339,6 +339,8 @@ def ask_ollama(
             meta = {
                 "attempts": attempt + 1,
                 "eval_count": payload.get("eval_count", 0),
+                "prompt_eval_count": payload.get("prompt_eval_count", 0),
+                "done_reason": payload.get("done_reason"),
                 "tokens_per_second": round(payload.get("eval_count", 0) / eval_seconds, 2) if eval_seconds else 0,
                 "total_seconds": round(payload.get("total_duration", 0) / 1_000_000_000, 3),
             }
@@ -1180,20 +1182,12 @@ def validate_public_statement(statement: object, data_ids: list[str]) -> tuple[s
 
 
 def sanitize_model_statement(statement: object, data_ids: list[str]) -> str | None:
-    if not isinstance(statement, str) or not data_ids:
+    # Citation errors cannot be repaired without rechecking the underlying evidence.
+    # Keep the caller's frozen-label fallback rather than relabeling model prose.
+    if not data_ids:
         return None
-    normalized = re.sub(r"\s+", " ", statement).strip()
-    corrected = re.sub(r"\[\s*D\d{2,}\s*\]", f"[{data_ids[0]}]", normalized)
-    corrected, _ = validate_public_statement(corrected, data_ids)
-    if corrected is not None:
-        return corrected
-    if "根拠" in normalized:
-        normalized = normalized.split("根拠", 1)[0]
-    normalized = re.sub(r"\[?D\d{2,}\]?", "", normalized)
-    normalized = normalized.strip(" 、,。.[]")
-    if not 8 <= len(normalized) <= 200 or not re.search(r"[ぁ-んァ-ヶ一-龠]", normalized):
-        return None
-    return f"{normalized}。根拠は[{','.join(data_ids)}]。"
+    validated, _ = validate_public_statement(statement, data_ids)
+    return validated
 
 
 def validate_dialogue_utterance(utterance: object) -> tuple[str | None, str | None]:
@@ -1439,7 +1433,35 @@ def body_is_polite_sentence(body: str) -> bool:
     return not malformed and ending.endswith(("です", "ます", "ません", "でした", "ました"))
 
 
+def body_confirmation_states(text: str) -> set[str]:
+    """Recognize explicit confirmation states, without treating negation as proof."""
+    text = re.sub(r"[、,\s]+", "", text)
+    confirmed = r"(?:確認|検証)(?:済み|した|しました|している|しています|できた|できました)"
+    states = set()
+    # ponytail: bounded suffix forms; richer negation scope needs semantic review.
+    for state, pattern in (
+        ("negated_unconfirmed", r"未(?:確認|検証|測定)(?:では|じゃ)(?:ない|ありません)"),
+        ("denied_confirmation", confirmed + r"(?:という|との)報告(?:は|が)"
+         r"(?:誤り|間違い)(?:です|だ|である)?(?=[。！？!?]|$)"),
+    ):
+        text, count = re.subn(pattern, " ", text)
+        if count:
+            states.add(state)
+    unconfirmed = (
+        r"未(?:確認|検証|測定)|(?:確認|検証|測定)(?:済み)?"
+        r"(?:(?:では|とは)(?:ない|ありません)|"
+        r"(?:して|できて)い(?:ない|ません)|でき(?:ない|ません))"
+    )
+    if re.search(unconfirmed, text):
+        states.add("unconfirmed")
+    affirmative = re.sub(unconfirmed, "", text)
+    if re.search(confirmed, affirmative):
+        states.add("confirmed")
+    return states
+
+
 def body_matches_claim(body: str, label: str) -> bool:
+    confirmation_states = body_confirmation_states(label)
     negative_conditions = ("なければ", "ない場合", "ないなら", "ないとき", "ない時")
     past_body = body.rstrip("。！？!?").endswith(("ました", "でした"))
     past_claim = label.rstrip("。！？!?").endswith(("た", "んだ", "いだ", "済み", "完了"))
@@ -1447,6 +1469,7 @@ def body_matches_claim(body: str, label: str) -> bool:
     progressive_claim = label.rstrip("。！？!?").endswith(("ている", "でいる", "進行中", "継続中", "実施中"))
     return (
         dialogue_matches_claim(body, label)
+        and body_confirmation_states(body) == confirmation_states
         and (not past_body or past_claim)
         and (not progressive_body or progressive_claim)
         and len(re.findall(r"[。！？!?]", body)) <= 1
@@ -1454,7 +1477,11 @@ def body_matches_claim(body: str, label: str) -> bool:
         and ("最長" not in label or any(cue in body for cue in ("最長", "最大", "上限", "以内", "まで")))
         and not dialogue_reverses_restriction(body, label)
         and dialogue_preserves_restriction(body, label)
-        and not any(marker in body and marker not in label for marker in BODY_MODALITY_SHIFT_MARKERS)
+        and not any(
+            marker in body and marker not in label
+            and not (marker == "検証済み" and "confirmed" in confirmation_states)
+            for marker in BODY_MODALITY_SHIFT_MARKERS
+        )
         and not body.endswith(BODY_FRAGMENT_ENDINGS)
     )
 
@@ -2149,6 +2176,11 @@ def decide_rsi_shadow(
             "candidate_holdout": candidate_holdout,
         },
     }
+
+
+def run_pdca(args: argparse.Namespace) -> int:
+    from cod_pdca import run_pdca as execute_pdca
+    return execute_pdca(args)
 
 
 def run_rsi_shadow(args: argparse.Namespace) -> int:
@@ -3702,6 +3734,23 @@ def parser() -> argparse.ArgumentParser:
     )
     event_debate.set_defaults(handler=run_event_debate)
 
+    pdca = subcommands.add_parser("pdca", help="debate, execute experiments, measure, reflect and revise autonomously")
+    pdca.add_argument("--task", required=True)
+    pdca.add_argument("--out", required=True, help="new experiment directory")
+    pdca.add_argument("--model", default="qwen3.5:4b")
+    pdca.add_argument("--api-url", default=DEFAULT_API_URL)
+    pdca.add_argument("--timeout", type=int, default=120)
+    pdca.add_argument("--num-predict", type=int, default=600)
+    pdca.add_argument("--seed", type=int, default=20261004)
+    pdca.add_argument("--max-rounds", type=int, default=3)
+    pdca.add_argument("--min-rounds", type=int, default=2)
+    pdca.add_argument("--min-free-gib", type=float, default=20.0,
+                      help="各作業filesystemに確保する空きGiB。実行中も監視する（0で明示的に無効化）")
+    pdca.add_argument("--resource-check-seconds", type=float, default=2.0,
+                      help="空き容量の監視間隔（秒）")
+    pdca.add_argument("--personas", nargs="+", help="persona IDs; default: every persona in task domain")
+    pdca.set_defaults(handler=run_pdca)
+
     rsi = subcommands.add_parser("rsi-shadow", help="gate one bounded prompt/config RSI shadow round")
     rsi.add_argument("--parent-dev", required=True)
     rsi.add_argument("--candidate-dev", required=True)
@@ -3752,11 +3801,13 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    args = None
     try:
         args = parser().parse_args()
         return args.handler(args)
     except KeyboardInterrupt:
-        print("\n中断しました。進行済みデータは .partial.json に残っています。", file=sys.stderr)
+        progress = "journal.json" if getattr(args, "command", None) == "pdca" else ".partial.json"
+        print(f"\n中断しました。進行済みデータは {progress} に残っています。", file=sys.stderr)
         return 130
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
