@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "status": "research_hold_claim_body_renderer",
+  "evaluated_at": "2026-10-05",
+  "promotion_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "base_model": "Qwen3.5-4B-4bit",
+  "base_weights_sha256": "5fb9acd0246866381cf8c5c354c6db1019f6498eec4ccb4f5edcc71ffeacb2db",
+  "parent": "promotions/qwen3.5-4b-claim-body-v3-step64.json",
+  "local_adapter_path": "/Volumes/data4/cod_model_weight/adapters/claim-body-qwen35-4b-v5/step32",
+  "adapter_bytes": 754632,
+  "adapter_weights_sha256": "693fc0bb7b9e7428fab773e3857b1c543761f1cb1ba46b1abce21318bcb384fb",
+  "adapter_config_sha256": "2ec78a26cffd59d4c2dfeb82097655f8d323275139461f64ab917933162955d4",
+  "completed_iterations": 128,
+  "selected_iteration": 32,
+  "selection_frozen_before_final": true,
+  "training_enable_thinking": false,
+  "training_scope": "one shared claim-body renderer; Base decisions/evidence/votes are not trained",
+  "training_config": "configs/claim-body-qwen35-4b-v5.yaml",
+  "training_config_sha256": "ffcc1893dbcaef7a83509e214ec7972bb5c129af92502eeb0b006a78a29367c5",
+  "renderer_system_file": "configs/claim-body-qwen35-4b-v5-system.txt",
+  "renderer_system_sha256": "821f795f447810d4052304b20f78c1047e04965a1eee942b9967d19819c8394f",
+  "corpus_sha256": "42d877b29eb21214cf60d520b6fd9c86ac631911d96e14183741943fa5f8847b",
+  "dataset_manifest_sha256": "eff99b67ee89e509ea2baa70703018a759ae21d39b83e6b4d1cd3cbf0d81e77f",
+  "excluded_trials": [
+    "aligned: recursion before step1",
+    "aligned_r2: thinking override detected; stopped after step40 report, saved step32 excluded"
+  ],
+  "scoring_policy": "original raw and original scores preserved; identical quantity-bound guard applied in separate replay files; anchors unchanged",
+  "dev": {
+    "parent": 6,
+    "selected": 7,
+    "total": 8
+  },
+  "fresh16": {
+    "parent": 15,
+    "selected": 15,
+    "total": 16,
+    "selected_critical_failure": "v5_transfer_boardgame:2 drops the 2600yen upper bound; new runtime guard rejects it"
+  },
+  "regressions": {
+    "parent": {
+      "confirmed8": 8,
+      "prior_action_effect16": 14,
+      "prior_temporal16": 14,
+      "scope16": 13,
+      "earlier12": 11,
+      "legacy15": 15
+    },
+    "selected": {
+      "confirmed8": 8,
+      "prior_action_effect16": 15,
+      "prior_temporal16": 16,
+      "scope16": 13,
+      "earlier12": 10,
+      "legacy15": 15
+    }
+  },
+  "adapter_isolation_identical": true,
+  "adapter_isolation_scope": "one deterministic body probe",
+  "runtime_comparison": {
+    "initial_raw_identical": 8,
+    "initial_total": 8,
+    "vote_raw_identical": 8,
+    "vote_total": 8,
+    "choices_identical": true,
+    "conditions_match": true,
+    "scope": "one paired deterministic all-eight-persona fixture; not arbitrary future behavior",
+    "parent": {
+      "seconds": 179.374,
+      "body_model_utterances": 19,
+      "public_utterances": 23,
+      "frozen_fallbacks": 4,
+      "hard_gate_pass": false
+    },
+    "selected": {
+      "seconds": 181.407,
+      "body_model_utterances": 17,
+      "public_utterances": 23,
+      "frozen_fallbacks": 6,
+      "hard_gate_pass": false
+    }
+  },
+  "hold_reasons": [
+    "Fresh16 is tied rather than improved and loses an explicit budget upper bound",
+    "Earlier12 regresses 11/12 to 10/12 and loses a time upper bound",
+    "Speaker-specific runtime direct Weight bodies regress 19/23 to 17/23; six proposed actions become completed facts (sonaemashita)",
+    "Base raw explanations still misread D05/D06; citation ID validation is not full semantic support",
+    "One unsupported RUST_FIRST D05 citation is rejected; whole-discussion hard gate fails",
+    "Speaker-specific text remains very similar; natural free-discussion completion is not established"
+  ],
+  "code_improvements": [
+    "non-thinking training mask aligned with real MLX wrapper; all1558 SFT rows audited",
+    "default20GiB in-flight disk guard and terminal job journal for training/evaluation",
+    "shared explicit-quantity relation guard rejects missing/inverted/strictness-shifted bounds without changing IDs"
+  ],
+  "audit_root": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v5_20261004",
+  "documentation": "docs/qwen35_claim_body_v5_20261004.md"
+}

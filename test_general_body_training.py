@@ -4,15 +4,114 @@ import tempfile
 import unittest
 import json
 import io
+import sys
 from contextlib import redirect_stdout
 from unittest.mock import patch
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import cod_model as cod
-from tools.general_body_training import body_checks, build, cases, evaluate, rescore, valid
+from tools.general_body_training import body_checks, build, cases, evaluate, guarded_job, rescore, train, valid
 
 
 class GeneralDiscussionTest(unittest.TestCase):
+    def test_v5_corpus_is_frozen_separated_and_preserves_each_target(self):
+        root = Path(__file__).parent
+        rows = cases(root / "data/general_body_qwen35_v5/curated.json", {"train", "valid", "test"})
+        self.assertEqual({s: sum(r["split"] == s for r in rows) for s in ("train", "valid", "test")},
+                         {"train": 32, "valid": 8, "test": 16})
+        self.assertEqual(len(rows), len({r["claim"] for r in rows}))
+        for split in ("valid", "test"):
+            self.assertEqual(len({r["speaker"] for r in rows if r["split"] == split}), 8)
+        previous = []
+        for path in ("data/general_body_qwen35_v2/curated.json", "data/general_body_qwen35_v3/curated.json",
+                     "data/general_body_qwen35_v4/curated.json", "data/general_body_qwen35_v4/confirmed_holdout.json",
+                     "data/pdca_general_body/curated.json"):
+            previous.extend(cases(root / path, {"train", "valid", "test"}))
+        self.assertFalse({r["claim"] for r in rows} & {r["claim"] for r in previous})
+        for row in rows:
+            with self.subTest(case=row["case"]):
+                self.assertTrue(valid(body_checks(row["body"], row)))
+                if row.get("counterexample"):
+                    self.assertFalse(valid(body_checks(row["counterexample"], row)))
+        self.assertEqual((root / "configs/claim-body-qwen35-4b-v5-system.txt").read_text().strip(),
+                         cod.BODY_RENDERER_SYSTEM)
+
+    def test_native_training_masks_nonthinking_prefix_and_restores_state(self):
+        for fails in (False, True):
+            with self.subTest(fails=fails), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                parent = root / "parent.safetensors"
+                parent.write_text("unit-test placeholder")
+                args = SimpleNamespace(out=root / "new", parent_adapter=parent, model=root / "model",
+                                       data=root / "data", config=root / "config.yaml")
+                settings = []
+                class Tokenizer:
+                    def apply_chat_template(self, messages, **kwargs):
+                        settings.append(kwargs)
+                        return "template"
+                class Wrapper:
+                    def __init__(self):
+                        object.__setattr__(self, "_tokenizer", Tokenizer())
+                    def apply_chat_template(self, *a, **k):
+                        k.setdefault("enable_thinking", True)
+                        return self._tokenizer.apply_chat_template(*a, **k)
+                    def __setattr__(self, name, value):
+                        setattr(self._tokenizer, name, value)
+                package = ModuleType("mlx_lm")
+                native = SimpleNamespace(load=lambda *a, **k: (object(), Wrapper()))
+                original_load, original_argv = native.load, sys.argv
+                def main():
+                    self.assertIn("--mask-prompt", sys.argv)
+                    self.assertIn(str(parent), sys.argv)
+                    _, tokenizer = native.load(str(args.model))
+                    tokenizer.apply_chat_template([], add_generation_prompt=True)
+                    tokenizer.apply_chat_template([], return_dict=False)
+                    tokenizer.apply_chat_template([], enable_thinking=True)
+                    if fails:
+                        raise RuntimeError("training failure")
+                native.main = main
+                package.lora = native
+                with patch.dict(sys.modules, {"mlx_lm": package}):
+                    if fails:
+                        with self.assertRaisesRegex(RuntimeError, "training failure"):
+                            train(args)
+                    else:
+                        train(args)
+                self.assertTrue(all(s["enable_thinking"] is False for s in settings))
+                self.assertIs(native.load, original_load)
+                self.assertIs(sys.argv, original_argv)
+                args.out.mkdir()
+                (args.out / "protected").write_text("existing")
+                with self.assertRaisesRegex(ValueError, "already contains"):
+                    train(args)
+
+    def test_body_job_guard_prevents_heavy_work_and_records_terminal_errors(self):
+        from cod_pdca import _ResourceGuard
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = SimpleNamespace(out=root / "low.json", command="evaluate",
+                                   min_free_gib=20, resource_check_seconds=1)
+            calls = []
+            with patch.object(_ResourceGuard, "_observe", return_value={"ok": False, "reason": "low_free_space"}):
+                self.assertEqual(guarded_job(args, lambda a: calls.append(a)), 2)
+            self.assertFalse(calls)
+            record = json.loads((root / "low.json.job.json").read_text())
+            self.assertEqual(record["status"], "resource_stopped")
+            args.min_free_gib = 0
+            args.out = root / "failure.json"
+            def fail(_):
+                raise RuntimeError("measurement failed")
+            with self.assertRaisesRegex(RuntimeError, "measurement failed"):
+                guarded_job(args, fail)
+            self.assertEqual(json.loads((root / "failure.json.job.json").read_text())["status"], "failed")
+            args.out = root / "exit.json"
+            def exit_two(_):
+                raise SystemExit(2)
+            self.assertEqual(guarded_job(args, exit_two), 2)
+            self.assertEqual(json.loads((root / "exit.json.job.json").read_text())["returncode"], 2)
+            with self.assertRaisesRegex(ValueError, "journal already exists"):
+                guarded_job(args, lambda _: None)
+
     def test_v4_action_does_not_imply_verified_benefit(self):
         rows = cases(Path(__file__).parent / "data/general_body_qwen35_v4/curated.json", {"train", "valid", "test"})
         self.assertEqual({s: sum(r["split"] == s for r in rows) for s in ("train", "valid", "test")},
@@ -197,6 +296,52 @@ class GeneralDiscussionTest(unittest.TestCase):
         self.assertFalse(cod.dialogue_numbers_are_grounded("電力費-18%の削減を優先します。", payload))
         self.assertTrue(cod.dialogue_numbers_are_grounded("電力費１８％とCO2 １１パーセントの削減を優先します。", payload))
         self.assertTrue(cod.dialogue_numbers_are_grounded("費用を2割削減します。", {"claim": "費用を2割削減する"}))
+
+    def test_quantity_bounds_cannot_be_dropped_or_changed(self):
+        claim = "共有用具の予算は2600円までで飲食費は含めない"
+        dropped = "共有用具の予算は2600円で、飲食費は含めません。"
+        self.assertFalse(cod.body_matches_claim(dropped, claim))
+        self.assertIsNone(cod.sanitize_body_politeness(dropped, claim))
+        text, origin = cod.compose_dialogue_fallback(dropped, claim, "agree", flexible=True, frozen_only=True)
+        self.assertEqual(origin, "frozen_claim_fallback")
+        self.assertIn("2600円まで", text)
+        for body in (
+            "共有用具の予算は2600円以下で、飲食費は含めません。",
+            "共有用具の予算は最大2600円で、飲食費は含めません。",
+            "共有用具の予算は2600円を上限とし、飲食費は含めません。",
+            "共有用具の予算は2600円を超えませんが、飲食費は含めません。",
+        ):
+            with self.subTest(body=body):
+                self.assertTrue(cod.body_matches_claim(body, claim))
+        for body in ("予算は2600円未満です。", "予算は2600円以上です。"):
+            self.assertNotEqual(cod.body_numeric_relations(body), cod.body_numeric_relations(claim))
+        for source, body in (
+            ("見積額が5400円を超える場合だけ再確認する", "見積額が5400円以上の場合だけ再確認します。"),
+            ("参加者は最低8人で見学者は数えない", "参加者は8人で、見学者は数えません。"),
+            ("見学は最長3日で人数は10人まで", "見学は3日で、人数は10人までです。"),
+            ("受入れは20人未満で荷物は預からない", "受入れは20人以下で、荷物は預かりません。"),
+        ):
+            with self.subTest(source=source):
+                self.assertFalse(cod.body_matches_claim(body, source))
+
+    def test_numeric_relation_equivalences_are_quantity_specific(self):
+        for source, body in (
+            ("料金は1200円まで", "料金の上限は１，２００円です"),
+            ("参加者は最低8人", "参加者は8名以上"),
+            ("負担率は12%以下", "負担率は最大12パーセント"),
+            ("点検は2週間以内", "点検は最長2週"),
+            ("定員は20人以上ではない", "定員は20人未満"),
+            ("代金は500円以下ではありません", "代金は500円を超える"),
+            ("料金は0.5万円まで", "料金は.5万円以下"),
+            ("団体見学の上限は1回18人", "団体見学は1回18人まで"),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(cod.body_numeric_relations(source), cod.body_numeric_relations(body))
+        self.assertNotEqual(cod.body_numeric_relations("予算は700円までで人数は7人以上"),
+                            cod.body_numeric_relations("予算は700円以上で人数は7人まで"))
+        self.assertNotEqual(cod.body_numeric_relations("代金は600円まで"),
+                            cod.body_numeric_relations("代金は600円以下かつ600円以上"))
+        self.assertFalse(cod.body_numeric_relations("Qwen3.5はローカルで使う"))
 
     def test_adapter_isolation_requires_an_adapter_before_loading_mlx(self):
         with self.assertRaisesRegex(ValueError, "requires --adapter"):

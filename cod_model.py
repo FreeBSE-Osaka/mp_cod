@@ -1460,6 +1460,55 @@ def body_confirmation_states(text: str) -> set[str]:
     return states
 
 
+def body_numeric_relations(text: str) -> set[tuple[Fraction, str, str]]:
+    """Extract explicit quantity bounds, preserving inclusive/strict endpoints."""
+    text = re.sub(r"\s+", "", unicodedata.normalize("NFKC", text))
+    text = re.sub(r"(?<=\d),(?=\d{3}(?:\D|$))", "", text)
+    units = r"(?:パーセント|万円|時間|週間|ヶ月|か月|km/h|m/s|hPa|GiB|MiB|KiB|GB|MB|TB|km|cm|mm|kg|円|人|名|分|秒|日|週|月|年|個|台|件|回|%|割|m|g)"
+    quantities = re.finditer(r"(?<![A-Za-z0-9])([+-]?(?:\d+(?:\.\d+)?|\.\d+))(" + units + r")", text)
+    result = set()
+    aliases = {"パーセント": "%", "名": "人", "週間": "週", "ヶ月": "月", "か月": "月"}
+    # ponytail: bounded literal cues, not subject binding or arbitrary negation scope; retain semantic review.
+    for match in quantities:
+        prefix, suffix = text[:match.start()], text[match.end():]
+        if match.group(2) == "回" and re.match(r"\d+(?:\.\d+)?" + units, suffix):
+            continue  # In "1回18人", the comparison applies to 18 people, not one occasion.
+        relation = None
+        for pattern, value in (
+            (r"^(?:を|は|が)?(?:超え(?:ない|ません|ず)|上回(?:らない|りません|らず))", "<="),
+            (r"^(?:を|は|が)?下回(?:らない|りません|らず)", ">="),
+            (r"^(?:を|は|が)?(?:超え(?:る|ます)|超(?!え)|上回(?:る|ります)|より(?:多い|高い|大きい))", ">"),
+            (r"^(?:を|は|が)?(?:下回(?:る|ります)|より(?:少ない|低い|小さい))", "<"),
+            (r"^(?:を)?(?:上限|限度)(?:に|と|として|です|$)", "<="),
+            (r"^(?:を)?下限(?:に|と|として|です|$)", ">="),
+        ):
+            if re.search(pattern, suffix):
+                relation = value
+                break
+        if relation is None:
+            for cue, value in (("まで", "<="), ("以下", "<="), ("以内", "<="),
+                               ("未満", "<"), ("以上", ">=")):
+                if suffix.startswith(cue):
+                    if re.match(r"(?:では|じゃ)(?:ない|ありません)", suffix[len(cue):]):
+                        if cue == "まで":
+                            break  # A negated deadline is not a supported comparison form.
+                        value = {"<=": ">", "<": ">=", ">=": "<"}[value]
+                    relation = value
+                    break
+        if relation is None:
+            for pattern, value in (
+                (r"(?:上限|限度|最大|最長|多くとも|せいぜい)(?:は|が|を|:)?(?:\d+回)?$", "<="),
+                (r"(?:下限|最低|最小|少なくとも)(?:は|が|を|:)?(?:\d+回)?$", ">="),
+            ):
+                if re.search(pattern, prefix):
+                    relation = value
+                    break
+        if relation is not None:
+            number, unit = match.groups()
+            result.add((Fraction(number), aliases.get(unit, unit), relation))
+    return result
+
+
 def body_matches_claim(body: str, label: str) -> bool:
     confirmation_states = body_confirmation_states(label)
     negative_conditions = ("なければ", "ない場合", "ないなら", "ないとき", "ない時")
@@ -1470,6 +1519,7 @@ def body_matches_claim(body: str, label: str) -> bool:
     return (
         dialogue_matches_claim(body, label)
         and body_confirmation_states(body) == confirmation_states
+        and body_numeric_relations(body) == body_numeric_relations(label)
         and (not past_body or past_claim)
         and (not progressive_body or progressive_claim)
         and len(re.findall(r"[。！？!?]", body)) <= 1

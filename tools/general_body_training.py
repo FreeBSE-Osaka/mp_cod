@@ -8,6 +8,8 @@ from pathlib import Path
 import random
 import re
 import sys
+import tempfile
+import threading
 import time
 import unicodedata
 
@@ -243,13 +245,106 @@ def evaluate(args):
     print(json.dumps(result["summary"]))
 
 
+def nonthinking_tokenizer(tokenizer):
+    # MLX forwards assignment and supplies True by default; override on the inner call.
+    inner = getattr(tokenizer, "_tokenizer", tokenizer)
+    template = inner.apply_chat_template
+    def body_template(*values, **kwargs):
+        kwargs["enable_thinking"] = False
+        return template(*values, **kwargs)
+    inner.apply_chat_template = body_template
+    return tokenizer
+
+
+def train(args):
+    """Reuse MLX-LM's trainer, matching its prompt mask to our non-thinking inference."""
+    if args.out.exists() and any(args.out.iterdir()):
+        raise ValueError("training adapter output already contains files")
+    if not args.parent_adapter.is_file():
+        raise ValueError("parent adapter must be an existing weights file")
+    from mlx_lm import lora
+    original_load, original_argv = lora.load, sys.argv
+
+    def load_body_model(*values, **kwargs):
+        model, tokenizer = original_load(*values, **kwargs)
+        return model, nonthinking_tokenizer(tokenizer)
+
+    try:
+        lora.load = load_body_model
+        sys.argv = ["mlx_lm.lora", "--train", "--mask-prompt", "--model", str(args.model),
+                    "--data", str(args.data), "--config", str(args.config),
+                    "--resume-adapter-file", str(args.parent_adapter), "--adapter-path", str(args.out)]
+        lora.main()
+    finally:
+        lora.load, sys.argv = original_load, original_argv
+
+
+def guarded_job(args, action):
+    """Monitor this dedicated CLI process; keep a terminal record even on interruption."""
+    from cod_pdca import _ResourceGuard, _finite
+    if not _finite(args.min_free_gib) or args.min_free_gib < 0:
+        raise ValueError("min-free-gib must be finite and nonnegative")
+    if not _finite(args.resource_check_seconds) or args.resource_check_seconds <= 0:
+        raise ValueError("resource-check-seconds must be finite and positive")
+    if args.min_free_gib and threading.current_thread() is not threading.main_thread():
+        raise ValueError("resource-monitored body jobs must run on the main thread of a dedicated CLI process")
+    journal = args.out.with_name(args.out.name + ".job.json")
+    if journal.exists():
+        raise ValueError("job journal already exists; use a new output path")
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    guard = _ResourceGuard([Path.cwd(), args.out.parent, tempfile.gettempdir()],
+                           args.min_free_gib, args.resource_check_seconds)
+    started = time.monotonic()
+    state = {"schema_version": 1, "status": "running", "command": args.command,
+             "argv": sys.argv, "source_sha256": sha(__file__),
+             "training_enable_thinking": False if args.command == "train" else None,
+             "min_free_gib": args.min_free_gib,
+             "resource_check_seconds": args.resource_check_seconds}
+    cod.write_json(journal, state)
+    error = None
+    try:
+        guard.start()
+        action(args)
+    except BaseException as caught:
+        error = caught
+    finally:
+        try:
+            guard.close()
+        except KeyboardInterrupt as caught:
+            error = caught
+            guard.close()
+    if guard.reason:
+        state.update(status="resource_stopped", resource_stop=guard.reason)
+        code = 2
+    elif isinstance(error, KeyboardInterrupt):
+        state.update(status="interrupted", error="KeyboardInterrupt")
+        code = 130
+    elif isinstance(error, SystemExit):
+        code = error.code if type(error.code) is int else 0 if error.code is None else 1
+        state.update(status="completed" if code == 0 else "failed", error=str(error), error_type="SystemExit")
+    elif error is not None:
+        state.update(status="failed", error=str(error), error_type=type(error).__name__)
+        code = 1
+    else:
+        state["status"] = "completed"
+        code = 0
+    state.update(elapsed_seconds=round(time.monotonic() - started, 3), returncode=code,
+                 resource_observation=guard.latest)
+    cod.write_json(journal, state)
+    if error is not None and code == 1:
+        raise error.with_traceback(error.__traceback__)
+    return code
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("build", "evaluate", "rescore"):
+    for name in ("build", "evaluate", "rescore", "train"):
         p = sub.add_parser(name)
         p.add_argument("--curated", type=Path, default=Path(__file__).resolve().parents[1] / "data/general_body_v5/curated.json")
         p.add_argument("--out", type=Path, required=True)
+        p.add_argument("--min-free-gib", type=float, default=20.0)
+        p.add_argument("--resource-check-seconds", type=float, default=2.0)
         if name == "build":
             p.add_argument("--rehearsal", type=Path, required=True)
             p.add_argument("--rehearsal-train-limit", type=int)
@@ -261,12 +356,17 @@ def main():
             p.add_argument("--check-adapter-isolation", action="store_true")
             p.add_argument("--split", nargs="+", choices=("valid", "test"), default=["valid"])
             p.add_argument("--legacy", type=Path)
-        else:
+        elif name == "rescore":
             p.add_argument("--input", type=Path, required=True)
             p.add_argument("--legacy", type=Path)
+        else:
+            p.add_argument("--model", type=Path, required=True)
+            p.add_argument("--data", type=Path, required=True)
+            p.add_argument("--config", type=Path, required=True)
+            p.add_argument("--parent-adapter", type=Path, required=True)
     args = parser.parse_args()
-    {"build": build, "evaluate": evaluate, "rescore": rescore}[args.command](args)
+    return guarded_job(args, {"build": build, "evaluate": evaluate, "rescore": rescore, "train": train}[args.command])
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
