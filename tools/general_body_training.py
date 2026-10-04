@@ -140,6 +140,10 @@ def build(args):
     training_system = args.renderer_system_file.read_text().strip()
     if not training_system:
         raise ValueError("empty training renderer system")
+    plain_path = getattr(args, "plain_system_file", None)
+    plain_system = plain_path.read_text().strip() if plain_path else None
+    if plain_path and (not constraint_hints or not plain_system):
+        raise ValueError("plain-system-file requires constraint hints and a nonempty system")
     corpus = cases(args.curated, {"train", "valid", "test"})
     by_claim = {}
     for case in corpus:
@@ -171,16 +175,29 @@ def build(args):
             if case["split"] == split:
                 rows.extend(example(case["claim"], case["body"], speaker, training_system,
                                     constraint_hints=constraint_hints, kind=case.get("kind")) for speaker in speakers)
+        source_count = len(rows)
+        if plain_system is not None:
+            plain_rows = []
+            for row in rows:
+                messages = row["messages"]
+                item = json.loads(messages[1]["content"])["items"][0]
+                body = json.loads(messages[2]["content"])["bodies"][0]["body"]
+                plain_rows.append(example(item["claim"], body, item["speaker"], plain_system))
+            rows.extend(plain_rows)
         random.Random(20260908).shuffle(rows)
         path = out / f"{split}.jsonl"
         path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows))
-        counts[split] = {"rehearsal": old_count, "curated": len(rows) - old_count, "total": len(rows)}
+        factor = 2 if plain_system is not None else 1
+        counts[split] = {"rehearsal": old_count * factor,
+                         "curated": (source_count - old_count) * factor, "total": len(rows)}
         hashes[split] = sha(path)
     manifest = {"schema_version": 1, "curated_sha256": sha(args.curated),
                 "personas_sha256": sha(cod.PROFILE_PATH), "speakers": speakers,
                 "topics": {s: sorted({c["topic"] for c in corpus if c["split"] == s}) for s in counts},
                 "counts": counts, "sha256": hashes, "renderer_system": training_system,
                 "constraint_hints": constraint_hints,
+                "plain_renderer_system": plain_system,
+                "input_modes": ["source_hints", "plain"] if plain_system is not None else ["source_hints" if constraint_hints else "plain"],
                 "policy": "authored synthetic targets plus v3 rehearsal; whole-topic split; no mined model outputs"}
     if rehearsal_limit is not None:
         manifest["policy"] = "authored synthetic targets plus frozen rehearsal; whole-topic split; no mined model outputs"
@@ -360,6 +377,8 @@ def main():
         p.add_argument("--resource-check-seconds", type=float, default=2.0)
         if name == "build":
             p.add_argument("--constraint-hints", action="store_true")
+            p.add_argument("--plain-system-file", type=Path,
+                           help="Duplicate the same sources/targets with plain inputs and this system for joint rehearsal")
             p.add_argument("--rehearsal", type=Path, required=True)
             p.add_argument("--rehearsal-train-limit", type=int)
             p.add_argument("--renderer-system-file", type=Path, default=Path(__file__).resolve().parents[1] / "configs/claim-body-v5-system.txt")

@@ -1535,6 +1535,7 @@ def body_matches_claim(body: str, label: str) -> bool:
         dialogue_matches_claim(body, label)
         and body_confirmation_states(body) == confirmation_states
         and body_numeric_relations(body) == body_numeric_relations(label)
+        and body_preserves_exclusions(body, label)
         and (not past_body or past_claim)
         and (not progressive_body or progressive_claim)
         and len(re.findall(r"[。！？!?]", body)) <= 1
@@ -1549,6 +1550,22 @@ def body_matches_claim(body: str, label: str) -> bool:
         )
         and not body.endswith(BODY_FRAGMENT_ENDINGS)
     )
+
+
+def body_preserves_exclusions(body: str, label: str) -> bool:
+    """Keep explicit excluded targets separate from other included targets."""
+    label, body = (re.sub(r"\s+", "", text) for text in (label, body))
+    boundaries = r"、,。！？!?;；はがをもで"
+    negative = r"(?:含め(?:ない|ません|ず)|含(?:まない|みません|まず)|除外(?:する|します))"
+    positive = r"(?:含め(?:る|ます|た|ました|ている|ています)|含(?:む|みます|んだ|みました|んでいる|んでいます))"
+    tail = r"(?:は|を|も)(?:[^" + boundaries + r"]*?に)?"
+    # ponytail: literal target + bounded predicates, not synonyms or arbitrary negation scope.
+    targets = re.finditer(r"([^" + boundaries + r"]+)" + tail + negative, label)
+    for match in targets:
+        mention = r"(?:^|[" + boundaries + r"]|し)" + re.escape(match[1]) + tail
+        if not re.search(mention + negative, body) or re.search(mention + positive, body):
+            return False
+    return True
 
 
 def event_portable_context(ledger: dict, personas: list[dict]) -> dict:

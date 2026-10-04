@@ -14,6 +14,71 @@ from tools.general_body_training import body_checks, build, cases, evaluate, exa
 
 
 class GeneralDiscussionTest(unittest.TestCase):
+    def test_v7_rehearses_train_only_and_keeps_fresh_dual_mode_cases_separate(self):
+        root = Path(__file__).parent
+        current = cases(root / "data/general_body_qwen35_v7/curated.json", {"train", "valid", "test"})
+        self.assertEqual({s: sum(r["split"] == s for r in current) for s in ("train", "valid", "test")},
+                         {"train": 48, "valid": 8, "test": 16})
+        self.assertEqual(len(current), len({r["claim"] for r in current}))
+        prior = cases(root / "data/general_body_qwen35_v6/curated.json", {"train", "valid", "test"})
+        self.assertEqual({r["claim"] for r in current if r["split"] == "train"}
+                         & {r["claim"] for r in prior}, {r["claim"] for r in prior if r["split"] == "train"})
+        previous = []
+        for path in root.glob("data/general_body*/curated.json"):
+            if path.parent.name != "general_body_qwen35_v7":
+                previous.extend(cases(path, {"train", "valid", "test"}))
+        fresh = {r["claim"] for r in current if r["split"] in {"valid", "test"}}
+        self.assertFalse(fresh & {r["claim"] for r in previous})
+        for split in ("valid", "test"):
+            self.assertEqual(len({r["speaker"] for r in current if r["split"] == split}), 8)
+        for row in current:
+            self.assertTrue(valid(body_checks(row["body"], row)), row["case"])
+            if row.get("counterexample"):
+                self.assertFalse(valid(body_checks(row["counterexample"], row)), row["case"])
+        system = (root / "configs/claim-body-qwen35-4b-v7-system.txt").read_text().strip()
+        self.assertTrue(system.startswith(cod.BODY_RENDERER_SYSTEM))
+
+    def test_dual_input_rehearsal_keeps_same_sources_and_targets_without_routing(self):
+        from collections import defaultdict
+        curated = Path(__file__).parent / "data/general_body_qwen35_v6/curated.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old = root / "old"
+            old.mkdir()
+            for split in ("train", "valid", "test"):
+                rows = [example(f"旧手順{split}{i}を維持する", f"旧手順{split}{i}を維持します。", "仮説構築者")
+                        for i in range(3)]
+                (old / f"{split}.jsonl").write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in rows))
+            plain = Path(__file__).parent / "configs/claim-body-qwen35-4b-v5-system.txt"
+            hinted = Path(__file__).parent / "configs/claim-body-qwen35-4b-v7-system.txt"
+            args = SimpleNamespace(curated=curated, rehearsal=old, out=root / "first",
+                                   renderer_system_file=hinted, constraint_hints=True,
+                                   plain_system_file=plain, rehearsal_train_limit=2)
+            with redirect_stdout(io.StringIO()):
+                build(args)
+                args.out = root / "second"
+                build(args)
+            self.assertEqual((root / "first/train.jsonl").read_bytes(), (root / "second/train.jsonl").read_bytes())
+            manifest = json.loads((args.out / "manifest.json").read_text())
+            self.assertEqual(manifest["input_modes"], ["source_hints", "plain"])
+            self.assertEqual(manifest["counts"]["train"]["rehearsal"], 4)
+            self.assertEqual(manifest["counts"]["train"]["curated"], 512)
+            grouped = defaultdict(list)
+            for line in (args.out / "train.jsonl").read_text().splitlines():
+                row = json.loads(line)
+                item = json.loads(row["messages"][1]["content"])["items"][0]
+                grouped[item["claim"], item["speaker"]].append(row)
+            for pair in grouped.values():
+                self.assertEqual(len(pair), 2)
+                self.assertEqual(pair[0]["messages"][2], pair[1]["messages"][2])
+                self.assertEqual({row["messages"][0]["content"] for row in pair},
+                                 {plain.read_text().strip(), hinted.read_text().strip()})
+                self.assertEqual(sum("rendering_hints" in row["messages"][1]["content"] for row in pair), 1)
+            args.out = root / "invalid"
+            args.constraint_hints = False
+            with self.assertRaisesRegex(ValueError, "requires constraint hints"):
+                build(args)
+
     def test_renderer_hints_are_source_only_and_default_contract_is_unchanged(self):
         claim = "予算は1900円までで人数は最低7名"
         old = example(claim, "TARGET_SENTINEL", "仮説構築者")
@@ -57,7 +122,7 @@ class GeneralDiscussionTest(unittest.TestCase):
             self.assertEqual(len({r["speaker"] for r in new if r["split"] == split}), 8)
         old = []
         for path in root.glob("data/general_body*/curated.json"):
-            if path.parent.name != "general_body_qwen35_v6":
+            if path.parent.name not in {"general_body_qwen35_v6", "general_body_qwen35_v7"}:
                 old.extend(cases(path, {"train", "valid", "test"}))
         old.extend(cases(root / "data/pdca_general_body/curated.json", {"valid", "test"}))
         self.assertFalse({r["claim"] for r in new} & {r["claim"] for r in old})
@@ -321,6 +386,29 @@ class GeneralDiscussionTest(unittest.TestCase):
         self.assertTrue(cod.body_matches_claim("未承認の資料は使いません。", "未承認の資料は使用しない"))
         self.assertFalse(cod.dialogue_preserves_restriction("集計結果は公開しません。", "集計結果は公開しないし未承認の資料は使用しない"))
         self.assertFalse(cod.body_matches_claim("安全な共同作業のため個人メモは保存し、集計結果は公開しません。", claim))
+
+    def test_named_exclusions_cannot_flip_or_move_to_another_target(self):
+        claim = "計測対象は傷果率17%と運搬時間23分で売上は含めない"
+        wrong = "計測対象は傷果率17%と運搬時間23分で売上は含めます。"
+        self.assertFalse(cod.body_matches_claim(wrong, claim))
+        self.assertIsNone(cod.sanitize_body_politeness(wrong, claim))
+        for body in (
+            "計測対象は傷果率17%と運搬時間23分で、売上は含めません。",
+            "計測対象は傷果率17%と運搬時間23分で、売上を含めずに計測します。",
+            "計測対象は傷果率17%と運搬時間23分で、売上は対象に含みません。",
+            "計測対象は傷果率17%と運搬時間23分で、売上は除外します。",
+        ):
+            self.assertTrue(cod.body_matches_claim(body, claim), body)
+        mixed = "見学者は人数に含めないが受付係は人数に含める"
+        self.assertTrue(cod.body_matches_claim("見学者は人数に含めませんが、受付係は人数に含めます。", mixed))
+        for body in (
+            "見学者は人数に含めますが、受付係は人数に含めません。",
+            "受付係は人数に含めます。",
+            "見学者は人数に含めませんが、見学者も人数に含めます。",
+            "臨時見学者は人数に含めませんが、見学者は人数に含めます。",
+        ):
+            self.assertFalse(cod.body_matches_claim(body, mixed), body)
+        self.assertTrue(cod.body_matches_claim("受付係も人数に含めます。", "受付係も人数に含める"))
 
     def test_rehearsal_limit_is_deterministic_and_rejects_zero(self):
         curated = Path(__file__).parent / "data/general_body_v5/curated.json"

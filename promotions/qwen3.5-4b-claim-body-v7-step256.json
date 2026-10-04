@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "status": "research_hold_claim_body_renderer",
+  "evaluated_at": "2026-10-05",
+  "promotion_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "base_model": "Qwen3.5-4B-4bit",
+  "base_weights_sha256": "5fb9acd0246866381cf8c5c354c6db1019f6498eec4ccb4f5edcc71ffeacb2db",
+  "parent": "promotions/qwen3.5-4b-claim-body-v3-step64.json",
+  "parent_weights_sha256": "409e6575eb403cea56a2d5a04bac9e1f1a0c3518b0130b0931213db44b9997c6",
+  "local_adapter_path": "/Volumes/data4/cod_model_weight/adapters/claim-body-qwen35-4b-v7/step256",
+  "adapter_bytes": 754632,
+  "adapter_weights_sha256": "a3266c5225451ef9efa21a97169a04e818bd530e92789ffe5dae8199c1665610",
+  "adapter_config_sha256": "01c2bd494468df0f2b5933c9dd6c39f7f26d2b176d56057dab1a005907faaab4",
+  "completed_iterations": 256,
+  "selected_iteration": 256,
+  "selection_frozen_before_final": true,
+  "training_enable_thinking": false,
+  "training_seconds": 1366.919,
+  "MLX_reported_peak_memory_GB": 7.554,
+  "input_modes": [
+    "plain",
+    "source_hints"
+  ],
+  "same_adapter_both_modes": true,
+  "no_runtime_router": true,
+  "source_target_pairs": 896,
+  "train_representations": 1792,
+  "default_input_changed": false,
+  "training_config": "configs/claim-body-qwen35-4b-v7.yaml",
+  "training_config_sha256": "365b9ed39dc2b41f194b13d693f75603fc8e9a7f85c3c0d4ef5cf83c74180077",
+  "plain_system_file": "configs/claim-body-qwen35-4b-v5-system.txt",
+  "plain_system_sha256": "821f795f447810d4052304b20f78c1047e04965a1eee942b9967d19819c8394f",
+  "hint_system_file": "configs/claim-body-qwen35-4b-v7-system.txt",
+  "hint_system_sha256": "6b9a8eaff783f8c6e9775aae89a0f6b42789dc0c1967a9985ddd1b98370b93cb",
+  "corpus_sha256": "ab971225e298f9f6156b902520e339f51351274b06dc319b87770384660c3bc7",
+  "development": {
+    "parent_plain": 5,
+    "parent_hints": 6,
+    "selected_plain": 6,
+    "selected_hints": 6,
+    "cases_per_mode": 8
+  },
+  "fresh16": {
+    "parent_plain": 15,
+    "parent_hints": 13,
+    "selected_plain": 15,
+    "selected_hints": 15,
+    "total": 16
+  },
+  "regressions": {
+    "parent_plain_reused": {
+      "prior_v6_16": 14,
+      "prior_v5_16": 15,
+      "confirmed8": 8,
+      "action_effect16": 14,
+      "temporal16": 14,
+      "scope16": 13,
+      "earlier12": 11,
+      "legacy15": 15
+    },
+    "selected_plain": {
+      "prior_v6_16": 16,
+      "prior_v5_16": 16,
+      "confirmed8": 8,
+      "action_effect16": 15,
+      "temporal16": 16,
+      "scope16": 13,
+      "earlier12": 11,
+      "legacy15": 15
+    },
+    "selected_hints": {
+      "prior_v6_16": 16,
+      "prior_v5_16": 15,
+      "confirmed8": 8,
+      "action_effect16": 14,
+      "temporal16": 14,
+      "scope16": 14,
+      "earlier12": 11,
+      "legacy15": 15
+    },
+    "total": 115,
+    "parent_generation_reused_not_repeated": true,
+    "plain_lost_parent_passes": [],
+    "hints_lost_parent_passes": [
+      {
+        "case": "v5_transfer_orchard:2",
+        "claim": "計測対象は傷果率17%と運搬時間23分で売上は含めない",
+        "parent_body": "計測対象は傷果率17%と運搬時間23分で売上は含めません。",
+        "selected_body": "計測対象は傷果率17%と運搬時間23分で売上は含めます。"
+      },
+      {
+        "case": "evidence_route_cards:2",
+        "claim": "搬送経路の説明カードの導入を試みている",
+        "parent_body": "搬送経路の説明カードの導入を試みています。",
+        "selected_body": "搬送経路の説明カードの導入を試んでいます。"
+      },
+      {
+        "case": "tense_equipment_boxes:1",
+        "claim": "次の貸出では表示を統一して混乱の減少を試す",
+        "parent_body": "次の貸出では表示を統一して混乱の減少を試します。",
+        "selected_body": "次の貸出では表示を統一して、混乱の減少を試みます。"
+      },
+      {
+        "case": "tense_equipment_boxes:2",
+        "claim": "貸出の表示を統一して混乱の減少を試している",
+        "parent_body": "貸出の表示を統一して混乱の減少を試しています。",
+        "selected_body": "貸出の表示を統一して、混乱を減らそうとしています。"
+      }
+    ]
+  },
+  "Base_adapter_removal_probe_identical": true,
+  "probe_scope": "one deterministic body probe",
+  "runtime_comparison": {
+    "schema_version": 1,
+    "scope": "one paired deterministic eight-persona fixture; not arbitrary future behavior or patched-validator native rerun",
+    "frozen_runtime_validator_sha256": "c3d63866f3c82b53f82bef92b878ed8ba65a9e8ffe288d05c40a5c9709ef0ebd",
+    "decision_conditions_match": true,
+    "initial_raw_identical": 8,
+    "initial_total": 8,
+    "vote_raw_identical": 8,
+    "vote_total": 8,
+    "repair_raw_identical": true,
+    "choices_identical": true,
+    "all_decision_adapters_none": true,
+    "all_selected_body_inputs_source_only": true,
+    "runs": {
+      "parent": {
+        "path": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v7_20261005/language_parent/event_debate_20261005_060122_000542.json",
+        "sha256": "3fde22ed6be29a3aa562ab223d4de6a38ad806aa6fa959f7d0aca937a4e4f7d1",
+        "runtime_seconds": 224.751,
+        "model_calls": 33,
+        "body_model_utterances": 19,
+        "public_utterances": 23,
+        "fallbacks": 4,
+        "direct_renderer_raw": 11,
+        "renderer_raw_total": 15,
+        "body_sanitizations": 0,
+        "body_schema_repairs": 0,
+        "rejected_claims": 1,
+        "hard_gate_pass": false
+      },
+      "selected": {
+        "path": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v7_20261005/language_selected/event_debate_20261005_060440_162248.json",
+        "sha256": "394f0a3b4163dbb87e28298cbdb5d70dbedd1cd347393343144a48bfa27af37b",
+        "runtime_seconds": 231.76,
+        "model_calls": 33,
+        "body_model_utterances": 23,
+        "public_utterances": 23,
+        "fallbacks": 0,
+        "direct_renderer_raw": 15,
+        "renderer_raw_total": 15,
+        "body_sanitizations": 0,
+        "body_schema_repairs": 0,
+        "rejected_claims": 1,
+        "hard_gate_pass": false
+      }
+    },
+    "whole_discussion_pass": false,
+    "manual_findings": [
+      "Base calls still misread D05 as no migration needed and D06 as safety guaranteed, although ledger does not support those interpretations",
+      "Invalid RUST_FIRST evidence D05 rejected in both runs; this preserves refusal but does not make other prose verified",
+      "Introductory agree/counterproposal text is composed by code; only the claim body is Weight-generated",
+      "Renderer text remains similar across speakers; not proof of arbitrary natural free discussion"
+    ],
+    "promotion_allowed": false
+  },
+  "frozen_generation_validator_sha256": "c3d63866f3c82b53f82bef92b878ed8ba65a9e8ffe288d05c40a5c9709ef0ebd",
+  "current_guard_validator_sha256": "d2de22f9de2b433122ae627e51575bcea49895a713e641b329f7333a8df001bd",
+  "guard_replay": {
+    "raw_outputs_checked": 489,
+    "changed_cases": 1,
+    "all_direct_scores_unchanged": true,
+    "known_failure_native_probe": {
+      "probe_sha256": "1509d4b2a49fd8ca2c209af623e0a2ffe1ae5ff03f153c885dee810af0941cf6",
+      "probe_raw": "{\"bodies\": [{\"id\": \"B01\", \"body\": \"計測対象は傷果率17%と運搬時間23分で売上は含めます。\"}]}",
+      "probe_aligned": false,
+      "probe_direct": 0
+    },
+    "not_fresh_holdout": true,
+    "full_eight_persona_native_rerun_after_patch": false
+  },
+  "hold_reasons": [
+    "Source-hints mode flips exclusion of sales into inclusion, despite per-set counts improving; never offset a meaning reversal with gains elsewhere",
+    "Source-hints mode loses four parent passes, including malformed 試んでいます and two fixed-anchor mismatches",
+    "Fresh16 remains 15/16 in both modes, with internal clause politeness/frozen-anchor mismatch",
+    "Base D05/D06 explanations remain unsupported and whole-discussion hard gate fails",
+    "Renderer bodies remain very similar across speakers; arbitrary natural free discussion not established",
+    "Named exclusion guard is bounded lexical preservation, not full semantic or arbitrary-negation proof"
+  ],
+  "audit_root": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v7_20261005",
+  "documentation": "docs/qwen35_claim_body_v7_20261005.md"
+}

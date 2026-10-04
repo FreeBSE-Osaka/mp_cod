@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "scope": "Authored fictional additions; v6 training topics may be rehearsed but no v6 dev/test answer is trained. New dev and test are whole-topic separated.",
+  "topics": [
+    {"id": "dual_train_stock", "split": "train", "examples": [
+      {"kind": "proposal", "claim": "備蓄場所の変更を試みる", "body": "備蓄場所の変更を試みます。", "required": ["変更を試みます"]},
+      {"kind": "observation", "claim": "備蓄場所の変更を試みている", "body": "備蓄場所の変更を試みています。", "required": ["変更を試みています"]},
+      {"kind": "proposal", "claim": "備蓄品の記録を確かめる", "body": "備蓄品の記録を確かめます。", "required": ["記録を確かめます"]},
+      {"kind": "observation", "claim": "備蓄品の記録を確かめた", "body": "備蓄品の記録を確かめました。", "required": ["記録を確かめました"]},
+      {"kind": "observation", "claim": "備蓄場所の変更を試みたが取出し時間の短縮は未確認", "body": "備蓄場所の変更を試みましたが、取出し時間の短縮は未確認です。", "required": ["変更を試みました", "取出し時間の短縮", "未確認"]},
+      {"kind": "observation", "claim": "備蓄場所の変更による取出し時間の短縮を確認した", "body": "備蓄場所の変更による取出し時間の短縮を確認しました。", "required": ["取出し時間の短縮", "確認しました"]},
+      {"kind": "proposal", "claim": "備蓄棚の追加費用を見積もる", "body": "備蓄棚の追加費用を見積もります。", "required": ["追加費用を見積もります"]},
+      {"kind": "condition", "claim": "備蓄の作業は上限48分で検品も時間に含める", "body": "備蓄の作業は上限48分で、検品も時間に含めます。", "required": ["上限\\s*48\\s*分", "検品も時間に含めます"]}
+    ]},
+    {"id": "dual_train_note", "split": "train", "examples": [
+      {"kind": "proposal", "claim": "付箋の配色変更を試みる", "body": "付箋の配色変更を試みます。", "required": ["配色変更を試みます"]},
+      {"kind": "observation", "claim": "付箋の配色変更を試みている", "body": "付箋の配色変更を試みています。", "required": ["配色変更を試みています"]},
+      {"kind": "observation", "claim": "付箋の配色を変えたが見落としが減ったかは未測定", "body": "付箋の配色を変えましたが、見落としが減ったかは未測定です。", "required": ["配色を変えました", "見落としが減ったか", "未測定"]},
+      {"kind": "observation", "claim": "付箋の配色変更による見落としの減少は検証済み", "body": "付箋の配色変更による見落としの減少は検証済みです。", "required": ["見落としの減少", "検証済み"]},
+      {"kind": "proposal", "claim": "付箋の残数を確かめる", "body": "付箋の残数を確かめます。", "required": ["残数を確かめます"]},
+      {"kind": "observation", "claim": "付箋の残数を確かめた", "body": "付箋の残数を確かめました。", "required": ["残数を確かめました"]},
+      {"kind": "condition", "claim": "付箋の予算は2800円までで筆記具は含めない", "body": "付箋の予算は2800円までで、筆記具は含めません。", "required": ["2800\\s*円まで", "筆記具は含めません"]},
+      {"kind": "proposal", "claim": "付箋の配色を統一し記録用紙を整理して引継ぎの混乱に備える", "body": "付箋の配色を統一し、記録用紙を整理して、引継ぎの混乱に備えます。", "required": ["配色を統一", "記録用紙を整理", "引継ぎの混乱に備えます"]}
+    ]},
+    {"id": "dual_dev_craft", "split": "valid", "examples": [
+      {"speaker": "仮説構築者", "kind": "proposal", "claim": "展示用品を共通化し収納位置を揃えて講座数の増加に備える", "body": "展示用品を共通化し、収納位置を揃えて、講座数の増加に備えます。", "required": ["展示用品を共通化", "収納位置を揃え", "講座数の増加に備えます"], "counterexample": "展示用品を共通化し、収納位置を揃えて、講座数の増加に備えました。"},
+      {"speaker": "批判的設計者", "kind": "observation", "claim": "収納位置の変更を試みているが準備時間への効果は未検証", "body": "収納位置の変更を試みていますが、準備時間への効果は未検証です。", "required": ["変更を試みています", "準備時間への効果", "未検証"], "counterexample": "収納位置の変更を試めていますが、準備時間への効果は未検証です。"},
+      {"speaker": "実証監査者", "kind": "condition", "claim": "図工用品の予算は4700円までで送料は含めない", "body": "図工用品の予算は4700円までで、送料は含めません。", "required": ["4700\\s*円まで", "送料は含めません"], "counterexample": "図工用品の予算は4700円で、送料は含めません。"},
+      {"speaker": "実行設計者", "kind": "observation", "claim": "展示用品の配色変更による分類ミスの減少を実測で確認した", "body": "展示用品の配色変更による分類ミスの減少を実測で確認しました。", "required": ["分類ミスの減少", "実測で確認しました"], "counterexample": "展示用品の配色変更による分類ミスの減少を実測で確認します。"}
+    ]},
+    {"id": "dual_dev_locker", "split": "valid", "examples": [
+      {"speaker": "利用者体験研究者", "kind": "proposal", "claim": "荷物札の表示変更を試みる", "body": "荷物札の表示変更を試みます。", "required": ["表示変更を試みます"], "counterexample": "荷物札の表示変更を試みました。"},
+      {"speaker": "資源・制約設計者", "kind": "condition", "claim": "荷物整理は1回41分までで受付も枠に含める", "body": "荷物整理は1回41分までで、受付も枠に含めます。", "required": ["1\\s*回\\s*41\\s*分まで", "受付も枠に含めます"], "counterexample": "荷物整理は1回41分で、受付も枠に含めます。"},
+      {"speaker": "長期影響評価者", "kind": "condition", "claim": "整理担当は最低7名で受付係は別に数える", "body": "整理担当は最低7名で、受付係は別に数えます。", "required": ["最低\\s*7\\s*名", "受付係は別に数えます"], "counterexample": "整理担当は7名で、受付係は別に数えます。"},
+      {"speaker": "横断的設計者", "kind": "observation", "claim": "荷物札の表示を変えたが取違いへの効果は未確認", "body": "荷物札の表示を変えましたが、取違いへの効果は未確認です。", "required": ["表示を変えました", "取違いへの効果", "未確認"], "counterexample": "荷物札の表示を変え、取違いの減少は検証済みです。"}
+    ]},
+    {"id": "dual_transfer_lecture", "split": "test", "examples": [
+      {"speaker": "仮説構築者", "kind": "proposal", "claim": "映写機を共通化し設置場所を整理して講演回数の増加に備える", "body": "映写機を共通化し、設置場所を整理して、講演回数の増加に備えます。", "required": ["映写機を共通化", "設置場所を整理", "講演回数の増加に備えます"], "counterexample": "映写機を共通化し、設置場所を整理して、講演回数の増加に備えています。"},
+      {"speaker": "批判的設計者", "kind": "observation", "claim": "映写機の配置変更を試みている", "body": "映写機の配置変更を試みています。", "required": ["配置変更を試みています"], "counterexample": "映写機の配置変更を試んでいます。"},
+      {"speaker": "実証監査者", "kind": "condition", "claim": "講演資料の予算は7600円までで設備費は含めない", "body": "講演資料の予算は7600円までで、設備費は含めません。", "required": ["7600\\s*円まで", "設備費は含めません"], "counterexample": "講演資料の予算は7600円で、設備費は含めません。"},
+      {"speaker": "実行設計者", "kind": "observation", "claim": "映写機の配置変更による設置時間の短縮を確認した", "body": "映写機の配置変更による設置時間の短縮を確認しました。", "required": ["設置時間の短縮", "確認しました"], "counterexample": "映写機の配置変更による設置時間の短縮を確認します。"}
+    ]},
+    {"id": "dual_transfer_dye", "split": "test", "examples": [
+      {"speaker": "利用者体験研究者", "kind": "proposal", "claim": "染色の手順変更を試みる", "body": "染色の手順変更を試みます。", "required": ["手順変更を試みます"], "counterexample": "染色の手順変更を試みました。"},
+      {"speaker": "資源・制約設計者", "kind": "condition", "claim": "染色の実習は1回49分までで器具点検も枠に含める", "body": "染色の実習は1回49分までで、器具点検も枠に含めます。", "required": ["1\\s*回\\s*49\\s*分まで", "器具点検も枠に含めます"], "counterexample": "染色の実習は1回49分で、器具点検も枠に含めます。"},
+      {"speaker": "長期影響評価者", "kind": "condition", "claim": "実習担当は11名以上で見学者は人数に含めない", "body": "実習担当は11名以上で、見学者は人数に含めません。", "required": ["11\\s*名以上", "見学者は人数に含めません"], "counterexample": "実習担当は11名で、見学者は人数に含めません。"},
+      {"speaker": "横断的設計者", "kind": "observation", "claim": "染色手順を変更したが準備時間への効果は未測定", "body": "染色手順を変更しましたが、準備時間への効果は未測定です。", "required": ["手順を変更しました", "準備時間への効果", "未測定"], "counterexample": "染色手順を変更し、準備時間の短縮を確認しました。"}
+    ]},
+    {"id": "dual_transfer_bicycle_parking", "split": "test", "examples": [
+      {"speaker": "仮説構築者", "kind": "proposal", "claim": "駐輪札を統一し確認窓口を増やして申込者の増加に備える", "body": "駐輪札を統一し、確認窓口を増やして、申込者の増加に備えます。", "required": ["駐輪札を統一", "確認窓口を増や", "申込者の増加に備えます"], "counterexample": "駐輪札を統一し、確認窓口を増やして、申込者の増加に備えました。"},
+      {"speaker": "批判的設計者", "kind": "observation", "claim": "駐輪札の配色変更を試みているが確認漏れへの効果は未検証", "body": "駐輪札の配色変更を試みていますが、確認漏れへの効果は未検証です。", "required": ["配色変更を試みています", "確認漏れへの効果", "未検証"], "counterexample": "駐輪札の配色変更を試めていますが、確認漏れへの効果は未検証です。"},
+      {"speaker": "実証監査者", "kind": "condition", "claim": "駐輪用品の予算は8200円以内で事務費は含めない", "body": "駐輪用品の予算は8200円以内で、事務費は含めません。", "required": ["8200\\s*円以内", "事務費は含めません"], "counterexample": "駐輪用品の予算は8200円で、事務費は含めません。"},
+      {"speaker": "実行設計者", "kind": "observation", "claim": "駐輪札の表示変更による確認漏れの減少を実測で確認した", "body": "駐輪札の表示変更による確認漏れの減少を実測で確認しました。", "required": ["確認漏れの減少", "実測で確認しました"], "counterexample": "駐輪札の表示変更による確認漏れの減少は未確認です。"}
+    ]},
+    {"id": "dual_transfer_model_exhibit", "split": "test", "examples": [
+      {"speaker": "利用者体験研究者", "kind": "proposal", "claim": "模型の収納方法の変更を試みる", "body": "模型の収納方法の変更を試みます。", "required": ["収納方法の変更を試みます"], "counterexample": "模型の収納方法の変更を試みています。"},
+      {"speaker": "資源・制約設計者", "kind": "condition", "claim": "模型の実演は1回57分までで部品点検も時間に含める", "body": "模型の実演は1回57分までで、部品点検も時間に含めます。", "required": ["1\\s*回\\s*57\\s*分まで", "部品点検も時間に含めます"], "counterexample": "模型の実演は1回57分で、部品点検も時間に含めます。"},
+      {"speaker": "長期影響評価者", "kind": "condition", "claim": "展示担当は最低12人で運搬係は別に数える", "body": "展示担当は最低12人で、運搬係は別に数えます。", "required": ["最低\\s*12\\s*人", "運搬係は別に数えます"], "counterexample": "展示担当は12人で、運搬係は別に数えます。"},
+      {"speaker": "横断的設計者", "kind": "observation", "claim": "模型の収納方法を変更したが点検時間の短縮は未確認", "body": "模型の収納方法を変更しましたが、点検時間の短縮は未確認です。", "required": ["収納方法を変更しました", "点検時間の短縮", "未確認"], "counterexample": "模型の収納方法を変更し、点検時間の短縮は検証済みです。"}
+    ]}
+  ]
+}
