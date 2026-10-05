@@ -1,0 +1,280 @@
+{
+  "schema_version": 1,
+  "status": "research_hold_claim_body_renderer",
+  "evaluated_at": "2026-10-05",
+  "promotion_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "base_model": "Qwen3.5-4B-4bit",
+  "base_weights_sha256": "5fb9acd0246866381cf8c5c354c6db1019f6498eec4ccb4f5edcc71ffeacb2db",
+  "parent": "promotions/qwen3.5-4b-claim-body-v7-step256.json",
+  "parent_weights_sha256": "a3266c5225451ef9efa21a97169a04e818bd530e92789ffe5dae8199c1665610",
+  "local_adapter_path": "/Volumes/data4/cod_model_weight/adapters/claim-body-qwen35-4b-v8/step144",
+  "adapter_bytes": 754632,
+  "adapter_weights_sha256": "2fa4b4034e4910912532c0c707e8d1a0e7dc649382157f9d4cb095db9203d361",
+  "adapter_config_sha256": "65b72a0784cdd9c3fcdce69375e290e0ca06b36f9ed3eed4bbefb8475eece4b5",
+  "completed_iterations": 192,
+  "selected_iteration": 144,
+  "selection_frozen_before_final": true,
+  "training_seconds": 2645.276,
+  "MLX_reported_peak_memory_GB": 7.544,
+  "training_enable_thinking": false,
+  "same_adapter_both_modes": true,
+  "no_runtime_router": true,
+  "default_input_changed": false,
+  "train_source_pairs": 1280,
+  "train_representations": 2560,
+  "training_config": "configs/claim-body-qwen35-4b-v8.yaml",
+  "training_config_sha256": "66b1c1be4a2b424907e58cbd3c7e18721afb17e5a10a241db5839bb128bc03e1",
+  "corpus_sha256": "0593da99ad96f7af102ba5d0a7bffe5947fa8f358242b8ef973690f2c27eb19c",
+  "development": {
+    "parent_plain": 7,
+    "parent_hints": 7,
+    "selected_plain": 8,
+    "selected_hints": 8,
+    "total_per_mode": 8
+  },
+  "fresh16": {
+    "parent_plain": 12,
+    "parent_hints": 13,
+    "selected_plain": 16,
+    "selected_hints": 15,
+    "total": 16
+  },
+  "regressions": {
+    "parent_plain_regressions_reused.json": {
+      "prior_v7_16": 15,
+      "prior_v6_16": 16,
+      "prior_v5_16": 16,
+      "confirmed8": 8,
+      "action_effect16": 15,
+      "temporal16": 16,
+      "scope16": 13,
+      "earlier12": 11,
+      "legacy15": 15
+    },
+    "parent_hints_regressions_reused.json": {
+      "prior_v7_16": 15,
+      "prior_v6_16": 16,
+      "prior_v5_16": 15,
+      "confirmed8": 8,
+      "action_effect16": 14,
+      "temporal16": 14,
+      "scope16": 14,
+      "earlier12": 11,
+      "legacy15": 15
+    },
+    "original_plain_regressions_reused.json": {
+      "prior_v7_16": 15,
+      "prior_v6_16": 14,
+      "prior_v5_16": 15,
+      "confirmed8": 8,
+      "action_effect16": 14,
+      "temporal16": 14,
+      "scope16": 13,
+      "earlier12": 11,
+      "legacy15": 15
+    },
+    "selected_plain_regressions.json": {
+      "prior_v7_16": 15,
+      "prior_v6_16": 16,
+      "prior_v5_16": 16,
+      "confirmed8": 8,
+      "action_effect16": 15,
+      "temporal16": 15,
+      "scope16": 14,
+      "earlier12": 11,
+      "legacy15": 15
+    },
+    "selected_hints_regressions.json": {
+      "prior_v7_16": 15,
+      "prior_v6_16": 16,
+      "prior_v5_16": 15,
+      "confirmed8": 8,
+      "action_effect16": 15,
+      "temporal16": 14,
+      "scope16": 14,
+      "earlier12": 11,
+      "legacy15": 15
+    }
+  },
+  "old_case_count": 131,
+  "parent_outputs_reused_not_regenerated": true,
+  "case_comparisons": {
+    "plain": {
+      "parent_plain": {
+        "lost_parent_passes": [
+          {
+            "case": "tense_walk:3",
+            "claim": "経路の変更は完了したが負担が減ったかは未確認",
+            "parent_body": "経路の変更は完了しましたが、負担が減ったかは未確認です。",
+            "selected_body": "経路の変更は完了しましたが、負担が減ったかどうかは未確認です。"
+          }
+        ],
+        "gained_parent_failures": [
+          "scope_music_room:2"
+        ],
+        "case_nonregression": false
+      },
+      "parent_hints": {
+        "lost_parent_passes": [
+          {
+            "case": "tense_walk:3",
+            "claim": "経路の変更は完了したが負担が減ったかは未確認",
+            "parent_body": "経路の変更は完了しましたが、負担が減ったかは未確認です。",
+            "selected_body": "経路の変更は完了しましたが、負担が減ったかどうかは未確認です。"
+          }
+        ],
+        "gained_parent_failures": [
+          "v5_transfer_orchard:2",
+          "evidence_route_cards:2",
+          "tense_equipment_boxes:1",
+          "tense_equipment_boxes:2"
+        ],
+        "case_nonregression": false
+      },
+      "original_plain": {
+        "lost_parent_passes": [],
+        "gained_parent_failures": [
+          "hints_transfer_science_club:4",
+          "hints_transfer_rehearsal:4",
+          "v5_transfer_recording:2",
+          "evidence_route_cards:4",
+          "tense_walk:2",
+          "scope_music_room:2"
+        ],
+        "case_nonregression": true
+      }
+    },
+    "hints": {
+      "parent_plain": {
+        "lost_parent_passes": [
+          {
+            "case": "v5_transfer_orchard:2",
+            "claim": "計測対象は傷果率17%と運搬時間23分で売上は含めない",
+            "parent_body": "計測対象は傷果率17%と運搬時間23分で売上は含めません。",
+            "selected_body": "計測対象は傷果率17%と運搬時間23分で売上は含めます。"
+          },
+          {
+            "case": "tense_walk:3",
+            "claim": "経路の変更は完了したが負担が減ったかは未確認",
+            "parent_body": "経路の変更は完了しましたが、負担が減ったかは未確認です。",
+            "selected_body": "経路の変更は完了しましたが、負担が減ったかについては未確認です。"
+          },
+          {
+            "case": "tense_equipment_boxes:2",
+            "claim": "貸出の表示を統一して混乱の減少を試している",
+            "parent_body": "貸出の表示を統一して混乱の減少を試しています。",
+            "selected_body": "貸出の表示を統一して、混乱の減少を試みています。"
+          }
+        ],
+        "gained_parent_failures": [
+          "scope_music_room:2"
+        ],
+        "case_nonregression": false
+      },
+      "parent_hints": {
+        "lost_parent_passes": [
+          {
+            "case": "tense_walk:3",
+            "claim": "経路の変更は完了したが負担が減ったかは未確認",
+            "parent_body": "経路の変更は完了しましたが、負担が減ったかは未確認です。",
+            "selected_body": "経路の変更は完了しましたが、負担が減ったかについては未確認です。"
+          }
+        ],
+        "gained_parent_failures": [
+          "evidence_route_cards:2",
+          "tense_equipment_boxes:1"
+        ],
+        "case_nonregression": false
+      },
+      "original_plain": {
+        "lost_parent_passes": [
+          {
+            "case": "v5_transfer_orchard:2",
+            "claim": "計測対象は傷果率17%と運搬時間23分で売上は含めない",
+            "parent_body": "計測対象は傷果率17%と運搬時間23分で売上は含めません。",
+            "selected_body": "計測対象は傷果率17%と運搬時間23分で売上は含めます。"
+          },
+          {
+            "case": "tense_equipment_boxes:2",
+            "claim": "貸出の表示を統一して混乱の減少を試している",
+            "parent_body": "貸出の表示を統一して混乱の減少を試しています。",
+            "selected_body": "貸出の表示を統一して、混乱の減少を試みています。"
+          }
+        ],
+        "gained_parent_failures": [
+          "hints_transfer_science_club:4",
+          "hints_transfer_rehearsal:4",
+          "v5_transfer_recording:2",
+          "evidence_route_cards:4",
+          "tense_walk:2",
+          "scope_music_room:2"
+        ],
+        "case_nonregression": false
+      }
+    }
+  },
+  "Base_adapter_removal_probe_identical": true,
+  "probe_scope": "one deterministic body probe",
+  "runtime_comparison": {
+    "schema_version": 1,
+    "scope": "one paired deterministic native fixture; not all future behavior",
+    "validator_sha256": "d2de22f9de2b433122ae627e51575bcea49895a713e641b329f7333a8df001bd",
+    "decision_conditions_match": true,
+    "initial_raw_identical": 8,
+    "initial_total": 8,
+    "vote_raw_identical": 8,
+    "vote_total": 8,
+    "repair_raw_identical": true,
+    "all_decision_adapters_none": true,
+    "choices_identical": true,
+    "all_selected_body_inputs_source_only": true,
+    "runs": {
+      "parent": {
+        "path": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v8_20261005/language_parent/event_debate_20261005_225302_834454.json",
+        "sha256": "c1acc72286c9ee778be1b00053d82a2928e7bf38aa60374efadcfc69b9076c80",
+        "runtime_seconds": 316.206,
+        "model_calls": 33,
+        "public_utterances": 23,
+        "body_model_utterances": 23,
+        "fallbacks": 0,
+        "direct_raw_bodies": 15,
+        "raw_bodies_total": 15,
+        "body_sanitizations": 0,
+        "body_schema_repairs": 0,
+        "rejected_claims": 1,
+        "hard_gate_pass": false
+      },
+      "selected": {
+        "path": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v8_20261005/language_selected/event_debate_20261005_225823_514481.json",
+        "sha256": "d66a9da21e9af9344538edb2a55af3ff75075bd65cbdd55eb5e29a3cacfa9c88",
+        "runtime_seconds": 325.414,
+        "model_calls": 33,
+        "public_utterances": 23,
+        "body_model_utterances": 23,
+        "fallbacks": 0,
+        "direct_raw_bodies": 15,
+        "raw_bodies_total": 15,
+        "body_sanitizations": 0,
+        "body_schema_repairs": 0,
+        "rejected_claims": 1,
+        "hard_gate_pass": false
+      }
+    },
+    "whole_discussion_pass": false,
+    "promotion_allowed": false
+  },
+  "validator_sha256": "d2de22f9de2b433122ae627e51575bcea49895a713e641b329f7333a8df001bd",
+  "raw_outputs_rechecked": 799,
+  "hold_reasons": [
+    "Sales inclusion/exclusion still inverted in source-hints mode; guard rejects but Weight does not fix",
+    "Progressive trial changes to past in an old bicycle-parking case in both modes",
+    "New16 source-hints output drops trial intent in one gardening case",
+    "Strict case-level nonregression fails versus immediate parent; no frozen-score rewriting",
+    "Base D05/D06 source explanations remain unsupported; whole-discussion hard gate fails",
+    "Bodies are similar across roles; full free natural discussion not established"
+  ],
+  "audit_root": "/Volumes/data4/cod_model_weight/evaluations/claim-body-qwen35-4b-v8_20261005",
+  "documentation": "docs/qwen35_claim_body_v8_20261005.md"
+}

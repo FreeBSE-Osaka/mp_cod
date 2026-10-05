@@ -273,6 +273,8 @@ v4は行為と効果確認を区別する教材で追加学習し、step16（約
 
 同日のQwen3.5本文v7は、同じ正解を通常・補助入力の両方で復習し、256ステップを正常完走しました。step256（約0.755MB）を最終生成前に固定し、新規16問は通常15/16同点・補助13/16→15/16。旧115例は通常104/115→110/115で親の合格を全て保持、補助107/115で集計上改善しましたが、除外条件反転など親の合格4例が後退し **研究HOLD・既定置換なし** です。8人実走はWeight本文19/23→23/23・代替0、Baseの独立判断・投票rawは一致したものの、根拠誤読で討論全体は不合格。明示的な対象の包含・除外を共通guardで検査し、凍結rawを別ファイルへ再採点しました。[v7の学習と全検証](docs/qwen35_claim_body_v7_20261005.md)、[SHAと未達理由](promotions/qwen3.5-4b-claim-body-v7-step256.json)を参照してください。
 
+Qwen3.5本文v8は、包含・除外、時制、確認状態、修飾節の対照教材で親v7から192ステップを学習し、step144を最終生成前に固定しました。新規16問は通常12/16→16/16、補助13/16→15/16。旧131例は通常125/131同点・補助122/131→123/131ですが、包含反転と個別後退が残り **研究HOLD・既定置換なし** です。親・候補の8人実走は本文23/23・代替0を維持、判断・投票rawは一致しましたが、Baseの根拠誤読で討論全体は不合格。全799出力を再採点し、固定基準や元rawを変更していません。[v8学習と全検証](docs/qwen35_claim_body_v8_20261005.md)、[SHAと未達理由](promotions/qwen3.5-4b-claim-body-v8-step144.json)を参照してください。
+
 Natural specialist v5ではQwen3-14B teacherから実行役event-agreeの直接合格自然文を3件得ましたが、親step160からの専用継続はholdout 1/3のまま、Base specialistは0/3でした。move別few-shotもobjectへ賛同例が混入したためruntimeへ採用せず、全結果を [General Dialogue natural specialist v5実験記録](docs/general_dialogue_weight_v5_20260904.md) に残しています。
 
 Natural specialists v6では12の異なるtopicから仮説object 12件・実行event-agree 13件を集め、人格・phase・move別LoRAとrepair LoRAを評価しました。数値創作を拒否するgrounding guardは採用しましたが、全Weightが未学習holdoutで親同等以下だったため非昇格です。全target、評価、SHA、停止理由は [General Dialogue natural specialists v6実験記録](docs/general_dialogue_weight_v6_20260904.md) にあります。

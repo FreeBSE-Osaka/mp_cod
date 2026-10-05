@@ -14,6 +14,31 @@ from tools.general_body_training import body_checks, build, cases, evaluate, exa
 
 
 class GeneralDiscussionTest(unittest.TestCase):
+    def test_v8_contrast_pairs_are_authored_and_previous_final_answers_are_not_trained(self):
+        root = Path(__file__).parent
+        path = root / "data/general_body_qwen35_v8/curated.json"
+        current = cases(path, {"train", "valid", "test"})
+        self.assertEqual({s: sum(r["split"] == s for r in current) for s in ("train", "valid", "test")},
+                         {"train": 96, "valid": 8, "test": 16})
+        self.assertEqual(len(current), len({r["claim"] for r in current}))
+        prior = cases(root / "data/general_body_qwen35_v7/curated.json", {"train", "valid", "test"})
+        train = {r["claim"] for r in current if r["split"] == "train"}
+        self.assertEqual(train & {r["claim"] for r in prior},
+                         {r["claim"] for r in prior if r["split"] == "train"})
+        previous = []
+        for old in root.glob("data/general_body*/curated.json"):
+            if old != path:
+                previous.extend(cases(old, {"train", "valid", "test"}))
+        self.assertFalse(train & {r["claim"] for r in previous if r["split"] in {"valid", "test"}})
+        fresh = {r["claim"] for r in current if r["split"] in {"valid", "test"}}
+        self.assertFalse(fresh & {r["claim"] for r in previous})
+        for split in ("valid", "test"):
+            self.assertEqual(len({r["speaker"] for r in current if r["split"] == split}), 8)
+        for row in current:
+            self.assertTrue(valid(body_checks(row["body"], row)), row["case"])
+            if row.get("counterexample"):
+                self.assertFalse(valid(body_checks(row["counterexample"], row)), row["case"])
+
     def test_v7_rehearses_train_only_and_keeps_fresh_dual_mode_cases_separate(self):
         root = Path(__file__).parent
         current = cases(root / "data/general_body_qwen35_v7/curated.json", {"train", "valid", "test"})
@@ -122,7 +147,7 @@ class GeneralDiscussionTest(unittest.TestCase):
             self.assertEqual(len({r["speaker"] for r in new if r["split"] == split}), 8)
         old = []
         for path in root.glob("data/general_body*/curated.json"):
-            if path.parent.name not in {"general_body_qwen35_v6", "general_body_qwen35_v7"}:
+            if path.parent.name not in {"general_body_qwen35_v6", "general_body_qwen35_v7", "general_body_qwen35_v8"}:
                 old.extend(cases(path, {"train", "valid", "test"}))
         old.extend(cases(root / "data/pdca_general_body/curated.json", {"valid", "test"}))
         self.assertFalse({r["claim"] for r in new} & {r["claim"] for r in old})
