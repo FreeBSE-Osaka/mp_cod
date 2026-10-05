@@ -14,6 +14,28 @@ from tools.general_body_training import body_checks, build, cases, evaluate, exa
 
 
 class GeneralDiscussionTest(unittest.TestCase):
+    def test_trial_tense_survives_internal_unconfirmed_clauses_without_anchors(self):
+        for stem, progressive, past in (("変更を試み", "変更を試みています", "変更を試みました"),
+                                        ("短縮を試し", "短縮を試しています", "短縮を試しました")):
+            current = stem + "ているが負担への効果は未確認"
+            completed = stem + "たが負担への効果は未確認"
+            current_body = progressive + "が、負担への効果は未確認です。"
+            past_body = past + "が、負担への効果は未確認です。"
+            self.assertTrue(cod.body_matches_claim(current_body, current))
+            self.assertTrue(cod.body_matches_claim(past_body, completed))
+            self.assertFalse(cod.body_matches_claim(past_body, current))
+            self.assertFalse(cod.body_matches_claim(current_body, completed))
+            self.assertIsNone(cod.sanitize_body_politeness(past_body, current))
+        self.assertEqual(cod.body_trial_states("短縮を試みています。"),
+                         cod.body_trial_states("短縮を試している"))
+        self.assertTrue(cod.body_matches_claim("貸出の表示を統一して、混乱の減少を試みています。",
+                                              "貸出の表示を統一して混乱の減少を試している"))
+        self.assertEqual(cod.body_trial_states("変更を試みていないが効果は未確認"), {"negated"})
+        self.assertEqual(cod.body_trial_states("短縮は試さない"), {"negated"})
+        self.assertEqual(cod.body_trial_states("短縮は試しません"), {"negated"})
+        self.assertFalse(cod.body_matches_claim("短縮を試していますが、効果は未確認です。",
+                                               "短縮を試していないが効果は未確認"))
+
     def test_v8_contrast_pairs_are_authored_and_previous_final_answers_are_not_trained(self):
         root = Path(__file__).parent
         path = root / "data/general_body_qwen35_v8/curated.json"

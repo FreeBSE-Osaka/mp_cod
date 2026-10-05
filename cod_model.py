@@ -1526,6 +1526,7 @@ def body_input_item(item_id: str, speaker: str, claim: str, *, constraint_hints:
 
 def body_matches_claim(body: str, label: str) -> bool:
     confirmation_states = body_confirmation_states(label)
+    trial_states = body_trial_states(label)
     negative_conditions = ("なければ", "ない場合", "ないなら", "ないとき", "ない時")
     past_body = body.rstrip("。！？!?").endswith(("ました", "でした"))
     past_claim = label.rstrip("。！？!?").endswith(("た", "んだ", "いだ", "済み", "完了"))
@@ -1536,6 +1537,7 @@ def body_matches_claim(body: str, label: str) -> bool:
         and body_confirmation_states(body) == confirmation_states
         and body_numeric_relations(body) == body_numeric_relations(label)
         and body_preserves_exclusions(body, label)
+        and (not trial_states or body_trial_states(body) == trial_states)
         and (not past_body or past_claim)
         and (not progressive_body or progressive_claim)
         and len(re.findall(r"[。！？!?]", body)) <= 1
@@ -1550,6 +1552,24 @@ def body_matches_claim(body: str, label: str) -> bool:
         )
         and not body.endswith(BODY_FRAGMENT_ENDINGS)
     )
+
+
+def body_trial_states(text: str) -> set[str]:
+    """Preserve explicit trial tense even before an unconfirmed-effect clause."""
+    text = re.sub(r"\s+", "", text)
+    # ponytail: two explicit trial verbs, not subject binding or arbitrary negation scope.
+    forms = r"試(?:みて|して)い(?:ない|ません)|試(?:み(?:ない|ません|ず)|さ(?:ない|ず)|しません)"
+    text, negations = re.subn(forms, " ", text)
+    states = {"negated"} if negations else set()
+    for state, pattern in (
+        ("progressive", r"試(?:みて|して)(?:いる|います|おります)"),
+        ("past", r"試(?:み|し)(?:た|ました)"),
+        ("prospective", r"試(?:みる|みます|す|します)"),
+    ):
+        text, count = re.subn(pattern, " ", text)
+        if count:
+            states.add(state)
+    return states
 
 
 def body_preserves_exclusions(body: str, label: str) -> bool:

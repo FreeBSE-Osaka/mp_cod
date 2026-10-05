@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scope": "Authored unseen diagnostic only; not SFT data and not a promotion holdout. Frozen before generation. Known failure controls are separately identified.",
+  "topics": [
+    {"id": "input_diag_transcription", "split": "test", "examples": [
+      {"speaker": "仮説構築者", "kind": "condition", "claim": "転記の計測は誤記率12%と所要時間29分で紙代は含めない", "body": "転記の計測は誤記率12%と所要時間29分で、紙代は含めません。", "required": ["誤記率12%", "所要時間29分", "紙代は含めません"], "counterexample": "転記の計測は誤記率12%と所要時間29分で、紙代は含めます。"},
+      {"speaker": "批判的設計者", "kind": "condition", "claim": "転記の計測は誤記率12%と所要時間29分で紙代も含める", "body": "転記の計測は誤記率12%と所要時間29分で、紙代も含めます。", "required": ["誤記率12%", "所要時間29分", "紙代も含めます"], "counterexample": "転記の計測は誤記率12%と所要時間29分で、紙代は含めません。"},
+      {"speaker": "実証監査者", "kind": "observation", "claim": "記入欄の変更を試みているが誤記への効果は未確認", "body": "記入欄の変更を試みていますが、誤記への効果は未確認です。", "required": ["変更を試みています", "誤記への効果", "未確認"], "counterexample": "記入欄の変更を試みましたが、誤記への効果は未確認です。"},
+      {"speaker": "実行設計者", "kind": "observation", "claim": "記入欄の変更を試みたが誤記への効果は未確認", "body": "記入欄の変更を試みましたが、誤記への効果は未確認です。", "required": ["変更を試みました", "誤記への効果", "未確認"], "counterexample": "記入欄の変更を試みていますが、誤記への効果は未確認です。"}
+    ]},
+    {"id": "input_diag_polishing", "split": "test", "examples": [
+      {"speaker": "利用者体験研究者", "kind": "condition", "claim": "研磨の計測は不良率14%と測定時間31分で油代は含めない", "body": "研磨の計測は不良率14%と測定時間31分で、油代は含めません。", "required": ["不良率14%", "測定時間31分", "油代は含めません"], "counterexample": "研磨の計測は不良率14%と測定時間31分で、油代は含めます。"},
+      {"speaker": "資源・制約設計者", "kind": "condition", "claim": "研磨の計測は不良率14%と測定時間31分で油代も含める", "body": "研磨の計測は不良率14%と測定時間31分で、油代も含めます。", "required": ["不良率14%", "測定時間31分", "油代も含めます"], "counterexample": "研磨の計測は不良率14%と測定時間31分で、油代は含めません。"},
+      {"speaker": "長期影響評価者", "kind": "observation", "claim": "研磨手順の変更を試みているが摩耗への効果は未検証", "body": "研磨手順の変更を試みていますが、摩耗への効果は未検証です。", "required": ["変更を試みています", "摩耗への効果", "未検証"], "counterexample": "研磨手順の変更を試みましたが、摩耗への効果は未検証です。"},
+      {"speaker": "横断的設計者", "kind": "observation", "claim": "研磨手順の変更を試みたが摩耗への効果は未検証", "body": "研磨手順の変更を試みましたが、摩耗への効果は未検証です。", "required": ["変更を試みました", "摩耗への効果", "未検証"], "counterexample": "研磨手順の変更を試みていますが、摩耗への効果は未検証です。"}
+    ]}
+  ]
+}
