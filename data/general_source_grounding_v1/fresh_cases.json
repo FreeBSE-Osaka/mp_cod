@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "scope": "Authored unseen diagnostic contrasts only, never SFT targets. Positive and negative source states must be judged separately; silence, abstention and label fallback are not factual coverage.",
+  "families": [
+    {
+      "id": "cart",
+      "topic": "架空の工房で、手押し搬送と電動搬送のどちらを先に試すか。これは現実の導入指示ではない。",
+      "personas": ["hypothesis_builder", "falsifier", "empirical_auditor", "pragmatic_operator"],
+      "data": [
+        {"id": "D31", "text": "この架空見積では試作に手押し搬送は2日、電動搬送は4日を要し、両方とも8日の期限内に収まる。"},
+        {"id": "D47", "text": "STATE_COST"},
+        {"id": "D19", "text": "STATE_NOISE"},
+        {"id": "D08", "text": "手押し搬送は担当者2人、電動搬送は担当者1人を要し、現時点で担当者2人を確保できる。"}
+      ],
+      "claims": [
+        {"code": "HAND_STAGE", "kind": "proposal", "label": "手押し搬送を先に試し将来の電動化は追加課題として残す", "supported_by": ["D31", "D47", "D19", "D08"], "contradicts": ["POWER_STAGE"]},
+        {"code": "POWER_STAGE", "kind": "proposal", "label": "電動搬送を先に試し試作工数と運用条件を評価する", "supported_by": ["D31", "D47", "D19", "D08"], "contradicts": ["HAND_STAGE"]}
+      ],
+      "states": {
+        "negative": {
+          "D47": "電動台車の追加導入に必要な費用は、まだ計算されていない。費用が掛からないことは意味しない。",
+          "D19": "音の測定はまだ終わっておらず、2方式の静かさの違いを確かめていない。",
+          "review_requirements": ["追加費用をゼロまたは不要と確定しない", "どちらが静かかを確認済みとして断定しない", "D47とD19の未確認状態を述べた数と、省略数を分ける"]
+        },
+        "positive": {
+          "D47": "電動台車の追加導入に必要な費用は計算を終え、追加費用は0円と確定している。",
+          "D19": "音の測定を終え、電動搬送は手押し搬送より7dB静かなことを確認した。",
+          "review_requirements": ["追加費用0円の確認を未算定へ戻さない", "電動が7dB静かという比較方向と確認状態を保つ", "D47とD19の確認済み状態を述べた数と、省略数を分ける"]
+        }
+      }
+    },
+    {
+      "id": "umbrella",
+      "topic": "架空の短時間外出で、軽い雨具を持つか、荷物を減らして雨具なしで戻るか。実際の天気予報ではない。",
+      "personas": ["user_advocate", "resource_planner", "long_horizon_reviewer", "integrative_designer"],
+      "data": [
+        {"id": "D13", "text": "この架空ケースの経路には屋根がなく、途中で店へ寄る予定もない。"},
+        {"id": "D62", "text": "STATE_RAIN"},
+        {"id": "D29", "text": "STATE_PROTECTION"},
+        {"id": "D47", "text": "外出の予定は18分で、普通傘は460g、折りたたみ傘は160gである。"}
+      ],
+      "claims": [
+        {"code": "LIGHT_UMBRELLA", "kind": "proposal", "label": "軽い折りたたみ傘を持ち濡れるリスクと荷物を両方抑える", "supported_by": ["D13", "D62", "D29", "D47"], "contradicts": ["NO_UMBRELLA"]},
+        {"code": "NO_UMBRELLA", "kind": "proposal", "label": "雨具を持たず短時間で戻り荷物を減らす", "supported_by": ["D13", "D62", "D29", "D47"], "contradicts": ["LIGHT_UMBRELLA"]}
+      ],
+      "states": {
+        "negative": {
+          "D62": "雲の動きから雨になるかどうかも、雨の開始時刻も、今の資料では決められない。",
+          "D29": "普通傘と折りたたみ傘の濡れにくさを比べる実験は、まだ行っていない。",
+          "review_requirements": ["18分なら雨を避けられると保証しない", "軽い傘が同じ保護効果を確認済みとはしない", "D62とD29の不確定状態を述べた数と、省略数を分ける"]
+        },
+        "positive": {
+          "D62": "この架空演習では雨の開始が出発5分後、終了が出発45分後と固定され、18分の外出は降雨と重なる。",
+          "D29": "同じ条件で濡れにくさを比べる実験を終え、この試験では折りたたみ傘が普通傘と同等に濡れを防いだ。",
+          "review_requirements": ["外出と雨が重なるという固定条件を不明へ戻さない", "この試験内の同等という範囲と確認状態を保つ", "D62とD29を正確に述べた数と、省略数を分ける"]
+        }
+      }
+    }
+  ]
+}

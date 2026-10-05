@@ -9,6 +9,64 @@ import cod_model
 
 
 class CodModelTest(unittest.TestCase):
+    def test_source_grounding_diagnostic_has_paired_states_and_all_general_personas(self):
+        payload = json.loads((Path(__file__).parent / "data/general_source_grounding_v1/fresh_cases.json").read_text())
+        known = {p["id"] for p in cod_model.load_domains()["general"]["personas"]}
+        seen = set()
+        for family in payload["families"]:
+            self.assertEqual(set(family["states"]), {"negative", "positive"})
+            ids = {row["id"] for row in family["data"]}
+            self.assertEqual(len(ids), len(family["data"]))
+            self.assertNotIn("D05", ids)
+            self.assertNotIn("D06", ids)
+            self.assertFalse(seen & set(family["personas"]))
+            seen.update(family["personas"])
+            self.assertEqual(len(family["personas"]), 4)
+            negative = {k:v for k,v in family["states"]["negative"].items() if k != "review_requirements"}
+            positive = {k:v for k,v in family["states"]["positive"].items() if k != "review_requirements"}
+            self.assertEqual(negative.keys(), positive.keys())
+            self.assertEqual(len(negative), 2)
+            self.assertLessEqual(set(negative), ids)
+            self.assertTrue(all(negative[k] != positive[k] for k in negative))
+            for claim in family["claims"]:
+                self.assertLessEqual(set(claim["supported_by"]), ids)
+        self.assertEqual(seen, known)
+
+    def test_source_renderer_context_uses_own_candidate_and_persona_not_peer_prose(self):
+        persona = cod_model.load_domains()["general"]["personas"][0]
+        record = {"target": {"statement": "自分の候補理由。[D31]", "statement_origin": "model"},
+                  "peer_raw": "PEER_RAW_SENTINEL", "payload": {"own_claim": "試験案"}}
+        for profile in cod_model.EVENT_PROMPT_PROFILES:
+            context = cod_model.source_renderer_context(record, persona, profile)
+            if profile == "source_grounded":
+                self.assertEqual(context["candidate_reason"], record["target"]["statement"])
+                self.assertEqual(context["candidate_reason_origin"], "model")
+                self.assertEqual(context["perspective"], {k: persona[k] for k in ("worldview", "utility", "loss")})
+                self.assertNotIn("PEER_RAW_SENTINEL", json.dumps(context))
+                self.assertIn("追加の証拠ではない", cod_model.SOURCE_RENDERER_RULE)
+                self.assertIn('{"utterances":[{"id":', cod_model.SOURCE_RENDERER_RULE)
+                self.assertIn("配列だけを返してはならない", cod_model.SOURCE_RENDERER_RULE)
+            else:
+                self.assertEqual(context, {})
+        self.assertEqual(record["payload"], {"own_claim": "試験案"})
+
+    def test_source_grounded_profile_only_changes_base_decision_prompts(self):
+        system = "既存の役割とJSON契約。"
+        phases = ("independent:p", "reconciliation:1:P|Q:p", "reconciliation-repair:1:P|Q:p")
+        for phase in phases:
+            self.assertEqual(cod_model.decision_system_prompt(system, "source_grounded", phase),
+                             system + cod_model.SOURCE_GROUNDING_RULE)
+        for phase in ("body-renderer:event:C01", "renderer-v3:event", "event", ""):
+            self.assertEqual(cod_model.decision_system_prompt(system, "source_grounded", phase), system)
+        for profile in cod_model.EVENT_PROMPT_PROFILES:
+            if profile != "source_grounded":
+                for phase in phases:
+                    self.assertEqual(cod_model.decision_system_prompt(system, profile, phase), system)
+        args = cod_model.parser().parse_args(["event-debate", "--domain", "general", "--ledger", "ledger.json", "--prompt-profile", "source_grounded"])
+        self.assertEqual(args.prompt_profile, "source_grounded")
+        self.assertEqual(cod_model.parser().parse_args(["event-debate", "--domain", "general", "--ledger", "ledger.json"]).prompt_profile,
+                         "orthogonal_fewshot")
+
     def test_profiles_are_distinct(self):
         domains = cod_model.load_domains()
         self.assertGreaterEqual(len(domains["software"]["personas"]), 4)

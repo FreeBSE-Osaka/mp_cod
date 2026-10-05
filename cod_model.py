@@ -26,12 +26,28 @@ DEFAULT_MODEL = "qwen3.5:4b"
 DEFAULT_API_URL = "http://127.0.0.1:11434/api/chat"
 PROFILE_PATH = Path(__file__).with_name("personas.json")
 STANCES = ["主案", "対案", "条件付き", "保留"]
-EVENT_PROMPT_PROFILES = ("baseline", "orthogonal", "orthogonal_bare", "orthogonal_fewshot")
+EVENT_PROMPT_PROFILES = ("baseline", "orthogonal", "orthogonal_bare", "orthogonal_fewshot", "source_grounded")
 DISCUSSION_KINDS = {"proposal", "critique", "improvement", "condition", "observation", "support"}
 GENERAL_DISCUSSION_RULE = (
     "専門観点は賛否の役割ではない。同じ結論を複数人で支持してもよい。"
     "指摘だけの反論、対案付き反論、賛同だけ、賛同しつつ改善、条件付き支持、保留を根拠に応じて選ぶ。"
     "違う意見や対案を無理に作らず、同意するときも参照した根拠を示す。"
+)
+SOURCE_GROUNDING_RULE = (
+    "根拠の否定、条件、対象範囲、未確認の状態をそのまま保つ。"
+    "未算定は不要を意味せず、未実測や未検証は優劣や効果が確認済みという意味ではない。"
+    "supported_byは使用可能な根拠IDの範囲であり、そのdataが全ての利点を証明するわけではない。"
+    "提案を完了事実に変えず、dataにない性能、費用、利用者の希望を補わない。"
+    "statementはlabelの復唱だけでなく、選んだdataの具体的内容と自分の評価観点を結び付けた公開用の理由にする。"
+    "断定できない部分は保留や条件として自然に述べ、別の意見を無理に作らない。"
+)
+SOURCE_RENDERER_RULE = (
+    "perspectiveは話者の評価観点であり、賛否を決める役割ではない。"
+    "candidate_reasonは自分の候補理由であって追加の証拠ではない。"
+    "evidenceを優先し、理由にある対象、測定項目、比較方向、未確認の状態、限定条件の取り違えを発話へ持ち込まない。"
+    "同意や異議の理由を自然に述べ、labelの復唱だけや毎回同じ接続句に終始しない。"
+    '必ず {"utterances":[{"id":"入力itemsのid","utterance":"自然な会話文"}]} の形のobjectを返す。'
+    "配列だけを返してはならない。入力itemsの実際のidを使い、理由に含まれるD番号は本文へ残さない。"
 )
 FLEXIBLE_MOVE_PREFIXES = {
     "object": ("その前提には懸念があります。", "そこには異議があります。", "ただ、気になる点があります。"),
@@ -1179,6 +1195,24 @@ def validate_public_statement(statement: object, data_ids: list[str]) -> tuple[s
     if not references.issubset(set(data_ids)):
         return None, f"statement cites unselected D ids: {sorted(references - set(data_ids))}"
     return normalized, None
+
+
+def decision_system_prompt(system: str, profile: str, phase: str) -> str:
+    if profile == "source_grounded" and phase.split(":", 1)[0] in {
+        "independent", "reconciliation", "reconciliation-repair"
+    }:
+        return system + SOURCE_GROUNDING_RULE
+    return system
+
+
+def source_renderer_context(record: dict, persona: dict, profile: str) -> dict:
+    if profile != "source_grounded":
+        return {}
+    return {
+        "perspective": {key: persona[key] for key in ("worldview", "utility", "loss")},
+        "candidate_reason": record["target"].get("statement", ""),
+        "candidate_reason_origin": record["target"].get("statement_origin", "unknown"),
+    }
 
 
 def sanitize_model_statement(statement: object, data_ids: list[str]) -> str | None:
@@ -2500,6 +2534,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
         system: str, user: str, max_tokens: int, phase: str, deterministic: bool = False
     ) -> tuple[str, dict | None]:
         started = time.perf_counter()
+        system = decision_system_prompt(system, args.prompt_profile, phase)
         raw, parsed = backend_ask_json(system, user, max_tokens, deterministic)
         elapsed = time.perf_counter() - started
         model_calls.append(
@@ -2733,9 +2768,13 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 if persona is None:
                     source = persona_configs[record["persona_id"]]
                     item["speaker"] = source["name"]
+                item.update(source_renderer_context(record, persona_configs[record["persona_id"]], args.prompt_profile))
                 items.append(item)
+            system = renderer_system(persona, flexible=flexible)
+            if args.prompt_profile == "source_grounded":
+                system += SOURCE_RENDERER_RULE
             raw, parsed = ask_json(
-                renderer_system(persona, flexible=flexible),
+                system,
                 json.dumps({"items": items}, ensure_ascii=False),
                 min(args.max_tokens, max(220, 80 + 90 * len(items))),
                 f"renderer:{phase}:{group_key}:{chunk_index}",
