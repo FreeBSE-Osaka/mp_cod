@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "scope": "Unseen authored dev8/test16 for layer comparison with fixed original system. Training reuses only v8 train96 and v3 train512; no old evaluation answers or diagnostic examples become SFT targets.",
+  "topics": [
+    {"id": "layers_dev_glass", "split": "valid", "examples": [
+      {"speaker": "仮説構築者", "kind": "condition", "claim": "硝子の計測は曇り率13%と冷却時間34分で緩衝材費は含めない", "body": "硝子の計測は曇り率13%と冷却時間34分で、緩衝材費は含めません。", "required": ["曇り率13%", "冷却時間34分", "緩衝材費は含めません"], "counterexample": "硝子の計測は曇り率13%と冷却時間34分で、緩衝材費は含めます。"},
+      {"speaker": "批判的設計者", "kind": "condition", "claim": "硝子の計測は曇り率13%と冷却時間34分で緩衝材費も含める", "body": "硝子の計測は曇り率13%と冷却時間34分で、緩衝材費も含めます。", "required": ["曇り率13%", "冷却時間34分", "緩衝材費も含めます"], "counterexample": "硝子の計測は曇り率13%と冷却時間34分で、緩衝材費は含めません。"},
+      {"speaker": "実証監査者", "kind": "observation", "claim": "冷却位置の変更を試みているが曇りへの効果は未測定", "body": "冷却位置の変更を試みていますが、曇りへの効果は未測定です。", "required": ["変更を試みています", "曇りへの効果", "未測定"], "counterexample": "冷却位置の変更を試みましたが、曇りへの効果は未測定です。"},
+      {"speaker": "実行設計者", "kind": "observation", "claim": "冷却位置の変更を試みたが曇りへの効果は未測定", "body": "冷却位置の変更を試みましたが、曇りへの効果は未測定です。", "required": ["変更を試みました", "曇りへの効果", "未測定"], "counterexample": "冷却位置の変更を試みていますが、曇りへの効果は未測定です。"}
+    ]},
+    {"id": "layers_dev_calligraphy", "split": "valid", "examples": [
+      {"speaker": "利用者体験研究者", "kind": "proposal", "claim": "筆の持ち方の変更を試みる", "body": "筆の持ち方の変更を試みます。", "required": ["持ち方の変更を試みます"], "counterexample": "筆の持ち方を変更します。"},
+      {"speaker": "資源・制約設計者", "kind": "condition", "claim": "墨磨り係は人数に含めないが紙配り係は人数に含める", "body": "墨磨り係は人数に含めませんが、紙配り係は人数に含めます。", "required": ["墨磨り係は人数に含めません", "紙配り係は人数に含めます"], "counterexample": "墨磨り係は人数に含めますが、紙配り係は人数に含めません。"},
+      {"speaker": "長期影響評価者", "kind": "proposal", "claim": "滲みの報告が多い用紙で墨の試験を先に行う", "body": "滲みの報告が多い用紙で、墨の試験を先に行います。", "required": ["滲みの報告が多い用紙で", "墨の試験を先に行います"], "counterexample": "用紙で墨の試験を先に行い、滲みの報告が多くなります。"},
+      {"speaker": "横断的設計者", "kind": "observation", "claim": "筆の持ち方変更による疲労の減少を確認した", "body": "筆の持ち方変更による疲労の減少を確認しました。", "required": ["疲労の減少", "確認しました"], "counterexample": "筆の持ち方変更による疲労の減少は未確認です。"}
+    ]},
+    {"id": "layers_transfer_pastry", "split": "test", "examples": [
+      {"speaker": "仮説構築者", "kind": "condition", "claim": "製菓の計測は崩れ率19%と仕上げ時間37分で箱代は含めない", "body": "製菓の計測は崩れ率19%と仕上げ時間37分で、箱代は含めません。", "required": ["崩れ率19%", "仕上げ時間37分", "箱代は含めません"], "counterexample": "製菓の計測は崩れ率19%と仕上げ時間37分で、箱代は含めます。"},
+      {"speaker": "批判的設計者", "kind": "condition", "claim": "製菓の計測は崩れ率19%と仕上げ時間37分で箱代も含める", "body": "製菓の計測は崩れ率19%と仕上げ時間37分で、箱代も含めます。", "required": ["崩れ率19%", "仕上げ時間37分", "箱代も含めます"], "counterexample": "製菓の計測は崩れ率19%と仕上げ時間37分で、箱代は含めません。"},
+      {"speaker": "実証監査者", "kind": "observation", "claim": "仕上げ台の変更を試みているが崩れへの効果は未検証", "body": "仕上げ台の変更を試みていますが、崩れへの効果は未検証です。", "required": ["変更を試みています", "崩れへの効果", "未検証"], "counterexample": "仕上げ台の変更を試みましたが、崩れへの効果は未検証です。"},
+      {"speaker": "実行設計者", "kind": "observation", "claim": "仕上げ台の変更を試みたが崩れへの効果は未検証", "body": "仕上げ台の変更を試みましたが、崩れへの効果は未検証です。", "required": ["変更を試みました", "崩れへの効果", "未検証"], "counterexample": "仕上げ台の変更を試みていますが、崩れへの効果は未検証です。"}
+    ]},
+    {"id": "layers_transfer_woodwork", "split": "test", "examples": [
+      {"speaker": "利用者体験研究者", "kind": "proposal", "claim": "鉋の持ち方の変更を試みる", "body": "鉋の持ち方の変更を試みます。", "required": ["持ち方の変更を試みます"], "counterexample": "鉋の持ち方を変更します。"},
+      {"speaker": "資源・制約設計者", "kind": "condition", "claim": "採寸係は人数に含めないが加工係は人数に含める", "body": "採寸係は人数に含めませんが、加工係は人数に含めます。", "required": ["採寸係は人数に含めません", "加工係は人数に含めます"], "counterexample": "採寸係は人数に含めますが、加工係は人数に含めません。"},
+      {"speaker": "長期影響評価者", "kind": "proposal", "claim": "反りの報告が多い板で加工の試験を先に行う", "body": "反りの報告が多い板で、加工の試験を先に行います。", "required": ["反りの報告が多い板で", "加工の試験を先に行います"], "counterexample": "板で加工の試験を先に行い、反りの報告が多くなります。"},
+      {"speaker": "横断的設計者", "kind": "observation", "claim": "鉋の持ち方変更による負担の減少を検証した", "body": "鉋の持ち方変更による負担の減少を検証しました。", "required": ["負担の減少", "検証しました"], "counterexample": "鉋の持ち方変更による負担の減少は未検証です。"}
+    ]},
+    {"id": "layers_transfer_canvas", "split": "test", "examples": [
+      {"speaker": "仮説構築者", "kind": "condition", "claim": "帆布の計測はほつれ率21%と縫製時間42分で留具代は含めない", "body": "帆布の計測はほつれ率21%と縫製時間42分で、留具代は含めません。", "required": ["ほつれ率21%", "縫製時間42分", "留具代は含めません"], "counterexample": "帆布の計測はほつれ率21%と縫製時間42分で、留具代は含めます。"},
+      {"speaker": "批判的設計者", "kind": "condition", "claim": "帆布の計測はほつれ率21%と縫製時間42分で留具代も含める", "body": "帆布の計測はほつれ率21%と縫製時間42分で、留具代も含めます。", "required": ["ほつれ率21%", "縫製時間42分", "留具代も含めます"], "counterexample": "帆布の計測はほつれ率21%と縫製時間42分で、留具代は含めません。"},
+      {"speaker": "実証監査者", "kind": "observation", "claim": "縫製位置の変更を試みているがほつれへの効果は未確認", "body": "縫製位置の変更を試みていますが、ほつれへの効果は未確認です。", "required": ["変更を試みています", "ほつれへの効果", "未確認"], "counterexample": "縫製位置の変更を試みましたが、ほつれへの効果は未確認です。"},
+      {"speaker": "実行設計者", "kind": "observation", "claim": "縫製位置の変更を試みたがほつれへの効果は未確認", "body": "縫製位置の変更を試みましたが、ほつれへの効果は未確認です。", "required": ["変更を試みました", "ほつれへの効果", "未確認"], "counterexample": "縫製位置の変更を試みていますが、ほつれへの効果は未確認です。"}
+    ]},
+    {"id": "layers_transfer_bamboo", "split": "test", "examples": [
+      {"speaker": "利用者体験研究者", "kind": "proposal", "claim": "竹の組み方の変更を試みる", "body": "竹の組み方の変更を試みます。", "required": ["組み方の変更を試みます"], "counterexample": "竹の組み方を変更します。"},
+      {"speaker": "資源・制約設計者", "kind": "condition", "claim": "乾燥係は人数に含めないが組立係は人数に含める", "body": "乾燥係は人数に含めませんが、組立係は人数に含めます。", "required": ["乾燥係は人数に含めません", "組立係は人数に含めます"], "counterexample": "乾燥係は人数に含めますが、組立係は人数に含めません。"},
+      {"speaker": "長期影響評価者", "kind": "proposal", "claim": "割れが集中する竹材で編組の試験を先に行う", "body": "割れが集中する竹材で、編組の試験を先に行います。", "required": ["割れが集中する竹材で", "編組の試験を先に行います"], "counterexample": "竹材で編組の試験を先に行い、割れが集中します。"},
+      {"speaker": "横断的設計者", "kind": "observation", "claim": "竹の組み方変更による割れの減少を確認した", "body": "竹の組み方変更による割れの減少を確認しました。", "required": ["割れの減少", "確認しました"], "counterexample": "竹の組み方変更による割れの減少は未確認です。"}
+    ]}
+  ]
+}

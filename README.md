@@ -277,6 +277,8 @@ Qwen3.5本文v8は、包含・除外、時制、確認状態、修飾節の対�
 
 v8後の入力診断では、同じWeightの72生成でsystem文と補助情報を分離しました。既知の除外反転は追加systemだけでも発生し、元system＋補助情報では保持。空欄省略は全12例で同一raw、キー順変更も他例の後退があり既定へ採用しません。文末だけでなく文中の試す／試みるの時制を共通guardで検査し、旧799出力を別ファイルへ再採点しました。直接合格数を変更せず、Weight改善・全体昇格には数えていません。[入力依存・文中時制の診断](docs/qwen35_input_diagnostic_20261005.md)に全条件と限界を記録しています。
 
+Qwen3.5本文v9は元systemを両入力で固定し、MLPのみ／attention追加の2条件を各48ステップ実学習しました。開発の対応32出力は一致し、事前規則で小さいMLP48（約0.755MB）を固定。新規16問は親・候補とも両入力13/16、旧147例は通常141/147→139/147・補助139/147→140/147で個別後退が残り **研究HOLD・既定置換なし** です。8人の親／候補・通常／補助4実走は本文23/23・代替0を維持しましたが、Baseの根拠誤読で全体は不合格。過去試行や計測項目の意味変化を集計と区別し、本文とコード側の接続句も分けて記録しています。[v9学習対象層と全検証](docs/qwen35_layer_comparison_v9_20261005.md)、[SHAと未達理由](promotions/qwen3.5-4b-claim-body-v9-mlp-step48.json)を参照してください。
+
 Natural specialist v5ではQwen3-14B teacherから実行役event-agreeの直接合格自然文を3件得ましたが、親step160からの専用継続はholdout 1/3のまま、Base specialistは0/3でした。move別few-shotもobjectへ賛同例が混入したためruntimeへ採用せず、全結果を [General Dialogue natural specialist v5実験記録](docs/general_dialogue_weight_v5_20260904.md) に残しています。
 
 Natural specialists v6では12の異なるtopicから仮説object 12件・実行event-agree 13件を集め、人格・phase・move別LoRAとrepair LoRAを評価しました。数値創作を拒否するgrounding guardは採用しましたが、全Weightが未学習holdoutで親同等以下だったため非昇格です。全target、評価、SHA、停止理由は [General Dialogue natural specialists v6実験記録](docs/general_dialogue_weight_v6_20260904.md) にあります。

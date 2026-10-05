@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import json
+import hashlib
 import io
 import sys
 from contextlib import redirect_stdout
@@ -14,6 +15,39 @@ from tools.general_body_training import body_checks, build, cases, evaluate, exa
 
 
 class GeneralDiscussionTest(unittest.TestCase):
+    def test_v9_reuses_train_only_and_compares_layer_keys_with_fixed_system(self):
+        root = Path(__file__).parent
+        path = root / "data/general_body_qwen35_v9/curated.json"
+        rows = cases(path, {"train", "valid", "test"})
+        prior = cases(root / "data/general_body_qwen35_v8/curated.json", {"train", "valid", "test"})
+        self.assertEqual({r["claim"] for r in rows if r["split"] == "train"},
+                         {r["claim"] for r in prior if r["split"] == "train"})
+        old = []
+        for corpus in root.glob("data/general_body*/curated.json"):
+            if corpus != path:
+                old.extend(cases(corpus, {"train", "valid", "test"}))
+        old.extend(cases(root / "data/general_body_input_diagnostic_20261005/fresh.json", {"test"}))
+        self.assertFalse({r["claim"] for r in rows if r["split"] in {"valid", "test"}}
+                         & {r["claim"] for r in old})
+        for split, count in (("train", 96), ("valid", 8), ("test", 16)):
+            self.assertEqual(sum(r["split"] == split for r in rows), count)
+            if split != "train":
+                self.assertEqual(len({r["speaker"] for r in rows if r["split"] == split}), 8)
+        for row in rows:
+            self.assertTrue(valid(body_checks(row["body"], row)), row["case"])
+            if row.get("counterexample"):
+                self.assertFalse(valid(body_checks(row["counterexample"], row)), row["case"])
+        mlp = (root / "configs/claim-body-qwen35-4b-v9-mlp.yaml").read_text()
+        attention = (root / "configs/claim-body-qwen35-4b-v9-attention.yaml").read_text()
+        additions = "    - linear_attn.in_proj_qkv\n    - self_attn.q_proj\n    - self_attn.v_proj\n"
+        self.assertEqual(attention.replace(additions, ""), mlp)
+        record = json.loads((root / "promotions/qwen3.5-4b-claim-body-v9-mlp-step48.json").read_text())
+        self.assertEqual(record["base_model"], "Qwen3.5-4B-4bit")
+        self.assertEqual(record["corpus_sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertTrue(record["same_original_system_both_modes"])
+        for flag in ("promotion_allowed", "parent_replacement_allowed", "automatic_publish_allowed"):
+            self.assertIs(record[flag], False)
+
     def test_trial_tense_survives_internal_unconfirmed_clauses_without_anchors(self):
         for stem, progressive, past in (("変更を試み", "変更を試みています", "変更を試みました"),
                                         ("短縮を試し", "短縮を試しています", "短縮を試しました")):
@@ -169,7 +203,7 @@ class GeneralDiscussionTest(unittest.TestCase):
             self.assertEqual(len({r["speaker"] for r in new if r["split"] == split}), 8)
         old = []
         for path in root.glob("data/general_body*/curated.json"):
-            if path.parent.name not in {"general_body_qwen35_v6", "general_body_qwen35_v7", "general_body_qwen35_v8"}:
+            if path.parent.name not in {"general_body_qwen35_v6", "general_body_qwen35_v7", "general_body_qwen35_v8", "general_body_qwen35_v9"}:
                 old.extend(cases(path, {"train", "valid", "test"}))
         old.extend(cases(root / "data/pdca_general_body/curated.json", {"valid", "test"}))
         self.assertFalse({r["claim"] for r in new} & {r["claim"] for r in old})
