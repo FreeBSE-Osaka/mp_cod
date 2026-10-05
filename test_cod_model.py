@@ -9,6 +9,19 @@ import cod_model
 
 
 class CodModelTest(unittest.TestCase):
+    def test_dialogue_cleanup_keeps_evidence_prose_and_removes_only_citation_footer(self):
+        statement = "この提案は根拠として十分ですが、工数の見積もり範囲に注意が必要です。"
+        self.assertEqual(cod_model.dialogue_fallback(statement), statement)
+        repaired = cod_model.sanitize_dialogue_move(statement, "counterproposal", flexible=True)
+        self.assertIn(statement, repaired)
+        self.assertNotIn("この提案は。", repaired)
+        for footer in ("根拠は[D01]です。", "根拠は[D01,D02]。", "根拠: [ D01, D02 ]です。"):
+            with self.subTest(footer=footer):
+                self.assertEqual(cod_model.dialogue_fallback(statement + footer), statement)
+        ordinary = "ただ、根拠はまだ不足しているので、効果を確認済みとは扱えません。"
+        self.assertEqual(cod_model.dialogue_fallback(ordinary), ordinary)
+        self.assertEqual(cod_model.sanitize_dialogue_move(ordinary, "object", flexible=True), ordinary)
+
     def test_source_grounding_diagnostic_has_paired_states_and_all_general_personas(self):
         payload = json.loads((Path(__file__).parent / "data/general_source_grounding_v1/fresh_cases.json").read_text())
         known = {p["id"] for p in cod_model.load_domains()["general"]["personas"]}

@@ -1802,7 +1802,13 @@ def independent_utterance_is_aligned(utterance: str, code: str, claims: list[dic
 
 
 def dialogue_fallback(statement: str) -> str:
-    visible = statement.split("根拠", 1)[0]
+    # Remove a standalone citation footer, not ordinary prose about evidence.
+    visible = re.sub(
+        r"(?:^|(?<=[。！？]))\s*根拠(?:は|[:：])\s*"
+        r"\[\s*D\d{2,}(?:\s*[,、]\s*D\d{2,})*\s*\]\s*(?:です|である)?[。.]?\s*$",
+        "",
+        statement,
+    )
     visible = re.sub(r"\[?D\d{2,}\]?", "", visible).strip(" 、,。.[]")
     return f"{visible}。"
 
@@ -1833,8 +1839,7 @@ def sanitize_dialogue_move(
 ) -> str | None:
     if not isinstance(utterance, str):
         return None
-    visible = utterance.split("根拠", 1)[0]
-    visible = re.sub(r"\[?D\d{2,}\]?", "", visible).strip(" 、,。.[]")
+    visible = dialogue_fallback(utterance).removesuffix("。")
     visible = re.sub(r"([。！？])の(結果|データ)", r"\1その\2", visible)
     visible = re.sub(r"^の(結果|データ)", r"その\1", visible)
     if not visible:
