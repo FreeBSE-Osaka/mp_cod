@@ -263,7 +263,8 @@ class GeneralDiscussionTest(unittest.TestCase):
                     def __setattr__(self, name, value):
                         setattr(self._tokenizer, name, value)
                 package = ModuleType("mlx_lm")
-                native = SimpleNamespace(load=lambda *a, **k: (object(), Wrapper()))
+                native = SimpleNamespace(load=lambda *a, **k: (object(), Wrapper()),
+                                         train=lambda *a, **k: None)
                 original_load, original_argv = native.load, sys.argv
                 def main():
                     self.assertIn("--mask-prompt", sys.argv)

@@ -286,6 +286,12 @@ def nonthinking_tokenizer(tokenizer):
     return tokenizer
 
 
+def assistant_only_loss(model, batch, lengths):
+    """The native shifted target bound is inclusive; keep EOS, not the first pad."""
+    from mlx_lm.tuner.trainer import default_loss
+    return default_loss(model, batch, lengths.at[:, 1].add(-1))
+
+
 def train(args):
     """Reuse MLX-LM's trainer, matching its prompt mask to our non-thinking inference."""
     if args.out.exists() and any(args.out.iterdir()):
@@ -299,15 +305,20 @@ def train(args):
         raise ValueError('mlx-cache-limit-mib must be a nonnegative integer')
     if cache_mib is not None:
         import mlx.core as mx
+    original_load, original_train, original_argv = lora.load, lora.train, sys.argv
     previous_cache = mx.set_cache_limit(cache_mib * 1024 * 1024) if cache_mib is not None else None
-    original_load, original_argv = lora.load, sys.argv
 
     def load_body_model(*values, **kwargs):
         model, tokenizer = original_load(*values, **kwargs)
         return model, nonthinking_tokenizer(tokenizer)
 
+    def train_assistant_targets(*values, **kwargs):
+        kwargs['loss'] = assistant_only_loss
+        return original_train(*values, **kwargs)
+
     try:
         lora.load = load_body_model
+        lora.train = train_assistant_targets
         sys.argv = ["mlx_lm.lora", "--train", "--mask-prompt", "--model", str(args.model),
                     "--data", str(args.data), "--config", str(args.config),
                     "--adapter-path", str(args.out)]
@@ -315,7 +326,7 @@ def train(args):
             sys.argv += ["--resume-adapter-file", str(parent_adapter)]
         lora.main()
     finally:
-        lora.load, sys.argv = original_load, original_argv
+        lora.load, lora.train, sys.argv = original_load, original_train, original_argv
         if cache_mib is not None:
             mx.set_cache_limit(previous_cache)
             print(json.dumps({'mlx_cache_limit_mib': cache_mib, 'MLX_peak_memory_GB': mx.get_peak_memory()/1e9,

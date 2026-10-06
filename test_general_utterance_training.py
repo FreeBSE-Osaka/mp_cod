@@ -10,19 +10,41 @@ import sys
 
 import cod_model as cod
 from tools.general_utterance_training import cases,checks,example,item,profile_case,score,valid,PROFILES,build
-from tools.general_body_training import train
+from tools.general_body_training import train,assistant_only_loss
 
 
 class FullUtteranceTrainingTest(unittest.TestCase):
+    def test_loss_bound_excludes_padding_and_retains_all_assistant_positions(self):
+        class Lengths:
+            def __init__(self):
+                self.values=[(2,5),(4,7)];self.at=self
+            def __getitem__(self,key):
+                self.asserted_column=key
+                return self
+            def add(self,value):
+                return [(offset,end+value)for offset,end in self.values]
+        lengths=Lengths()
+        native=ModuleType('mlx_lm.tuner.trainer')
+        native.default_loss=lambda model,batch,bounds:bounds
+        with patch.dict(sys.modules,{'mlx_lm.tuner.trainer':native}):
+            adjusted=assistant_only_loss('model','batch',lengths)
+        self.assertEqual(adjusted,[(2,4),(4,6)])
+        self.assertEqual(lengths.values,[(2,5),(4,7)])
+        self.assertEqual(lengths.asserted_column,(slice(None),1))
+        self.assertEqual(list(range(adjusted[0][0],adjusted[0][1]+1)),[2,3,4])
+
     def test_fresh_training_omits_resume_and_restores_native_globals(self):
         calls = []
         original_load = lambda *a, **k: None
         original_argv = sys.argv
+        def native_train(*values,**kwargs):
+            self.assertIs(kwargs['loss'],assistant_only_loss)
         def native_main():
             calls.append(list(sys.argv))
             self.assertNotIn('--resume-adapter-file', sys.argv)
             self.assertIn('--mask-prompt', sys.argv)
-        native = SimpleNamespace(load=original_load, main=native_main)
+            native.train(model='unit')
+        native = SimpleNamespace(load=original_load, train=native_train, main=native_main)
         package = ModuleType('mlx_lm'); package.lora = native
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -35,6 +57,7 @@ class FullUtteranceTrainingTest(unittest.TestCase):
                     train(args)
         self.assertEqual(len(calls), 1)
         self.assertIs(native.load, original_load)
+        self.assertIs(native.train,native_train)
         self.assertIs(sys.argv, original_argv)
 
     def test_training_cache_cap_is_process_local_and_restored_on_failure(self):
@@ -46,7 +69,8 @@ class FullUtteranceTrainingTest(unittest.TestCase):
         package=ModuleType('mlx');package.core=mx
         original_load=lambda *a,**k:None
         def fail():raise RuntimeError('native training failed')
-        lora=SimpleNamespace(load=original_load,main=fail)
+        original_train=lambda *a,**k:None
+        lora=SimpleNamespace(load=original_load,train=original_train,main=fail)
         mlx_lm=ModuleType('mlx_lm');mlx_lm.lora=lora
         with tempfile.TemporaryDirectory()as directory:
             parent=Path(directory)/'parent.safetensors';parent.write_text('fixture')
@@ -60,6 +84,7 @@ class FullUtteranceTrainingTest(unittest.TestCase):
         self.assertEqual(cache['calls'],[0,12345,0,12345])
         self.assertEqual(cache['limit'],12345)
         self.assertIs(lora.load,original_load)
+        self.assertIs(lora.train,original_train)
 
     def test_v2_profiles_preserve_primary_inputs_and_cover_all_role_moves(self):
         corpus=cases(Path(__file__).parent/'data/general_utterance_qwen35_v2/curated.json')
