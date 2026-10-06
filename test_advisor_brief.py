@@ -109,6 +109,27 @@ class AdvisorBriefTest(unittest.TestCase):
                          ["BOTH", "ABSTAIN"])
         self.assertFalse(brief["untrusted_discussion"]["structural_summary"]["consensus"])
 
+    def test_uncited_material_and_unspoken_options_remain_visible_without_scoring_them(self):
+        previous = build_brief(self.run, self.ledger)
+        self.ledger["data"].extend([
+            {"id": "D02", "text": "資料上の追加の条件。"},
+            {"id": "D03", "text": "予約の承認は未取得。"}])
+        self.ledger["claim_catalog"][1]["supported_by"].append("D02")
+        self.ledger["claim_catalog"].append({"code": "C", "label": "予約の承認を保留する",
+                                             "supported_by": ["D03"], "contradicts": []})
+        vote = self.run["reconciliation"][0]["votes"]["A|B"]["p2"]
+        vote.update(data_ids=["D02"], statement="追加の条件を理由にBを検討します。[D02]")
+        self.run["ledger_snapshot"] = copy.deepcopy(self.ledger)
+        brief = build_brief(self.run, self.ledger)
+        coverage = brief["untrusted_discussion"]["coverage"]
+        self.assertTrue(coverage["diagnostic_only"])
+        self.assertEqual(coverage["cited_data_ids"], ["D01", "D02"])
+        self.assertEqual(coverage["uncited_source_data"], [self.ledger["data"][2]])
+        self.assertEqual(coverage["citation_references"]["D02"], [{"reference": "R1:A|B:p2", "persona_id": "p2"}])
+        self.assertEqual([c["code"] for c in coverage["unaddressed_catalog_claims"]], ["C"])
+        self.assertEqual(brief["status"], previous["status"])
+        self.assertEqual(brief["verification"], previous["verification"])
+
     def test_ambiguous_json_and_non_finite_numbers_are_rejected(self):
         for raw in (b'{"status":"HOLD","status":"OK"}', b'{"elapsed":NaN}',
                     b'{"elapsed":Infinity}', b'{"elapsed":1e999}'):

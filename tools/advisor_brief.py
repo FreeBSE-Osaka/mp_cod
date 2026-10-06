@@ -129,6 +129,11 @@ def build_brief(run: dict, ledger: dict) -> dict:
         hold_reasons.append("discussion_hard_gate_failed")
     if summary["unresolved_conflicts"]:
         hold_reasons.append("unresolved_conflicts")
+    citations = {item["id"]: [] for item in ledger["data"]}
+    for record in quotes:
+        for data_id in record["data_ids"]:
+            citations[data_id].append({"reference": record["reference"],
+                                       "persona_id": record["persona_id"]})
     return {
         "schema_version": 1,
         "status": "HOLD" if hold_reasons else "REVIEW_REQUIRED",
@@ -152,6 +157,15 @@ def build_brief(run: dict, ledger: dict) -> dict:
             "topic": ledger.get("topic"), "source_data": ledger["data"],
             "options_and_observations": [catalog[code] for code in sorted(present)],
             "structural_summary": summary, "quotes": quotes,
+            "coverage": {
+                "diagnostic_only": True,
+                "cited_data_ids": [key for key, records in citations.items() if records],
+                "uncited_source_data": [item for item in ledger["data"] if not citations[item["id"]]],
+                "citation_references": citations,
+                "unaddressed_catalog_claims": [item for item in ledger["claim_catalog"]
+                                               if item["code"] not in present],
+                "interpretation": "Missing citations do not prove a source was ignored. Citation counts do not prove correctness or independence.",
+            },
         },
     }
 
