@@ -167,3 +167,13 @@ result filenameには`_fresh_body`を付け、通常cache/resultを保護しま�
 - Base WeightをGit/Appへ同梱しない
 - Native CoDは架空の均衡fixtureで検証し、実案件の意思決定結果として使わない
 - ExtremeWeather本体への統合は別の回帰・memoryゲートを通す
+
+## Macとの独立job分担
+
+`--autorun --distributed-worker --request-id <UUID> --job-indices 1,3`は、4つの固定本文fixtureの一部だけを実行し、`Documents/mp_cod_distributed_<lowercase UUID>.json`へ保存する。既存の通常・Native CoD modeは変えない。UUIDの再利用、重複や範囲外job、serious/critical thermal、512 MiB未満のheadroomを拒否し、app非active化とmemory warningではcancelする。
+
+このmodeはdownloadせず、USBで配置した`Documents/DistributedBodyModel`の1.7B BaseとbundleのClaim Body v3 Adapterを使う。BaseのSHAとAdapterのSHA、生成raw、unloadとcache解放を記録する。任意の依頼文やshell命令を受け付ける遠隔実行サーバーではない。
+
+Mac側の`tools/distributed_phone_trial.py`はMacの全4jobと、Macの2job＋実機の2jobを比較する。2026-10-06の実機試験はphone2/2合格だったが、launchと回収を含む分担11.821秒に対してMac単独4.458秒で、速度メリットはなかった。Mac単独の本文契約が2件落ちたため、品質同等の速度改善とも認定しない。
+
+[独立job分担とBackburner層分担の手順と記録](../../docs/distributed_iphone13_backburner_20261006.md)を参照。

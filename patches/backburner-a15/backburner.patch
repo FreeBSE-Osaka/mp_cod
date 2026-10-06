@@ -1,0 +1,205 @@
+diff --git a/ios/Backburner/Sidecar/Sidecar.entitlements b/ios/Backburner/Sidecar/Sidecar.entitlements
+index 99f4716..6631ffa 100644
+--- a/ios/Backburner/Sidecar/Sidecar.entitlements
++++ b/ios/Backburner/Sidecar/Sidecar.entitlements
+@@ -2,7 +2,5 @@
+ <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+ <plist version="1.0">
+ <dict>
+-	<key>com.apple.developer.kernel.increased-memory-limit</key>
+-	<true/>
+ </dict>
+ </plist>
+diff --git a/ios/Backburner/Sidecar/sme_a15_stub.c b/ios/Backburner/Sidecar/sme_a15_stub.c
+new file mode 100644
+index 0000000..9f66459
+--- /dev/null
++++ b/ios/Backburner/Sidecar/sme_a15_stub.c
+@@ -0,0 +1,23 @@
++/* A15 experiment: SME2 benchmarking is unsupported; GPU tail inference stays enabled. */
++#include <stdio.h>
++#include <stdint.h>
++#include <stdlib.h>
++
++int sme2_available(void) { return 0; }
++
++int sme_bench(int argc, char **argv) {
++    (void)argc;
++    (void)argv;
++    fprintf(stderr, "SME2 is disabled in this A15 experiment\n");
++    return 1;
++}
++
++void sme_attn_pipe(void **pp, int nw, int nh, const float *Q, const uint8_t *K, const uint8_t *V,
++                   size_t rs, size_t hb, int is_q8, int nkv, int nk, float scale,
++                   float *O, float *m, float *l) {
++    (void)pp; (void)nw; (void)nh; (void)Q; (void)K; (void)V; (void)rs; (void)hb;
++    (void)is_q8; (void)nkv; (void)nk; (void)scale; (void)O; (void)m; (void)l;
++    /* An unavailable accelerator must never return fabricated attention values. */
++    fprintf(stderr, "unexpected SME2 attention request in A15 experiment\n");
++    abort();
++}
+diff --git a/phone-attn/pa-metal.mm b/phone-attn/pa-metal.mm
+index 72e98be..8e000b3 100644
+--- a/phone-attn/pa-metal.mm
++++ b/phone-attn/pa-metal.mm
+@@ -560,7 +560,7 @@ public:
+     id<MTLComputePipelineState> na_pipeline(uint32_t v) {
+         if (@available(iOS 26.0, macOS 26.0, *)) {
+             MTLCompileOptions * opt = [MTLCompileOptions new];
+-            opt.languageVersion = MTLLanguageVersion4_0;
++            opt.languageVersion = (MTLLanguageVersion)(4u << 16);
+             opt.preprocessorMacros = @{ @"PA_RELAXED" : (v & 1) ? @"true" : @"false", @"PA_NSG" : (v & 2) ? @"8" : @"4" };
+             NSError * e2 = nil;
+             id<MTLLibrary> lib2 = [dev_ newLibraryWithSource:na_source() options:opt error:&e2];
+@@ -608,7 +608,7 @@ public:
+             // a GPU with less threadgroup memory (the Mac's 32 KB) takes the largest key block that fits
+             while (k.nb > 16 && k.nb*HD*2 + k.mr*k.nb*4 + k.mr*k.nb*2 + k.mr*4 > dev_.maxThreadgroupMemoryLength) k.nb /= 2;
+             MTLCompileOptions * opt = [MTLCompileOptions new];
+-            opt.languageVersion = MTLLanguageVersion4_0;
++            opt.languageVersion = (MTLLanguageVersion)(4u << 16);
+             opt.preprocessorMacros = @{ @"PA_RELAXED" : (variant & 1) ? @"true" : @"false", @"PA_BMR" : @(k.mr).stringValue,
+                                         @"PA_BNB" : @(k.nb).stringValue, @"PA_BNSG" : @(k.nsg).stringValue };
+             NSError * e = nil;
+diff --git a/scripts/build-iphone.sh b/scripts/build-iphone.sh
+index 3de9db8..39f93b9 100755
+--- a/scripts/build-iphone.sh
++++ b/scripts/build-iphone.sh
+@@ -9,10 +9,12 @@ set -euo pipefail
+ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ # LLAMA_DIR: build the framework from another llama.cpp tree (e.g. a snapshot without in-progress kernel edits)
+ LLAMA="${LLAMA_DIR:-${ROOT}/llama.cpp}"
++B="${BB_IOS_BUILD_DIR:-${LLAMA}/build-ios-sidecar}"
++if [[ "${B}" != /* ]]; then echo "BB_IOS_BUILD_DIR must be absolute"; exit 1; fi
+ IOS="${ROOT}/ios/Backburner"
+ FW="${IOS}/Frameworks"
+ MIN_IOS="${MIN_IOS:-16.4}"
+-JOBS="$(sysctl -n hw.ncpu 2>/dev/null || echo 8)"
++JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
+ IPA="${IPA:-0}"
+ TEAM="${DEVELOPMENT_TEAM:-}"
+ if [[ "${IPA}" != 1 && -z "${TEAM}" ]]; then
+@@ -53,8 +55,14 @@ COMMON_CMAKE_ARGS=(
+   -DLLAMA_OPENSSL=OFF
+ )
+ 
+-rm -rf build-ios-sidecar
+-cmake -B build-ios-sidecar -G Xcode \
++if [[ "${BB_INCREMENTAL_IOS:-0}" != 1 ]]; then
++  if [[ -n "${BB_IOS_BUILD_DIR:-}" ]]; then
++    if [[ -e "${B}" ]]; then echo "external build directory exists: use BB_INCREMENTAL_IOS=1"; exit 1; fi
++  else
++    rm -rf build-ios-sidecar
++  fi
++fi
++cmake -B "${B}" -G Xcode \
+   "${COMMON_CMAKE_ARGS[@]}" \
+   -DCMAKE_OSX_DEPLOYMENT_TARGET="${MIN_IOS}" \
+   -DCMAKE_SYSTEM_NAME=iOS \
+@@ -65,10 +73,9 @@ cmake -B build-ios-sidecar -G Xcode \
+   -DCMAKE_CXX_FLAGS="-Wno-macro-redefined -Wno-shorten-64-to-32 -g -ffile-prefix-map=${LLAMA}=llama.cpp" \
+   -DCMAKE_OBJC_FLAGS="-ffile-prefix-map=${LLAMA}=llama.cpp" \
+   -S .
+-cmake --build build-ios-sidecar --config Release -j "${JOBS}" -- -quiet
++cmake --build "${B}" --config Release -j "${JOBS}" -- -quiet
+ 
+ REL="Release-iphoneos"
+-B="build-ios-sidecar"
+ mkdir -p "${B}/framework/llama.framework/Headers" "${B}/framework/llama.framework/Modules" "${B}/dSYMs"
+ 
+ cp include/llama.h \
+@@ -151,16 +158,21 @@ rm -rf "${TMP}"
+ rm -rf "${LLAMA}/build-apple/llama-sidecar.xcframework" "${FW}/llama.xcframework"
+ mkdir -p "${LLAMA}/build-apple" "${FW}"
+ xcrun xcodebuild -create-xcframework \
+-  -framework "$(pwd)/${B}/framework/llama.framework" \
+-  -debug-symbols "$(pwd)/${B}/dSYMs/llama.dSYM" \
++  -framework "${B}/framework/llama.framework" \
++  -debug-symbols "${B}/dSYMs/llama.dSYM" \
+   -output "$(pwd)/build-apple/llama-sidecar.xcframework"
+ rm -rf "${FW}/llama.xcframework"
+ cp -R "$(pwd)/build-apple/llama-sidecar.xcframework" "${FW}/llama.xcframework"
+ echo "xcframework → ${FW}/llama.xcframework"
+ 
+ echo "building the SME2 attention kernel for iOS"
+-xcrun -sdk iphoneos clang -c -O3 -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" -target arm64-apple-ios16.4 \
+-  -mcpu=apple-a18 -ffile-prefix-map="${ROOT}"=. -DSME_BENCH_MAIN -DSME_BENCH_NO_MAIN "${ROOT}/scripts/sme/sme_attn.c" -o "${IOS}/Sidecar/sme_attn_ios.o"
++if [[ "${BB_A15_LITE:-0}" == 1 ]]; then
++  xcrun -sdk iphoneos clang -c -O3 -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" -target arm64-apple-ios16.4 \
++    -mcpu=apple-a15 "${IOS}/Sidecar/sme_a15_stub.c" -o "${IOS}/Sidecar/sme_attn_ios.o"
++else
++  xcrun -sdk iphoneos clang -c -O3 -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" -target arm64-apple-ios16.4 \
++    -mcpu=apple-a18 -ffile-prefix-map="${ROOT}"=. -DSME_BENCH_MAIN -DSME_BENCH_NO_MAIN "${ROOT}/scripts/sme/sme_attn.c" -o "${IOS}/Sidecar/sme_attn_ios.o"
++fi
+ echo "archiving the app (no debugger, no DDI)"
+ cd "${IOS}"
+ mkdir -p "${ROOT}/ios/build"
+diff --git a/scripts/split-gguf.py b/scripts/split-gguf.py
+index 3e5b362..5a8e16a 100755
+--- a/scripts/split-gguf.py
++++ b/scripts/split-gguf.py
+@@ -60,6 +60,10 @@ def main() -> None:
+     for f in r.fields.values():
+         if f.name == gguf.Keys.General.ARCHITECTURE or f.name.startswith("GGUF."):
+             continue
++        # The tail receives text residuals, not images. Some unified Ollama GGUFs
++        # carry empty vision arrays that GGUFWriter cannot serialize.
++        if args.no_head and f.name.startswith(kv("vision.")):
++            continue
+         val_type = f.types[0]
+         sub_type = f.types[-1] if val_type == gguf.GGUFValueType.ARRAY else None
+         val = f.contents()
+@@ -86,6 +90,10 @@ def main() -> None:
+     for t in r.tensors:
+         m = BLK.match(t.name)
+         if not m:
++            if args.no_head and t.name.startswith("v."):
++                continue
++            if not args.keep_mtp and t.name.startswith("mtp."):
++                continue
+             if args.no_head and t.name in ("token_embd.weight", "output.weight"):
+                 continue
+             keep.append((t.name, t))
+diff --git a/scripts/text-only-gguf-a15.py b/scripts/text-only-gguf-a15.py
+new file mode 100644
+index 0000000..a84f11d
+--- /dev/null
++++ b/scripts/text-only-gguf-a15.py
+@@ -0,0 +1,37 @@
++"""Experimental decoder-only copy of a unified GGUF; source tensors are untouched."""
++import argparse
++from pathlib import Path
++import sys
++
++sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "llama.cpp" / "gguf-py"))
++import gguf
++
++parser = argparse.ArgumentParser()
++parser.add_argument("source", type=Path)
++parser.add_argument("output", type=Path)
++args = parser.parse_args()
++if args.output.exists():
++    raise ValueError("output already exists")
++r = gguf.GGUFReader(str(args.source))
++arch = r.get_field("general.architecture").contents()
++w = gguf.GGUFWriter(str(args.output), arch)
++for field in r.fields.values():
++    if field.name == "general.architecture" or field.name.startswith("GGUF."):
++        continue
++    if field.name.startswith(arch + ".vision."):
++        continue
++    value = field.contents()
++    w.add_key_value(field.name, value, field.types[0],
++                    sub_type=field.types[-1] if field.types[0] == gguf.GGUFValueType.ARRAY else None)
++tensors = [t for t in r.tensors if not t.name.startswith(("v.", "mtp."))]
++for tensor in tensors:
++    w.add_tensor_info(tensor.name, tensor.data.shape, tensor.data.dtype,
++                      tensor.data.nbytes, tensor.tensor_type)
++w.write_header_to_file()
++w.write_kv_data_to_file()
++w.write_ti_data_to_file()
++for tensor in tensors:
++    w.write_tensor_data(tensor.data, tensor_endianess=r.endianess)
++w.close()
++print({"decoder_tensors": len(tensors), "bytes": args.output.stat().st_size,
++       "source_changed": False, "output": str(args.output)})

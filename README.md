@@ -291,7 +291,7 @@ Generalの実験指定`--prompt-profile source_grounded`では、否定・未確
 
 全文発言v3は、同じ教材・学習率・32ステップの新規LoRAと継続を完走し、4候補を同じ48入力で比較しました。固定選定の継続32は事実保持がBase16/48→20/48でしたが、Base合格の6入力が落ち、対案・異議も固定直接検査0/6のため **研究HOLD** です。未学習72入力のモデル出力は生成していません。学習配分25/64組の偏りと、末尾padding1 tokenをlossへ含める境界を診断し、共有学習器はEOSを残してpaddingだけを除外するよう修正しました。117テスト、小さなCPUモデル、実Qwenの修正後1ステップを確認しました。Qwenでは正解49 tokensだけを学習し保存まで成功しましたが、発言品質の改善とは区別します。学習器は`--parent-adapter`省略でBaseから新規開始でき、容量監視と例外時の復元も維持します。[初期化比較の全結果](docs/qwen35_full_utterance_initialization_v3_20261006.md)、[非昇格記録](promotions/qwen3.5-4b-full-utterance-v3-resumed-step32.json)を参照してください。
 
-全文発言v4は、`build --balanced-pairs --profiles source_grounded flexible_plain structured_plain`で演者×発話行為64組を均等にする構成です。4表現を各64件、計256件で正しいloss境界の1巡学習を行います。初回はMetal OOMで保存前に失敗したため、任意の`train --exact-training-padding`で実入力を切らず未使用tailだけを除く経路を追加しました。最長722-token入力の実Qwen1ステップは正解71 tokens・ピーク16.548GBで成功し、同じ全教材を別出力先で再開しています。119テストと入力376表現の監査は通過していますが、全epoch・発言品質・昇格は未確認です。失敗ログ・旧条件・選定基準は上書きしていません。[均等学習の条件と実観測](docs/qwen35_full_utterance_balanced_v4_20261006.md)を参照してください。
+全文発言v4は、8演者×8発話行為×4表現の256ステップを、実入力を切らず未使用tailだけを除く経路で完走しました。固定4候補の開発48入力を比較したstep192はstudy合格がBase16/48→22/48でしたが、Base合格2入力の限定条件が欠落し、対案0/6・異議2/6で **研究HOLD・既定置換なし・Weight公開なし** です。未学習72入力のモデル出力は生成していません。失敗ログ・旧条件・選定基準も維持しています。[均等学習の条件と全結果](docs/qwen35_full_utterance_balanced_v4_20261006.md)、[非昇格記録](promotions/qwen3.5-4b-full-utterance-v4-step192.json)を参照してください。
 
 Natural specialist v5ではQwen3-14B teacherから実行役event-agreeの直接合格自然文を3件得ましたが、親step160からの専用継続はholdout 1/3のまま、Base specialistは0/3でした。move別few-shotもobjectへ賛同例が混入したためruntimeへ採用せず、全結果を [General Dialogue natural specialist v5実験記録](docs/general_dialogue_weight_v5_20260904.md) に残しています。
 
@@ -316,6 +316,8 @@ EV 8 event / 最大2 roundは16 model call・54.2秒で完走しました。Weig
 `--portable-context`を指定したrun JSONにはledger snapshot、人格順、表示名を埋め込めます。ledger本文を複製するため既定はOFFです。台風18号weather runは16/16 Weight発言・hard gate通過後、ExtremeWeatherの純Swift importer、無関係fixtureからの復元、改変ledger拒否、iPhone 16 Simulatorでの画面表示まで確認しました。[実装・画面証跡](docs/extremeweather_portable_import_20260904.md)
 
 物理iPhone 13 Pro / A15 / iOS 17.6.1では、`Qwen3-1.7B-4bit + Claim Body v3`を端末内MLXで直接ロード・生成・unloadできました。warm runはTTFT 2.306秒、25.732 tok/s、total 4.558秒、thermal nominalです。これは本文1件の実機スモークであり、完全な多人数CoDの実機完走ではありません。[実装・実測・再現手順](docs/iphone13_a15_claim_body_v3_smoke_20260904.md)
+
+2026-10-06にはMacと物理iPhone 13 Proの独立job分担と、実験patch付きBackburnerのQwen3.5-4B末尾4層分担を両方実行しました。独立jobは起動・回収込み11.821秒でMac単独4.458秒より遅く、baselineの本文契約も未達です。層分担は全probeの生成token一致、42 remote chunk、fallback0を確認。batch調整後の小さな固定入力では中央値5.072秒→4.349秒でしたが、ばらつきがあり **研究候補・既定経路への採用なし** です。分散学習ではありません。[全測定と再現手順](docs/distributed_iphone13_backburner_20261006.md)、[A15互換patch](patches/backburner-a15/README.md)を参照してください。
 
 続く4人格の独立本文soakは11.904秒、4/4 contract valid、exact polite 2/4、thermal nominalでした。各session後にMLX buffer cacheを解放し、peak footprintを2,510.879→1,478.894 MiB（-41.1%）、memory-limit headroomを561.137→2,058.169 MiBへ改善しました。生成中cancel後のAdapter unload / cache 0も実機確認済みです。このsoak単体ではBaseによる主張選択とreconciliationを実行していません。
 

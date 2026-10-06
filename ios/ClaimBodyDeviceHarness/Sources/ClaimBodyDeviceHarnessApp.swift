@@ -7,6 +7,7 @@ import MLXLLM
 import MLXLMCommon
 import SwiftUI
 import Tokenizers
+import UIKit
 
 @main
 struct ClaimBodyDeviceHarnessApp: App {
@@ -95,6 +96,19 @@ private struct SmokeResult: Encodable {
     let minimumLimitBytesRemaining: UInt64
     let memorySamples: [MemorySample]
     let utterances: [UtteranceResult]
+    let distributedRequestID: String?
+    let distributedJobIndices: [Int]?
+    let modelWeightsSHA256: String?
+}
+
+private struct DistributedFailure: Encodable {
+    let schemaVersion = 1
+    let mode = "distributed_body_worker"
+    let status: String
+    let distributedRequestID: String
+    let distributedJobIndices: [Int]
+    let error: String
+    let availableDiskBytes: UInt64?
 }
 
 private struct CancellationResult: Encodable {
@@ -108,6 +122,7 @@ private struct CancellationResult: Encodable {
 }
 
 private struct ClaimBodyDeviceHarnessView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var status = "実行待ち"
     @State private var log = "Baseは端末へ初回downloadします。"
     @State private var downloadProgress = 0.0
@@ -195,6 +210,16 @@ private struct ClaimBodyDeviceHarnessView: View {
                     startSmoke()
                 }
             }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active, ProcessInfo.processInfo.arguments.contains("--distributed-worker") {
+                    smokeTask?.cancel()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                if ProcessInfo.processInfo.arguments.contains("--distributed-worker") {
+                    smokeTask?.cancel()
+                }
+            }
         }
     }
 
@@ -278,13 +303,40 @@ private struct ClaimBodyDeviceHarnessView: View {
         status = "Baseを取得・ロード中"
         log = "model=mlx-community/Qwen3-1.7B-4bit\n"
         let totalStart = ContinuousClock.now
+        var distributedRequest: DistributedBodyRequest?
 
         defer { isRunning = false }
         do {
+            distributedRequest = try DistributedBodyRequest.parse(ProcessInfo.processInfo.arguments)
+            let selectedItems = distributedRequest.map { request in
+                request.jobIndices.map { smokeItems[$0] }
+            } ?? smokeItems
+            var configuration = LLMRegistry.qwen3_1_7b_4bit
+            var modelWeightsSHA256: String?
+            if let request = distributedRequest {
+                try checkDistributedResources()
+                let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask,
+                                                           appropriateFor: nil, create: true)
+                guard !FileManager.default.fileExists(atPath: documents.appendingPathComponent(request.resultFilename).path) else {
+                    throw DistributedBodyRequest.RequestError.existingResult
+                }
+                let modelDirectory = documents.appendingPathComponent("DistributedBodyModel", isDirectory: true)
+                let weights = modelDirectory.appendingPathComponent("model.safetensors")
+                guard FileManager.default.fileExists(atPath: weights.path) else {
+                    throw DistributedBodyRequest.RequestError.localModelMissing
+                }
+                modelWeightsSHA256 = try await Task.detached(priority: .utility) {
+                    try DistributedBodyRequest.fileSHA256(weights)
+                }.value
+                try Task.checkCancellation()
+                try checkDistributedResources()
+                configuration.id = .directory(modelDirectory)
+                log += "distributed_request_id=\(request.requestID) jobs=\(request.jobIndices)\n"
+            }
             Memory.peakMemory = 0
             var memorySamples = [try memorySample(stage: "start")]
             let container = try await #huggingFaceLoadModelContainer(
-                configuration: LLMRegistry.qwen3_1_7b_4bit,
+                configuration: configuration,
                 progressHandler: { progress in
                     Task { @MainActor in
                         downloadProgress = progress.fractionCompleted
@@ -301,6 +353,12 @@ private struct ClaimBodyDeviceHarnessView: View {
                 withExtension: nil
             ) else {
                 throw HarnessError.adapterMissing
+            }
+            if distributedRequest != nil {
+                guard try DistributedBodyRequest.fileSHA256(adapterDirectory.appendingPathComponent("adapters.safetensors"))
+                        == "4ce21e64af220f0ee309599e189fd136e10c4c5cd11440c3d60fd306749a9a92" else {
+                    throw HarnessError.invalidContract("Adapter SHA mismatch")
+                }
             }
             let adapterStart = ContinuousClock.now
             let adapter = try LoRAContainer.from(directory: adapterDirectory)
@@ -321,9 +379,10 @@ private struct ClaimBodyDeviceHarnessView: View {
                     }
                 }
 
-                for (offset, item) in smokeItems.enumerated() {
+                for (offset, item) in selectedItems.enumerated() {
                     try Task.checkCancellation()
-                    status = "\(offset + 1)/\(smokeItems.count) \(item.persona)"
+                    if distributedRequest != nil { try checkDistributedResources() }
+                    status = "\(offset + 1)/\(selectedItems.count) \(item.persona)"
                     let utterance = try await renderBody(
                         item,
                         sequence: offset + 1,
@@ -362,9 +421,9 @@ private struct ClaimBodyDeviceHarnessView: View {
                 log += "thermal_state=\(thermalState)\n"
 
                 let result = SmokeResult(
-                    schemaVersion: 2,
+                    schemaVersion: distributedRequest == nil ? 2 : 3,
                     createdAt: Date(),
-                    mode: "four_persona_body_soak",
+                    mode: distributedRequest == nil ? "four_persona_body_soak" : "distributed_body_worker",
                     model: "mlx-community/Qwen3-1.7B-4bit",
                     adapterWeightsSHA256: "4ce21e64af220f0ee309599e189fd136e10c4c5cd11440c3d60fd306749a9a92",
                     baseLoadSeconds: loadSeconds,
@@ -380,10 +439,14 @@ private struct ClaimBodyDeviceHarnessView: View {
                     peakFootprintBytes: memorySamples.map(\.footprintPeakBytes).max() ?? 0,
                     minimumLimitBytesRemaining: memorySamples.map(\.limitBytesRemaining).min() ?? 0,
                     memorySamples: memorySamples,
-                    utterances: utterances
+                    utterances: utterances,
+                    distributedRequestID: distributedRequest?.requestID,
+                    distributedJobIndices: distributedRequest?.jobIndices,
+                    modelWeightsSHA256: modelWeightsSHA256
                 )
-                try save(result, named: "mp_cod_a15_soak.json")
-                log += "result_file=mp_cod_a15_soak.json\n"
+                let resultFilename = distributedRequest?.resultFilename ?? "mp_cod_a15_soak.json"
+                try save(result, named: resultFilename)
+                log += "result_file=\(resultFilename)\n"
                 status = "PASS"
                 downloadProgress = 1
                 print("MP_COD_A15_SOAK PASS\n\(log)")
@@ -419,11 +482,33 @@ private struct ClaimBodyDeviceHarnessView: View {
             status = "CANCELLED"
             log += "cancelled=true\n"
             print("MP_COD_A15_SOAK CANCELLED\n\(log)")
+            if let request = distributedRequest { saveDistributedFailure(request, status: "cancelled", error: "cancelled") }
         } catch {
             status = "FAIL"
             log += "error=\(error.localizedDescription)\n"
             print("MP_COD_A15_SOAK FAIL \(error)")
+            if let request = distributedRequest {
+                saveDistributedFailure(request, status: "failed", error: error.localizedDescription)
+            }
         }
+    }
+
+    private func checkDistributedResources() throws {
+        guard ProcessInfo.processInfo.thermalState == .nominal || ProcessInfo.processInfo.thermalState == .fair,
+              try memorySample(stage: "distributed_guard").limitBytesRemaining >= 512 * 1_048_576 else {
+            throw DistributedBodyRequest.RequestError.unsafeResources
+        }
+    }
+
+    private func saveDistributedFailure(_ request: DistributedBodyRequest, status: String, error: String) {
+        do {
+            let attributes = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())
+            let available = (attributes?[.systemFreeSize] as? NSNumber)?.uint64Value
+            try save(DistributedFailure(status: status, distributedRequestID: request.requestID,
+                                        distributedJobIndices: request.jobIndices, error: error,
+                                        availableDiskBytes: available),
+                     named: request.resultFilename)
+        } catch { print("MP_COD_DISTRIBUTED failure_record_error=\(error)") }
     }
 
     @MainActor
@@ -562,6 +647,9 @@ private struct ClaimBodyDeviceHarnessView: View {
             appropriateFor: nil,
             create: true
         ).appendingPathComponent(filename)
+        if filename.hasPrefix("mp_cod_distributed_"), FileManager.default.fileExists(atPath: resultURL.path) {
+            throw DistributedBodyRequest.RequestError.existingResult
+        }
         try encoder.encode(value).write(to: resultURL, options: .atomic)
     }
 

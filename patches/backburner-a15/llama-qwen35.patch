@@ -1,0 +1,57 @@
+diff --git a/src/models/qwen35.cpp b/src/models/qwen35.cpp
+index d87e18a..c0ce00c 100644
+--- a/src/models/qwen35.cpp
++++ b/src/models/qwen35.cpp
+@@ -4,7 +4,15 @@
+ 
+ void llama_model_qwen35::load_arch_hparams(llama_model_loader & ml) {
+     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS,       hparams.f_norm_rms_eps);
+-    ml.get_key_or_arr(LLM_KV_ROPE_DIMENSION_SECTIONS,    hparams.rope_sections, 4, true);
++    // Older Qwen3.5 converters write the three active MRoPE sections.
++    // Keep them unchanged and leave the unused fourth section at zero.
++    std::vector<int32_t> sections;
++    ml.get_arr(LLM_KV_ROPE_DIMENSION_SECTIONS, sections, true);
++    if (sections.size() != 3 && sections.size() != 4) {
++        throw std::runtime_error("Qwen3.5 RoPE sections must have 3 or 4 entries");
++    }
++    hparams.rope_sections.fill(0);
++    std::copy(sections.begin(), sections.end(), hparams.rope_sections.begin());
+ 
+     // Load linear attention (gated delta net) parameters
+     ml.get_key(LLM_KV_SSM_CONV_KERNEL,    hparams.ssm_d_conv);
+@@ -23,6 +31,23 @@ void llama_model_qwen35::load_arch_hparams(llama_model_loader & ml) {
+         }
+     }
+ 
++    // Legacy converters use zero KV heads for GDN layers. This graph's global
++    // dense-attention locals read layer zero, while GDN uses separate SSM heads.
++    // Normalize only unused recurrent entries to the common dense KV count.
++    uint32_t dense_kv_heads = 0;
++    for (uint32_t i = 0; i < hparams.n_layer(); ++i) {
++        if (!hparams.is_recr(i)) {
++            const uint32_t heads = hparams.n_head_kv_arr[i];
++            if (!heads || (dense_kv_heads && heads != dense_kv_heads)) {
++                throw std::runtime_error("unsupported Qwen3.5 dense KV head layout");
++            }
++            dense_kv_heads = heads;
++        }
++    }
++    for (uint32_t i = 0; i < hparams.n_layer(); ++i) {
++        if (hparams.is_recr(i) && !hparams.n_head_kv_arr[i]) hparams.n_head_kv_arr[i] = dense_kv_heads;
++    }
++
+     switch (hparams.n_layer()) {
+         case 24: type = hparams.n_embd == 1024 ? LLM_TYPE_0_8B : LLM_TYPE_2B; break;
+         case 32: type = hparams.n_embd == 2560 ? LLM_TYPE_4B : LLM_TYPE_9B; break;
+@@ -80,7 +105,10 @@ void llama_model_qwen35::load_arch_tensors(llama_model_loader & ml) {
+             layer.wqkv           = create_tensor(tn(LLM_TENSOR_ATTN_QKV,       "weight", il), { n_embd, key_dim * 2 + value_dim }, TENSOR_NOT_REQUIRED);
+             layer.wqkv_gate      = create_tensor(tn(LLM_TENSOR_ATTN_GATE,      "weight", il), { n_embd, value_dim }, TENSOR_NOT_REQUIRED);
+             layer.ssm_conv1d     = create_tensor(tn(LLM_TENSOR_SSM_CONV1D,     "weight", il), { hparams.ssm_d_conv, conv_dim }, flags);
+-            layer.ssm_dt         = create_tensor(tn(LLM_TENSOR_SSM_DT,         "bias",   il), { hparams.ssm_dt_rank }, flags);
++            const auto dt_bias_name = tn(LLM_TENSOR_SSM_DT, "bias", il);
++            const auto dt_legacy_name = tn(LLM_TENSOR_SSM_DT, il);
++            layer.ssm_dt         = create_tensor(ml.get_weight(dt_bias_name.str().c_str()) ? dt_bias_name : dt_legacy_name,
++                                                 { hparams.ssm_dt_rank }, flags);
+             layer.ssm_a          = create_tensor(tn(LLM_TENSOR_SSM_A_NOSCAN,             il), { hparams.ssm_dt_rank }, flags);
+             layer.ssm_beta       = create_tensor(tn(LLM_TENSOR_SSM_BETA,       "weight", il), { n_embd, n_v_heads }, flags);
+             layer.ssm_alpha      = create_tensor(tn(LLM_TENSOR_SSM_ALPHA,      "weight", il), { n_embd, n_v_heads }, flags);
