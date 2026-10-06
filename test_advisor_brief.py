@@ -128,6 +128,26 @@ class AdvisorBriefTest(unittest.TestCase):
             with self.subTest(field=field,text=text), self.assertRaises(ValueError):
                 build_brief(run, self.ledger)
 
+    def test_change_reason_internal_code_is_rejected_in_an_otherwise_valid_saved_vote(self):
+        ledger=copy.deepcopy(self.ledger);run=copy.deepcopy(self.run)
+        for claim in ledger['claim_catalog']:
+            claim['code']='OLD_OPTION'if claim['code']=='A'else'NEW_OPTION'
+            claim['contradicts']=['NEW_OPTION'if x=='B'else'OLD_OPTION'for x in claim['contradicts']]
+        for event in run['events']:
+            event['code']='OLD_OPTION'if event['code']=='A'else'NEW_OPTION'
+        votes=run['reconciliation'][0]['votes'].pop('A|B')
+        for vote in votes.values():
+            vote['choice']='OLD_OPTION'if vote['choice']=='A'else'NEW_OPTION'
+        run['reconciliation'][0]['votes']['NEW_OPTION|OLD_OPTION']=votes
+        run['ledger_snapshot']=copy.deepcopy(ledger)
+        run['summary']=cod.synthesize_event_summary(run['events'],{c['code']:c for c in ledger['claim_catalog']},run['reconciliation'],2)
+        vote=votes['p2'];vote.update(changed_from_previous=True,previous_choice='OLD_OPTION',
+            change_reason='前回のOLD_OPTIONから変更しました。根拠は[D01]です。',change_reason_origin='model')
+        with self.assertRaisesRegex(ValueError,'internal claim code'):
+            build_brief(run,ledger)
+        vote['change_reason']='未承認状態を踏まえて選択を変更しました。[D01]'
+        self.assertEqual(build_brief(run,ledger)['status'],'HOLD')
+
     def test_both_and_abstention_are_preserved_not_converted_into_agreement(self):
         votes = self.run["reconciliation"][0]["votes"]["A|B"]
         votes["p1"] = self.record("BOTH")

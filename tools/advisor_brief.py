@@ -76,7 +76,7 @@ def build_brief(run: dict, ledger: dict) -> dict:
         if reason:
             raise ValueError(f"{reference}: {reason}")
         if record.get("changed_from_previous"):
-            _, reason = cod.validate_public_statement(record.get("change_reason"), ids)
+            _, reason = cod.validate_change_reason(record.get("change_reason"), ids, catalog)
             if reason:
                 raise ValueError(f"{reference}: change_reason: {reason}")
         return {

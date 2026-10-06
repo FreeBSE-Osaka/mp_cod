@@ -785,6 +785,66 @@ class CodModelTest(unittest.TestCase):
         ordinary = 'SQLのLEFT JOINを使う案を検討します。'
         self.assertEqual(cod_model.validate_dialogue_utterance(ordinary), (ordinary, None))
 
+    def test_change_reason_rejects_known_private_codes_without_rejecting_public_api_names(self):
+        catalog={'OLD_OPTION':{'label':'条件付き案を比較する'},'NEW_OPTION':{'label':'判断を保留する'}}
+        for text in ('前回のOLD_OPTIONから変更しました。根拠は[D01]です。',
+                     'NEW_OPTIONを選んだ理由は資料[D01]の未承認状態です。',
+                     '前回のＯＬＤ＿ＯＰＴＩＯＮから変更しました。根拠は[D01]です。'):
+            self.assertIsNone(cod_model.validate_change_reason(text,['D01'],catalog)[0])
+        natural='未承認の状態を重く見て、条件付き案の比較から判断の保留へ変更しました。[D01]'
+        self.assertEqual(cod_model.validate_change_reason(natural,['D01'],catalog),(natural,None))
+        self.assertIsNone(cod_model.validate_change_reason(natural,['D99'],catalog)[0])
+        public={'SQL_API':{'label':'SQL_APIを比較する'}}
+        technical='SQL_APIの制約を資料[D01]で確認して方針を変更しました。'
+        self.assertEqual(cod_model.validate_change_reason(technical,['D01'],public),(technical,None))
+        prefix={'SQL_API':{'label':'SQL_API_EXTを比較する'}}
+        self.assertIsNone(cod_model.validate_change_reason(technical,['D01'],prefix)[0])
+
+    def test_failed_change_reason_remains_explicitly_unavailable_without_private_codes(self):
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        import io
+        roster=cod_model.load_domains()['general']['personas'][:2]
+        labels={'OLD_OPTION':'候補Aを比較候補として残す','NEW_OPTION':'候補Bを比較候補として残す'}
+        ledger={'schema_version':1,'topic':'架空の変更理由の公開表示',
+                'data':[{'id':'D01','text':'候補AとBを比較する。実行は依頼されていない。'}],
+                'claim_catalog':[{'code':code,'label':label,'supported_by':['D01'],
+                                  'contradicts':[other for other in labels if other!=code]}
+                                  for code,label in labels.items()],
+                'role_preferences':{p['id']:list(labels)for p in roster}}
+        count=0
+        def respond(**kwargs):
+            nonlocal count
+            payload=json.loads(kwargs['user'])
+            if'claim_catalog'in payload:
+                chosen=('OLD_OPTION','NEW_OPTION')[count];count+=1
+                result={'claims':[{'code':chosen,'data_ids':['D01'],'confidence':75,
+                                   'statement':labels[chosen]+'案を支持します。[D01]'}]}
+            elif'label'in payload:
+                result={'statement':labels['NEW_OPTION']+'案を支持します。[D01]',
+                        'change_reason':'OLD_OPTIONから変更しました。根拠は[D01]です。'}
+            else:
+                side=next(s for s in (payload['left'],payload['right'])if s['label']==labels['NEW_OPTION'])
+                result={'choice':side['code'],'data_ids':['D01'],'statement':labels['NEW_OPTION']+'案を支持します。[D01]',
+                        'change_reason':'OLD_OPTIONから変更しました。根拠は[D01]です。'}
+            return result,{'_raw_content':json.dumps(result,ensure_ascii=False)}
+        with tempfile.TemporaryDirectory()as directory:
+            root=Path(directory);source=root/'ledger.json';source.write_text(json.dumps(ledger))
+            args=cod_model.parser().parse_args(['event-debate','--ledger',str(source),'--domain','general',
+                  '--backend','ollama','--no-renderer','--reconcile-rounds','1','--out',str(root/'runs')])
+            with patch.object(cod_model,'ask_ollama',side_effect=respond),redirect_stdout(io.StringIO()):
+                self.assertEqual(cod_model.run_event_debate(args),0)
+            run=json.loads(next((root/'runs').glob('event_debate_*.json')).read_text())
+        vote=run['reconciliation'][0]['votes']['NEW_OPTION|OLD_OPTION'][roster[0]['id']]
+        self.assertEqual(vote['choice'],'NEW_OPTION')
+        self.assertEqual(vote['previous_choice'],'OLD_OPTION')
+        self.assertEqual(vote['change_reason_origin'],'label_fallback')
+        self.assertIn('検証できませんでした',vote['change_reason'])
+        self.assertNotIn('OLD_OPTION',vote['change_reason'])
+        self.assertNotIn('NEW_OPTION',vote['change_reason'])
+        self.assertNotIn('新しい根拠',vote['change_reason'])
+        self.assertIsNone(cod_model.validate_change_reason(vote['change_reason'],['D01'],{c['code']:c for c in ledger['claim_catalog']})[1])
+
     def test_public_statement_requires_a_selected_data_id(self):
         statement, reason = cod_model.validate_public_statement("主経路を採ります。根拠は[D01]です。", ["D01"])
         self.assertIsNone(reason)

@@ -1219,6 +1219,21 @@ def validate_claim_statement(
     return normalized, None
 
 
+def validate_change_reason(statement: object, data_ids: list[str], catalog: dict) -> tuple[str | None, str | None]:
+    normalized, reason = validate_public_statement(statement, data_ids)
+    if normalized is None:
+        return None, reason
+    public_labels = unicodedata.normalize("NFKC", " ".join(item["label"] for item in catalog.values()))
+    validation_text = unicodedata.normalize("NFKC", normalized)
+    for code in catalog:
+        # Known underscored choice IDs are internal unless explicitly named in a public label.
+        code = unicodedata.normalize("NFKC", code)
+        pattern = r"(?<![A-Za-z0-9_])" + re.escape(code) + r"(?![A-Za-z0-9_])"
+        if "_" in code and not re.search(pattern, public_labels) and re.search(pattern, validation_text):
+            return None, "change_reason exposes an internal claim code"
+    return normalized, None
+
+
 def decision_system_prompt(system: str, profile: str, phase: str) -> str:
     if profile == "source_grounded" and phase.split(":", 1)[0] in {
         "independent", "reconciliation", "reconciliation-repair"
@@ -3355,14 +3370,14 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 change_reason_origin = "not_required"
                 change_reason_warning = None
                 if changed:
-                    change_reason, change_reason_warning = validate_public_statement(
+                    change_reason, change_reason_warning = validate_change_reason(
                         parsed.get("change_reason") if isinstance(parsed, dict) else None,
-                        data_ids,
+                        data_ids, catalog,
                     )
                     if change_reason is None:
                         change_reason = (
-                            f"前回の{previous_choice}から{choice}へ変更しました。"
-                            f"新しい根拠は[{','.join(data_ids)}]です。"
+                            "選択変更は記録しましたが、理由のモデル文は検証できませんでした。"
+                            f"参照資料は[{','.join(data_ids)}]です。"
                         )
                         change_reason_origin = "label_fallback"
                     else:
@@ -3438,21 +3453,13 @@ def run_event_debate(args: argparse.Namespace) -> int:
                                 statement = sanitized
                                 statement_origin = "model_sanitized"
                     if changed and change_reason_warning is not None:
-                        repaired_reason, repair_change_reason_warning = validate_public_statement(
+                        repaired_reason, repair_change_reason_warning = validate_change_reason(
                             repair_parsed.get("change_reason") if isinstance(repair_parsed, dict) else None,
-                            data_ids,
+                            data_ids, catalog,
                         )
                         if repaired_reason is not None:
                             change_reason = repaired_reason
                             change_reason_origin = "model_repair"
-                        else:
-                            sanitized_reason = sanitize_model_statement(
-                                repair_parsed.get("change_reason") if isinstance(repair_parsed, dict) else None,
-                                data_ids,
-                            )
-                            if sanitized_reason is not None:
-                                change_reason = sanitized_reason
-                                change_reason_origin = "model_sanitized"
                 vote = {
                     "choice_transport": choice_transport,
                     "choice": choice,
