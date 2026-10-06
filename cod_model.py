@@ -41,6 +41,10 @@ SOURCE_GROUNDING_RULE = (
     "statementはlabelの復唱だけでなく、選んだdataの具体的内容と自分の評価観点を結び付けた公開用の理由にする。"
     "断定できない部分は保留や条件として自然に述べ、別の意見を無理に作らない。"
 )
+RENDERER_JSON_RULE = (
+    '必ず {"utterances":[{"id":"入力itemsのid","utterance":"自然な会話文"}]} の形のobjectを返す。'
+    "utterancesは配列であり、idをキーにした辞書ではない。入力itemsの実際のidを使う。"
+)
 SOURCE_RENDERER_RULE = (
     "perspectiveは話者の評価観点であり、賛否を決める役割ではない。"
     "candidate_reasonは自分の候補理由であって追加の証拠ではない。"
@@ -1245,7 +1249,7 @@ def validate_dialogue_utterance(utterance: object) -> tuple[str | None, str | No
     return normalized, None
 
 
-def renderer_system(persona: dict | None, flexible: bool = False) -> str:
+def renderer_system(persona: dict | None, flexible: bool = False, source_grounded: bool = False) -> str:
     if persona is None:
         identity = "各itemのspeakerとして発言する。"
     else:
@@ -1262,7 +1266,7 @@ def renderer_system(persona: dict | None, flexible: bool = False) -> str:
         "objectは異議に加えて代案・修正版・採用条件のいずれかを述べる。"
         "agreeは賛同に自分の観点を加え、maintainは維持理由、reviseは判断変更を率直に述べる。"
     )
-    return (
+    system = (
         f"{identity}検証済みの構造化判断を会話文へ描画する専用rendererである。"
         "主張、選択、根拠、moveを変更・再評価・追加してはならない。"
         + dialogue_rules +
@@ -1270,6 +1274,8 @@ def renderer_system(persona: dict | None, flexible: bool = False) -> str:
         "入力itemsと同じidを順不同で一度ずつ返す。"
         "出力はutterancesだけをキーに持つJSONで、各要素のキーはidとutteranceだけ。"
     )
+    # Keep the already explicit source-grounded prompt intact; plain variants lack the example.
+    return system + (SOURCE_RENDERER_RULE if source_grounded else RENDERER_JSON_RULE)
 
 
 def renderer_event_move(action: object) -> str:
@@ -2775,9 +2781,9 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     item["speaker"] = source["name"]
                 item.update(source_renderer_context(record, persona_configs[record["persona_id"]], args.prompt_profile))
                 items.append(item)
-            system = renderer_system(persona, flexible=flexible)
-            if args.prompt_profile == "source_grounded":
-                system += SOURCE_RENDERER_RULE
+            system = renderer_system(
+                persona, flexible=flexible, source_grounded=args.prompt_profile == "source_grounded"
+            )
             raw, parsed = ask_json(
                 system,
                 json.dumps({"items": items}, ensure_ascii=False),
@@ -3369,6 +3375,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                             "phase": "reconciliation",
                             "move": vote["dialogue_move"],
                             "previous_choice": vote["previous_choice"],
+                            "previous_claim": catalog.get(vote["previous_choice"], {}).get("label"),
                             "selected_claim": selected_label,
                             "alternatives": [catalog[code]["label"] for code in pair],
                             "evidence": [

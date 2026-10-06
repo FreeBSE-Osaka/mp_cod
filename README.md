@@ -283,6 +283,8 @@ Generalの実験指定`--prompt-profile source_grounded`では、否定・未確
 
 2026-10-06のQwen3.5全文発言LoRAは、8人格・8種の発話を含む9学習topicで128ステップ完走しました。step32（約0.75MB、Baseは別途必要）は未学習24例が12/24→13/24でしたが、旧全文18例は10/18→0/18へ後退。8人の同条件実走も直接発言0/24、補正12・代替12のままで **研究HOLD・既定置換なし・Weight公開なし** です。通常の「根拠」という語で説明の後半が消える表示バグだけは共通処理で修正し、学習の改善とは区別しています。[全文Weightの学習と全検証](docs/qwen35_full_utterance_weight_v1_20261006.md)、[非昇格記録](promotions/qwen3.5-4b-full-utterance-v1-step32.json)を参照してください。
 
+全文発言v2は3入力形式・前案ラベル・確認済み事実と未確認条件を含む教材で64ステップを完走しました。固定選定のstep16は開発の事実保持6/48で親7/48を上回らず **研究HOLD** です。未学習72入力のモデル出力はまだ生成していません。一方、具体的なJSON配列を共通指示へ追加する比較では、既知plain32入力の完全契約がBase・候補とも9/32→32/32になりました。これは指示の改善でありWeightの性能向上とは区別しています。既に具体例のある理由付き形式は元の指示を維持します。保存済み討論を追加推論なしで点検する`tools/discussion_quality.py`も追加し、同じ立場の異なる演者の反復とラベル復唱を診断できます。正当な同意は自動失格にしません。[v2学習と共通指示の検証](docs/qwen35_full_utterance_weight_v2_20261006.md)、[非昇格記録](promotions/qwen3.5-4b-full-utterance-v2-step16.json)を参照してください。
+
 Natural specialist v5ではQwen3-14B teacherから実行役event-agreeの直接合格自然文を3件得ましたが、親step160からの専用継続はholdout 1/3のまま、Base specialistは0/3でした。move別few-shotもobjectへ賛同例が混入したためruntimeへ採用せず、全結果を [General Dialogue natural specialist v5実験記録](docs/general_dialogue_weight_v5_20260904.md) に残しています。
 
 Natural specialists v6では12の異なるtopicから仮説object 12件・実行event-agree 13件を集め、人格・phase・move別LoRAとrepair LoRAを評価しました。数値創作を拒否するgrounding guardは採用しましたが、全Weightが未学習holdoutで親同等以下だったため非昇格です。全target、評価、SHA、停止理由は [General Dialogue natural specialists v6実験記録](docs/general_dialogue_weight_v6_20260904.md) にあります。

@@ -9,6 +9,46 @@ import cod_model
 
 
 class CodModelTest(unittest.TestCase):
+    def test_reconciliation_renderer_receives_label_of_previous_choice(self):
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        import io
+        roster = cod_model.load_domains()['general']['personas'][:2]
+        catalog = [{'code':code,'kind':'proposal','label':label,'supported_by':['D01'],
+                    'contradicts':['Q' if code=='P' else 'P']}
+                   for code,label in [('P','少人数で試験を続ける'),('Q','試験を止めて再評価する')]]
+        ledger = {'schema_version':1,'topic':'架空の前案表示','data':[{'id':'D01','text':'試行条件を比較する。'}],
+                  'claim_catalog':catalog,'role_preferences':{p['id']:['P','Q']for p in roster}}
+        previous, count = [], 0
+        def respond(**kwargs):
+            nonlocal count
+            payload=json.loads(kwargs['user'])
+            if 'items' in payload:
+                result={'utterances':[]}
+                for item in payload['items']:
+                    claim=item.get('own_claim',item.get('selected_claim'))
+                    if item['phase']=='reconciliation':previous.append(item)
+                    text=cod_model.compose_dialogue_body(claim+'。',claim,item['move'],flexible=True)
+                    result['utterances'].append({'id':item['id'],'utterance':text or claim+'。'})
+            elif 'claim_catalog' in payload:
+                code='P' if count==0 else 'Q';count+=1
+                result={'claims':[{'code':code,'data_ids':['D01'],'confidence':75,
+                                   'statement':'試行条件を比較して進めます。根拠は[D01]です。'}]}
+            else:
+                result={'choice':'LEFT','data_ids':['D01'],
+                        'statement':'試行条件を比較して選びます。根拠は[D01]です。','change_reason':''}
+            return result,{'_raw_content':json.dumps(result,ensure_ascii=False)}
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)/'ledger.json';source.write_text(json.dumps(ledger))
+            args=cod_model.parser().parse_args(['event-debate','--domain','general','--backend','ollama',
+                  '--ledger',str(source),'--out',str(Path(directory)/'runs'),'--reconcile-rounds','1'])
+            with patch.object(cod_model,'ask_ollama',side_effect=respond),redirect_stdout(io.StringIO()):
+                self.assertEqual(cod_model.run_event_debate(args),0)
+        self.assertEqual(len(previous),2)
+        labels={row['code']:row['label']for row in catalog}
+        for item in previous:
+            self.assertEqual(item['previous_claim'],labels[item['previous_choice']])
+
     def test_dialogue_cleanup_keeps_evidence_prose_and_removes_only_citation_footer(self):
         statement = "この提案は根拠として十分ですが、工数の見積もり範囲に注意が必要です。"
         self.assertEqual(cod_model.dialogue_fallback(statement), statement)
@@ -44,6 +84,32 @@ class CodModelTest(unittest.TestCase):
             for claim in family["claims"]:
                 self.assertLessEqual(set(claim["supported_by"]), ids)
         self.assertEqual(seen, known)
+
+    def test_every_full_renderer_uses_an_explicit_array_contract_without_parser_repair(self):
+        persona = cod_model.load_domains()["general"]["personas"][0]
+        for identity in (None, persona):
+            for flexible in (False, True):
+                with self.subTest(identity=identity, flexible=flexible):
+                    system = cod_model.renderer_system(identity, flexible=flexible)
+                    self.assertTrue(system.endswith(cod_model.RENDERER_JSON_RULE))
+                    self.assertIn('{"utterances":[{"id":', system)
+                    self.assertIn("idをキーにした辞書ではない", system)
+                    source_system = cod_model.renderer_system(identity, flexible=flexible, source_grounded=True)
+                    self.assertEqual(source_system,
+                                     system.removesuffix(cod_model.RENDERER_JSON_RULE) + cod_model.SOURCE_RENDERER_RULE)
+                    self.assertIn('{"utterances":[{"id":', source_system)
+                    self.assertNotIn(cod_model.RENDERER_JSON_RULE, source_system)
+        text = "同じ条件で小規模な試験を続ける案を提案します。"
+        valid, warning = cod_model.parse_renderer_utterances(
+            {"utterances": [{"id": "I01", "utterance": text}]}, ["I01"]
+        )
+        self.assertIsNone(warning)
+        self.assertEqual(valid, {"I01": text})
+        values, warning = cod_model.parse_renderer_utterances(
+            {"utterances": {"I01": text}}, ["I01"]
+        )
+        self.assertTrue(warning)
+        self.assertEqual(values, {})
 
     def test_source_renderer_context_uses_own_candidate_and_persona_not_peer_prose(self):
         persona = cod_model.load_domains()["general"]["personas"][0]

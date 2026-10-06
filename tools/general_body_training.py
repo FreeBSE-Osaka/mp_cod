@@ -293,6 +293,12 @@ def train(args):
     if not args.parent_adapter.is_file():
         raise ValueError("parent adapter must be an existing weights file")
     from mlx_lm import lora
+    cache_mib = getattr(args, 'mlx_cache_limit_mib', None)
+    if cache_mib is not None and (type(cache_mib) is not int or cache_mib < 0):
+        raise ValueError('mlx-cache-limit-mib must be a nonnegative integer')
+    if cache_mib is not None:
+        import mlx.core as mx
+    previous_cache = mx.set_cache_limit(cache_mib * 1024 * 1024) if cache_mib is not None else None
     original_load, original_argv = lora.load, sys.argv
 
     def load_body_model(*values, **kwargs):
@@ -307,6 +313,11 @@ def train(args):
         lora.main()
     finally:
         lora.load, sys.argv = original_load, original_argv
+        if cache_mib is not None:
+            print(json.dumps({'mlx_cache_limit_mib': cache_mib, 'MLX_peak_memory_GB': mx.get_peak_memory()/1e9,
+                              'MLX_active_memory_GB': mx.get_active_memory()/1e9,
+                              'MLX_cache_memory_GB': mx.get_cache_memory()/1e9}), flush=True)
+            mx.set_cache_limit(previous_cache)
 
 
 def guarded_job(args, action):
@@ -398,6 +409,8 @@ def main():
             p.add_argument("--data", type=Path, required=True)
             p.add_argument("--config", type=Path, required=True)
             p.add_argument("--parent-adapter", type=Path, required=True)
+            p.add_argument("--mlx-cache-limit-mib", type=int,
+                           help="Training-only MLX allocator cache cap; 0 disables unused-memory caching")
     args = parser.parse_args()
     return guarded_job(args, {"build": build, "evaluate": evaluate, "rescore": rescore, "train": train}[args.command])
 
