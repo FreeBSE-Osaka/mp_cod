@@ -9,11 +9,39 @@ import io
 import sys
 
 import cod_model as cod
-from tools.general_utterance_training import cases,checks,example,item,profile_case,score,valid,PROFILES,build,balanced_training_cases
+from tools.general_utterance_training import cases,checks,example,item,profile_case,score,valid,PROFILES,build,balanced_training_cases,own_only_example
 from tools.general_body_training import train,assistant_only_loss,exact_length_batches
 
 
 class FullUtteranceTrainingTest(unittest.TestCase):
+    def test_own_only_rehearsal_keeps_all_old_examples_and_frozen_evaluation_splits(self):
+        curated=Path(__file__).parent/'data/general_utterance_qwen35_v2/curated.json'
+        with tempfile.TemporaryDirectory()as directory,redirect_stdout(io.StringIO()):
+            root=Path(directory)
+            args=SimpleNamespace(out=root/'parent',curated=curated,profiles=PROFILES,rehearsal=None,balanced_pairs=True)
+            build(args)
+            args.out=root/'next';args.own_only_rehearsal=True;build(args)
+            self.assertEqual((root/'parent/valid.jsonl').read_bytes(),(root/'next/valid.jsonl').read_bytes())
+            self.assertEqual((root/'parent/test.jsonl').read_bytes(),(root/'next/test.jsonl').read_bytes())
+            old=[json.loads(line)for line in (root/'parent/train.jsonl').read_text().splitlines()]
+            new=[json.loads(line)for line in (root/'next/train.jsonl').read_text().splitlines()]
+            self.assertEqual(len(old),256);self.assertEqual(len(new),320)
+            canon=lambda row:json.dumps(row,ensure_ascii=False,sort_keys=True)
+            self.assertTrue({canon(row)for row in old}.issubset({canon(row)for row in new}))
+            repairs=[row for row in new if '再評価せず、その立場を自然な発言' in row['messages'][0]['content']]
+            self.assertEqual(len(repairs),64)
+            pairs=set()
+            for row in repairs:
+                payload=json.loads(row['messages'][1]['content'])['items'][0]
+                pairs.add((payload['speaker'],payload['move']))
+                self.assertTrue({'target_claim','previous_claim','candidate_reason','perspective'}.isdisjoint(payload))
+                self.assertTrue(cod.dialogue_numbers_are_grounded(json.loads(row['messages'][2]['content'])['utterances'][0]['utterance'],payload))
+            self.assertEqual(len(pairs),64)
+            manifest=json.loads((root/'next/manifest.json').read_text())
+            self.assertEqual(manifest['own_only_train_cases'],64)
+            args.out=root/'bad';args.profiles=('flexible_plain',);args.balanced_pairs=False
+            with self.assertRaisesRegex(ValueError,'requires source-grounded'):build(args)
+
     def test_exact_padding_preserves_real_tokens_lengths_and_native_arguments(self):
         class Batch:
             def __init__(self):self.rows=[[10,11,20,21,22]+[0]*28,[30,31,32]+[0]*30]

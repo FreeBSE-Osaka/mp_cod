@@ -100,6 +100,22 @@ def example(case, *, misleading=False):
         {"role": "assistant", "content": json.dumps({"utterances": [{"id": case["id"], "utterance": case["utterance"]}]}, ensure_ascii=False)}]}
 
 
+def own_only_example(case):
+    """The runtime's repair input, without target, peer prose, candidate reason or perspective."""
+    full = item(case)
+    payload = {key: full[key] for key in ("phase", "move", "own_claim", "selected_claim", "evidence") if key in full}
+    payload.update(id=case["id"], speaker=case["speaker"],
+                   speech_act=cod.renderer_move_instruction(case["move"], flexible=True))
+    if not cod.dialogue_numbers_are_grounded(case["utterance"], payload):
+        raise ValueError(f"own-only gold uses numbers outside its actual input: {case['case']}")
+    system = cod.renderer_system(None, flexible=True, source_grounded=True)
+    system += "自分のown_claimとmoveは確定済み。再評価せず、その立場を自然な発言として表現する。相手の案は追加しない。"
+    return {"messages": [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps({"items": [payload]}, ensure_ascii=False)},
+        {"role": "assistant", "content": json.dumps({"utterances": [{"id": case["id"], "utterance": case["utterance"]}]}, ensure_ascii=False)}]}
+
+
 def checks(text, case):
     normalized, reason = cod.validate_dialogue_move(text, case["move"], case["claim"],
                                                    flexible=case.get('renderer_profile') != 'structured_plain',
@@ -147,6 +163,9 @@ def build(args):
         if set(profiles)!=set(PROFILES) or getattr(args,'rehearsal',None):
             raise ValueError('balanced pairs require all three profiles and no extra rehearsal')
         original=balanced_training_cases(original)
+    own_only = getattr(args, 'own_only_rehearsal', False)
+    if own_only and 'source_grounded' not in profiles:
+        raise ValueError('own-only rehearsal requires source-grounded examples')
     corpus=[profile_case(case,profile) for case in original for profile in profiles]
     for case in corpus:
         gold=score(json.dumps({'utterances':[{'id':case['id'],'utterance':case['utterance']}]},ensure_ascii=False),case)
@@ -169,6 +188,8 @@ def build(args):
                 rows.append(example(case))
                 if split=='train' and case['renderer_profile']=='source_grounded':
                     rows.append(example(case,misleading=True))
+                    if own_only:
+                        rows.append(own_only_example(case))
         if split=='train':
             for case in rehearsal:
                 rows.extend((example(case),example(case,misleading=True)))
@@ -180,6 +201,7 @@ def build(args):
         'systems':{profile:example(profile_case(original[0],profile))['messages'][0]['content'] for profile in profiles},
         'rehearsal_sha256':sha(args.rehearsal) if getattr(args,'rehearsal',None) else None,
         'balanced_pairs':balanced,'selected_train_cases':[case['case']for case in original if case['split']=='train'],
+        'own_only_rehearsal':own_only,'own_only_train_cases':sum(case['split']=='train'for case in original)if own_only else 0,
         'scope':'full utterance only; Base decisions never trained','misleading_candidate_rehearsal':True,'promotion_allowed':False})
     print(json.dumps(counts))
 
@@ -236,6 +258,8 @@ def main():
             p.add_argument('--rehearsal',type=Path)
             p.add_argument('--balanced-pairs',action='store_true',
                            help='One train case per General persona/move, with four equal input representations')
+            p.add_argument('--own-only-rehearsal',action='store_true',
+                           help='Add only training repair inputs without peer/target prose; keep evaluation splits unchanged')
         if name=='train':
             p.add_argument('--data',type=Path,required=True);p.add_argument('--config',type=Path,required=True);p.add_argument('--parent-adapter',type=Path)
             p.add_argument('--mlx-cache-limit-mib',type=int)
