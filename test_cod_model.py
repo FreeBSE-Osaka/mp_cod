@@ -1500,6 +1500,95 @@ class CodModelTest(unittest.TestCase):
             )
         )
 
+    def test_pair_majorities_do_not_end_rounds_while_integrated_conflicts_remain(self):
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        import io
+        roster=cod_model.load_domains()['general']['personas'][:4]
+        labels={code:f'候補{code}を比較候補として残す'for code in ('A','B','C')}
+        ledger={'schema_version':1,'topic':'架空のペア採決と統合の停止条件',
+                'data':[{'id':'D01','text':'候補A、B、Cを比較する。実行は依頼されていない。'}],
+                'claim_catalog':[{'code':code,'label':label,'supported_by':['D01'],
+                                  'contradicts':[other for other in labels if other!=code]}
+                                  for code,label in labels.items()],
+                'role_preferences':{p['id']:list(labels)for p in roster}}
+        initial_count=0;pair_counts={}
+        def respond(**kwargs):
+            nonlocal initial_count
+            payload=json.loads(kwargs['user'])
+            if 'claim_catalog'in payload:
+                code=('A','B','C','A')[initial_count];initial_count+=1
+                result={'claims':[{'code':code,'data_ids':['D01'],'confidence':75,
+                                   'statement':labels[code]+'案を支持します。[D01]'}]}
+            else:
+                sides=(payload['left'],payload['right'])
+                actual={side['code']:next(code for code,label in labels.items()if side['label']==label)for side in sides}
+                pair='|'.join(sorted(actual.values()));position=pair_counts.get(pair,0)%4
+                pair_counts[pair]=pair_counts.get(pair,0)+1
+                winner='A'if'A'in pair else'B'
+                chosen=winner if position<3 else next(code for code in actual.values()if code!=winner)
+                transport=next(code for code,value in actual.items()if value==chosen)
+                previous=payload['own_previous_choice']
+                result={'choice':transport,'data_ids':['D01'],'statement':labels[chosen]+'案を支持します。[D01]',
+                        'change_reason':'資料[D01]の比較を踏まえ、選択を変更しました。'if previous and previous!=transport else''}
+            return result,{'_raw_content':json.dumps(result,ensure_ascii=False)}
+        with tempfile.TemporaryDirectory()as directory:
+            root=Path(directory);source=root/'ledger.json';source.write_text(json.dumps(ledger))
+            args=cod_model.parser().parse_args(['event-debate','--ledger',str(source),'--domain','general',
+                  '--backend','ollama','--no-renderer','--reconcile-rounds','2','--out',str(root/'runs')])
+            output=io.StringIO()
+            with patch.object(cod_model,'ask_ollama',side_effect=respond),redirect_stdout(output):
+                self.assertEqual(cod_model.run_event_debate(args),0)
+            run=json.loads(next((root/'runs').glob('event_debate_*.json')).read_text())
+        self.assertEqual(len(run['reconciliation']),2)
+        self.assertTrue(cod_model.reconciliation_has_supermajority(
+            run['reconciliation'][0]['tally'],[('A','B'),('A','C'),('B','C')],4))
+        self.assertEqual(run['summary']['unresolved_conflicts'],[['B','C']])
+        self.assertIn('次のラウンドですり合わせを続けます',output.getvalue())
+        self.assertIn('統合上の対立を残して終了します',output.getvalue())
+        self.assertNotIn('形式条件を満たしたため',output.getvalue())
+
+    def test_full_loop_ends_after_first_round_when_two_options_are_globally_resolved(self):
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        import io
+        roster=cod_model.load_domains()['general']['personas'][:4]
+        labels={'A':'候補Aを比較候補として残す','B':'候補Bを比較候補として残す'}
+        ledger={'schema_version':1,'topic':'架空の正常な早期終了',
+                'data':[{'id':'D01','text':'候補AとBを比較する。実行は依頼されていない。'}],
+                'claim_catalog':[{'code':code,'label':label,'supported_by':['D01'],
+                                  'contradicts':[other for other in labels if other!=code]}
+                                  for code,label in labels.items()],
+                'role_preferences':{p['id']:list(labels)for p in roster}}
+        initial_count=0;vote_count=0
+        def respond(**kwargs):
+            nonlocal initial_count,vote_count
+            payload=json.loads(kwargs['user'])
+            if 'claim_catalog'in payload:
+                chosen='A'if initial_count%2==0 else'B';initial_count+=1
+                result={'claims':[{'code':chosen,'data_ids':['D01'],'confidence':75,
+                                   'statement':labels[chosen]+'案を支持します。[D01]'}]}
+            else:
+                chosen='A'if vote_count<3 else'B';vote_count+=1
+                side=next(x for x in (payload['left'],payload['right'])if x['label']==labels[chosen])
+                previous=payload['own_previous_choice']
+                result={'choice':side['code'],'data_ids':['D01'],'statement':labels[chosen]+'案を支持します。[D01]',
+                        'change_reason':'資料[D01]の比較を踏まえ、選択を変更しました。'if previous and previous!=side['code']else''}
+            return result,{'_raw_content':json.dumps(result,ensure_ascii=False)}
+        with tempfile.TemporaryDirectory()as directory:
+            root=Path(directory);source=root/'ledger.json';source.write_text(json.dumps(ledger))
+            args=cod_model.parser().parse_args(['event-debate','--ledger',str(source),'--domain','general',
+                  '--backend','ollama','--no-renderer','--reconcile-rounds','2','--out',str(root/'runs')])
+            output=io.StringIO()
+            with patch.object(cod_model,'ask_ollama',side_effect=respond),redirect_stdout(output):
+                self.assertEqual(cod_model.run_event_debate(args),0)
+            run=json.loads(next((root/'runs').glob('event_debate_*.json')).read_text())
+        self.assertEqual(vote_count,4)
+        self.assertEqual(len(run['reconciliation']),1)
+        self.assertEqual(run['summary']['unresolved_conflicts'],[])
+        self.assertIn('形式条件を満たしたため',output.getvalue())
+        self.assertNotIn('次のラウンドですり合わせを続けます',output.getvalue())
+
     def test_three_of_four_resolves_conflict(self):
         catalog = {
             "A": {"contradicts": ["B"]},

@@ -3557,8 +3557,14 @@ def run_event_debate(args: argparse.Namespace) -> int:
         previous_votes = votes
         write_json(partial_path, run)
         if reconciliation_has_supermajority(previous_tally, contested_pairs, len(personas)):
-            print("3/4以上で対立が解決したため、すり合わせを終了します。", flush=True)
-            break
+            interim_summary = synthesize_event_summary(events, catalog, run["reconciliation"], len(personas))
+            if not interim_summary["unresolved_conflicts"]:
+                print("採決と統合上の対立解消の形式条件を満たしたため、すり合わせを終了します。", flush=True)
+                break
+            if round_no < execution["reconcile_rounds"]:
+                print("各ペアは3/4以上ですが統合上の対立が残るため、次のラウンドですり合わせを続けます。", flush=True)
+            else:
+                print("ラウンド上限に達したため、統合上の対立を残して終了します。", flush=True)
 
     summary = synthesize_event_summary(events, catalog, run["reconciliation"], len(personas))
     run["summary"] = summary
