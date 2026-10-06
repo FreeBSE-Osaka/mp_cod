@@ -177,6 +177,63 @@ class CodModelTest(unittest.TestCase):
                 self.assertIsNone(cod_model.validate_dialogue_move(text,'counterproposal',own,
                                   flexible=True,target_claim=target)[0])
 
+    def test_conditional_counterproposal_accepts_question_and_recommendation_forms(self):
+        pairs = (
+            ('午後なら条件付き候補Bを検討する', '候補Aを優先する', '午後なら条件付き候補Bを'),
+            ('準備が整う場合は条件付きプランBを検討する', 'プランAを優先する', '準備が整う場合は条件付きプランBを'),
+            ('試行条件を確認するなら条件付き案V2を検討する', '案V1を優先する', '試行条件を確認するなら条件付き案V2を'),
+        )
+        for own,target,prefix in pairs:
+            for ending in ('検討するのはどうでしょうか。', '検討するのはどうですか。',
+                           '検討するのが良いと思います。', '検討するのがよいと思います。'):
+                text = prefix + ending
+                with self.subTest(text=text):
+                    self.assertEqual(cod_model.validate_dialogue_move(text,'counterproposal',own,
+                                     flexible=True,target_claim=target),(text,None))
+                    self.assertIsNone(cod_model.validate_dialogue_move(text,'counterproposal',own,
+                                      target_claim=target)[0])
+                    self.assertIsNone(cod_model.validate_dialogue_move(text,'counterproposal',own,
+                                      flexible=True,target_claim=own)[0])
+
+    def test_conditional_questions_cannot_hide_denial_history_or_competing_preference(self):
+        own='午後なら条件付き候補Bを検討する';target='候補Aを優先する'
+        texts=(
+            '午後なら条件付き候補Bを検討するのはどうでしょうかとは言えません。',
+            '午後なら条件付き候補Bを検討するのが良いわけではありません。',
+            '午後なら条件付き候補Bを検討するのが良いと思っていました。今は候補Aを優先します。',
+            '午後なら条件付き候補Bを検討するのはどうでしょうかと言われましたが、今は保留します。',
+            '午後なら条件付き候補Bを検討するのはどうでしょうか。ただし候補Aを優先します。',
+            '候補Bを無条件で検討するのはどうでしょうか。',
+            '候補Bを検討するのが良いと思います。',
+        )
+        for text in texts:
+            with self.subTest(text=text):
+                self.assertIsNone(cod_model.validate_dialogue_move(text,'counterproposal',own,
+                                  flexible=True,target_claim=target)[0])
+
+    def test_conditional_proposal_questions_keep_bounded_noun_and_polite_forms(self):
+        own='準備が整うなら条件付きプランBを検討する';target='プランAを優先する'
+        positives=(
+            '準備が整うなら、条件付きプランBという選択肢も検討してみるのはいかがでしょうか。',
+            '準備が整うなら、条件付きプランBという案を検討していただくのはいかがでしょうか。',
+            '準備が整うなら、条件付きプランBを検討するというのはどうでしょうか。',
+            '準備が整うなら、条件付きプランBを検討するのはいかがでしょうか。',
+        )
+        for text in positives:
+            with self.subTest(text=text):
+                self.assertEqual(cod_model.validate_dialogue_move(text,'counterproposal',own,
+                                 flexible=True,target_claim=target),(text,None))
+        negatives=(
+            '準備が整うなら、条件付きプランBという案を検討していただくのはいかがでしょうかとは言えません。',
+            '準備が整うなら、条件付きプランBという案を検討していただくのはいかがでしょうかと言われましたが、保留します。',
+            '準備が整うなら、条件付きプランBを検討するのはいかがでしょうか。ただしプランAを優先します。',
+            'プランBという選択肢も検討してみるのはいかがでしょうか。',
+        )
+        for text in negatives:
+            with self.subTest(text=text):
+                self.assertIsNone(cod_model.validate_dialogue_move(text,'counterproposal',own,
+                                  flexible=True,target_claim=target)[0])
+
     def test_reconciliation_reason_repair_has_own_view_and_schema_without_completed_example(self):
         from unittest.mock import patch
         from contextlib import redirect_stdout

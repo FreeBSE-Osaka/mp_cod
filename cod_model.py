@@ -1381,9 +1381,16 @@ def dialogue_proposes_conditional_consideration(utterance: str, label: str) -> b
         return False
     # ponytail: explicit named consideration only; unnamed alternatives and complex scope need review.
     for alias in named_claim_aliases(label):
-        pattern = re.escape(alias) + r"(?:の案)?(?:を|として)検討(?:すべき|したい|しましょう|します)"
+        pattern = re.escape(alias) + (
+            r"(?:の案|という(?:選択肢|案))?(?:を|として|も)検討(?:すべき|したい|しましょう|します|"
+            r"(?:する(?:という)?|して(?:みる|いただく))のは(?:どう(?:でしょう|です)か|いかがでしょうか)|"
+            r"するのが(?:よい|良い))"
+        )
         for match in re.finditer(pattern, compact):
-            past = compact[match.end():].startswith(("でした", "だと思っていました", "と考えていました"))
+            past = compact[match.end():].startswith((
+                "でした", "だった", "だと思っていました", "と思っていました", "と考えていました",
+                "と言っていました", "と言われました", "と提案していました", "と提案されました",
+            ))
             if not past and not _restriction_near(compact, match.start(), match.end()):
                 return True
     return False
