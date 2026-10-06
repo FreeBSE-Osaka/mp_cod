@@ -205,7 +205,10 @@ class CodModelTest(unittest.TestCase):
                           'change_reason':'根拠[D01]を再確認して判断を変更しました。' if payload['changed'] else ''}
             else:
                 side=payload['left'] if payload['left']['label']==labels['P'] else payload['right']
-                result = {'choice':side['code'],'data_ids':['D01'],'statement':invalid,'change_reason':invalid}
+                # The label and selected evidence are valid; only the leaked selector forces reason repair.
+                result = {'choice':side['code'],'data_ids':['D01'],
+                          'statement':side['label']+'案をLEFTとして優先します。根拠は[D01]です。',
+                          'change_reason':invalid}
             return result, {'_raw_content':json.dumps(result,ensure_ascii=False)}
         with tempfile.TemporaryDirectory() as directory:
             source=Path(directory)/'ledger.json';source.write_text(json.dumps(ledger))
@@ -229,6 +232,7 @@ class CodModelTest(unittest.TestCase):
             self.assertEqual(request['label'],labels[vote['choice']])
             self.assertEqual(vote['data_ids'],['D01'])
             self.assertEqual(vote['statement_origin'],'model_repair')
+            self.assertEqual(vote['statement_warning'],'statement exposes internal protocol')
             self.assertEqual(vote['repair_request'],request)
             self.assertTrue(vote['repair_raw'])
 
@@ -708,6 +712,21 @@ class CodModelTest(unittest.TestCase):
         fallback = cod_model.label_statement("SAFE", ["D06"], ledger)
         self.assertEqual(cod_model.validate_public_statement(fallback, ["D06"]), (fallback, None))
         self.assertNotIn("移植不要", fallback)
+
+    def test_public_text_rejects_choice_transport_without_erasing_it(self):
+        for token in ('LEFT', 'RIGHT', 'BOTH', 'ABSTAIN', 'ＬＥＦＴ'):
+            statement = f'仮回答を理由に{token}を優先します。根拠は[D01]です。'
+            self.assertIsNone(cod_model.validate_public_statement(statement, ['D01'])[0])
+            self.assertIsNone(cod_model.sanitize_model_statement(statement, ['D01']))
+            text = f'仮回答を理由に{token}を優先して確認事項を整理します。'
+            self.assertIsNone(cod_model.validate_dialogue_utterance(text)[0])
+            self.assertIsNone(cod_model.normalize_renderer_body(text, '仮回答を優先する')[0])
+        for technical in ('SQLのLEFT JOINを検討します。', 'LEFT_JOINという構文名を確認します。'):
+            # A selector boundary must not swallow a technical term containing the same letters.
+            text = technical + '根拠は[D01]です。'
+            self.assertEqual(cod_model.validate_public_statement(text, ['D01']), (text, None))
+        ordinary = 'SQLのLEFT JOINを使う案を検討します。'
+        self.assertEqual(cod_model.validate_dialogue_utterance(ordinary), (ordinary, None))
 
     def test_public_statement_requires_a_selected_data_id(self):
         statement, reason = cod_model.validate_public_statement("主経路を採ります。根拠は[D01]です。", ["D01"])

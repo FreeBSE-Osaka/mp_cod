@@ -72,6 +72,9 @@ def build_brief(run: dict, ledger: dict) -> dict:
         _, reason = cod.validate_public_statement(record["statement"], ids)
         if reason:
             raise ValueError(f"{reference}: {reason}")
+        _, reason = cod.validate_dialogue_utterance(record["utterance"])
+        if reason:
+            raise ValueError(f"{reference}: {reason}")
         if record.get("changed_from_previous"):
             _, reason = cod.validate_public_statement(record.get("change_reason"), ids)
             if reason:
@@ -195,6 +198,7 @@ def export_brief(run_path: Path, ledger_path: Path, out: Path | None = None) -> 
     brief["inputs"] = {
         "run_sha256": hashlib.sha256(run_bytes).hexdigest(), "ledger_sha256": ledger_sha,
         "exporter_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "public_validator_sha256": hashlib.sha256(Path(cod.__file__).read_bytes()).hexdigest(),
         "consistency_auditor_sha256": hashlib.sha256(
             Path(__file__).with_name("verifier_consistency.py").read_bytes()).hexdigest(),
     }

@@ -33,6 +33,9 @@ GENERAL_DISCUSSION_RULE = (
     "指摘だけの反論、対案付き反論、賛同だけ、賛同しつつ改善、条件付き支持、保留を根拠に応じて選ぶ。"
     "違う意見や対案を無理に作らず、同意するときも参照した根拠を示す。"
 )
+CHOICE_TRANSPORT_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_])(?:LEFT|RIGHT|BOTH|ABSTAIN)\s*(?:[をがはにのとでへ。！？.!?\"'」）)]|$)"
+)
 SOURCE_GROUNDING_RULE = (
     "根拠の否定、条件、対象範囲、未確認の状態をそのまま保つ。"
     "未算定は不要を意味せず、未実測や未検証は優劣や効果が確認済みという意味ではない。"
@@ -1192,7 +1195,8 @@ def validate_public_statement(statement: object, data_ids: list[str]) -> tuple[s
     normalized = re.sub(r"\s+", " ", statement).strip()
     if not 8 <= len(normalized) <= 240:
         return None, "statement must be 8 to 240 characters"
-    if any(mark in normalized for mark in ("空文字", "JSONキー", "changed=true", "allowed_data_ids")):
+    if (any(mark in normalized for mark in ("空文字", "JSONキー", "changed=true", "allowed_data_ids"))
+            or CHOICE_TRANSPORT_PATTERN.search(unicodedata.normalize("NFKC", normalized))):
         return None, "statement exposes internal protocol"
     references = set(re.findall(r"D\d{2,}", normalized))
     if not references:
@@ -1254,7 +1258,8 @@ def validate_dialogue_utterance(utterance: object) -> tuple[str | None, str | No
         return None, "utterance must be 12 to 320 characters"
     if re.search(r"D\d{2,}", normalized):
         return None, "utterance must keep D ids in metadata, not dialogue"
-    if "_" in normalized or any(mark in normalized for mark in ("{", "}", "claim_catalog", "data_ids")):
+    if ("_" in normalized or any(mark in normalized for mark in ("{", "}", "claim_catalog", "data_ids"))
+            or CHOICE_TRANSPORT_PATTERN.search(unicodedata.normalize("NFKC", normalized))):
         return None, "utterance exposes internal protocol"
     if re.search(r"[。！？][のをにがは](?=[ぁ-んァ-ヶ一-龠])", normalized):
         return None, "utterance contains an orphan particle after a sentence boundary"

@@ -41,9 +41,10 @@ class AdvisorBriefTest(unittest.TestCase):
         self.resummarize()
 
     def record(self, code):
+        wording = {"BOTH": "両案を保持する", "ABSTAIN": "判断を保留する"}.get(code, f"案{code}を検討する")
         return {"code": code, "choice": code, "confidence": 60, "data_ids": ["D01"],
-                "statement": f"見積を根拠に{code}を検討します。[D01] 予約はまだ行っていません。",
-                "statement_origin": "model", "utterance": f"私は案{code}を検討したいです。",
+                "statement": f"見積を根拠に{wording}判断です。[D01] 予約はまだ行っていません。",
+                "statement_origin": "model", "utterance": f"私は見積を根拠に{wording}判断です。",
                 "utterance_origin": "model", "choice_origin": "model_json", "raw": "synthetic test"}
 
     def resummarize(self):
@@ -117,6 +118,16 @@ class AdvisorBriefTest(unittest.TestCase):
         self.assertEqual(issue['issues'][0]['kind'],'supported_total_disagrees')
         self.assertFalse(brief['execution_authorized'])
 
+    def test_public_protocol_and_invalid_dialogue_are_rejected_even_with_model_provenance(self):
+        for field, text in (("statement", "見積を根拠にLEFTを選びます。[D01]"),
+                            ("utterance", "見積を根拠にRIGHTを選ぶ判断を維持します。"),
+                            ("utterance", "私は資料[D999]の内容を確認したいと思います。"),
+                            ("utterance", "確認事項を整理した上で判断として")):
+            run = copy.deepcopy(self.run)
+            run['events'][0][field] = text
+            with self.subTest(field=field,text=text), self.assertRaises(ValueError):
+                build_brief(run, self.ledger)
+
     def test_both_and_abstention_are_preserved_not_converted_into_agreement(self):
         votes = self.run["reconciliation"][0]["votes"]["A|B"]
         votes["p1"] = self.record("BOTH")
@@ -164,6 +175,8 @@ class AdvisorBriefTest(unittest.TestCase):
             cod.write_json(run, self.run)
             original = (run.read_bytes(), ledger.read_bytes())
             exported = export_brief(run, ledger, out)
+            self.assertEqual(exported["inputs"]["public_validator_sha256"], hashlib.sha256(
+                Path(cod.__file__).read_bytes()).hexdigest())
             self.assertEqual(exported["inputs"]["consistency_auditor_sha256"], hashlib.sha256(
                 (Path(__file__).parent / "tools/verifier_consistency.py").read_bytes()).hexdigest())
             with self.assertRaises(FileExistsError):
