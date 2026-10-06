@@ -98,6 +98,25 @@ class AdvisorBriefTest(unittest.TestCase):
             with self.subTest(mutate=mutate), self.assertRaises(ValueError):
                 build_brief(run, self.ledger)
 
+    def test_public_quantity_disagreement_holds_even_when_saved_discussion_gate_passes(self):
+        self.run['reconciliation'][0]['votes']['A|B']['p2']=self.record('A')
+        self.resummarize()
+        before=build_brief(self.run,self.ledger)
+        self.assertEqual(before['status'],'REVIEW_REQUIRED')
+        event=self.run['events'][0]
+        event['statement']+='合計の発行枚数は1枚です。'
+        event['utterance']+='合計2枚を想定します。'
+        original=copy.deepcopy(self.run)
+        brief=build_brief(self.run,self.ledger)
+        self.assertEqual(self.run,original)
+        self.assertTrue(brief['verification']['recomputed_metrics']['hard_gate_pass'])
+        self.assertEqual(brief['status'],'HOLD')
+        self.assertIn('public_arithmetic_or_quantity_inconsistency',brief['hold_reasons'])
+        issue=brief['verification']['public_consistency_diagnostics'][0]
+        self.assertEqual(issue['reference'],'C1')
+        self.assertEqual(issue['issues'][0]['kind'],'supported_total_disagrees')
+        self.assertFalse(brief['execution_authorized'])
+
     def test_both_and_abstention_are_preserved_not_converted_into_agreement(self):
         votes = self.run["reconciliation"][0]["votes"]["A|B"]
         votes["p1"] = self.record("BOTH")
@@ -144,7 +163,9 @@ class AdvisorBriefTest(unittest.TestCase):
             self.run["ledger_sha256"] = hashlib.sha256(ledger.read_bytes()).hexdigest()
             cod.write_json(run, self.run)
             original = (run.read_bytes(), ledger.read_bytes())
-            export_brief(run, ledger, out)
+            exported = export_brief(run, ledger, out)
+            self.assertEqual(exported["inputs"]["consistency_auditor_sha256"], hashlib.sha256(
+                (Path(__file__).parent / "tools/verifier_consistency.py").read_bytes()).hexdigest())
             with self.assertRaises(FileExistsError):
                 export_brief(run, ledger, out)
             with self.assertRaises(FileExistsError):

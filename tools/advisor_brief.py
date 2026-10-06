@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import cod_model as cod
+from tools.verifier_consistency import audit_consistency
 
 
 def strict_json(raw: bytes) -> dict:
@@ -124,11 +125,19 @@ def build_brief(run: dict, ledger: dict) -> dict:
     if run["summary"] != summary:
         raise ValueError("saved summary differs from the recomputed discussion")
     metrics = cod.event_run_metrics(run)  # Never trust a saved hard_gate_pass field.
+    consistency = []
+    for record in quotes:
+        check = audit_consistency(record["statement"], {"verdict": "SUPPORTED", "reason": record["utterance"]})
+        if check["requires_review"]:
+            consistency.append({"reference": record["reference"], "persona_id": record["persona_id"],
+                                "issues": check["issues"]})
     hold_reasons = []
     if not metrics["hard_gate_pass"]:
         hold_reasons.append("discussion_hard_gate_failed")
     if summary["unresolved_conflicts"]:
         hold_reasons.append("unresolved_conflicts")
+    if consistency:
+        hold_reasons.append("public_arithmetic_or_quantity_inconsistency")
     citations = {item["id"]: [] for item in ledger["data"]}
     for record in quotes:
         for data_id in record["data_ids"]:
@@ -146,7 +155,8 @@ def build_brief(run: dict, ledger: dict) -> dict:
             "no_commands_messages_bookings_or_account_changes": True,
         },
         "verification": {"recomputed_metrics": metrics,
-                         "check_scope": "structure, ledger binding, IDs, provenance and existing gates; not factual truth"},
+                         "public_consistency_diagnostics": consistency,
+                         "check_scope": "structure, ledger binding, IDs, provenance, existing gates and bounded literal arithmetic/quantity consistency; not factual truth"},
         "review_questions": [
             "Does each reason preserve the source's subject, quantities, exclusions and uncertainty?",
             "Which missing facts or measurements could change the decision?",
@@ -185,6 +195,8 @@ def export_brief(run_path: Path, ledger_path: Path, out: Path | None = None) -> 
     brief["inputs"] = {
         "run_sha256": hashlib.sha256(run_bytes).hexdigest(), "ledger_sha256": ledger_sha,
         "exporter_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "consistency_auditor_sha256": hashlib.sha256(
+            Path(__file__).with_name("verifier_consistency.py").read_bytes()).hexdigest(),
     }
     if out:
         # Exclusive creation also protects the two inputs and existing audit artifacts.
