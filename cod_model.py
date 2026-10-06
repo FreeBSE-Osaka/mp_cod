@@ -81,6 +81,7 @@ MODEL_UTTERANCE_ORIGINS = {
     "model_dialogue_v2_repair",
     "model_renderer_v3",
     "model_renderer_v3_sanitized",
+    "model_renderer_v3_repair",
     "model_body_v1",
     "model_body_v2",
     "model_body_v2_sanitized",
@@ -1201,6 +1202,19 @@ def validate_public_statement(statement: object, data_ids: list[str]) -> tuple[s
     return normalized, None
 
 
+def validate_claim_statement(
+    statement: object, data_ids: list[str], label: str, competitors: list[str]
+) -> tuple[str | None, str | None]:
+    normalized, reason = validate_public_statement(statement, data_ids)
+    if normalized is None:
+        return None, reason
+    if not dialogue_is_aligned(normalized, label, competitors):
+        return None, "statement does not match the frozen claim"
+    if dialogue_selects_competing_claim(normalized, competitors):
+        return None, "statement selects a competing frozen claim"
+    return normalized, None
+
+
 def decision_system_prompt(system: str, profile: str, phase: str) -> str:
     if profile == "source_grounded" and phase.split(":", 1)[0] in {
         "independent", "reconciliation", "reconciliation-repair"
@@ -1346,9 +1360,18 @@ def _restricted_action_stems(label: str) -> set[str]:
 
 
 def dialogue_selects_competing_claim(utterance: str, competitors: list[str]) -> bool:
+    compact = re.sub(r"\s+", "", unicodedata.normalize("NFKC", utterance))
     for label in competitors:
         if not label:
             continue
+        # Named alternatives need not be repeated as a long catalog label.
+        # ponytail: explicit candidate/plan names only; unnamed semantic reversals still need review.
+        aliases = re.findall(r"(?:候補|プラン|案)[A-Z][A-Z0-9]*", re.sub(r"\s+", "", unicodedata.normalize("NFKC", label)))
+        for alias in aliases:
+            for match in re.finditer(re.escape(alias) + r"(?:の案)?(?:を|に)(?:優先|選択|採用|支持|推薦|賛同|賛成)", compact):
+                past = compact[match.end():].startswith(("していました", "していた", "しましたが", "したが"))
+                if not past and not _restriction_near(compact, match.start(), match.end()):
+                    return True
         if re.search(rf"{re.escape(label)}[』\s]*(?:を|へ)(?:選|採|支持)", utterance):
             return True
         shared_directive = any(marker in label and marker in utterance for marker in ("直ちに", "すぐ", "自動", "全面", "本番"))
@@ -1705,7 +1728,7 @@ def dialogue_move_example(label: str, move: str, variant: int = 0) -> str:
 
 
 def validate_dialogue_move(
-    utterance: object, move: str, frozen_claim: str = "", *, flexible: bool = False
+    utterance: object, move: str, frozen_claim: str = "", *, flexible: bool = False, target_claim: str = ""
 ) -> tuple[str | None, str | None]:
     validation_input = utterance
     if isinstance(utterance, str) and frozen_claim:
@@ -1738,7 +1761,24 @@ def validate_dialogue_move(
         "revise": ("確かに", "見落と", "改め", "修正", "変更", "切り替え", "考え直", "結論を変え"),
     }
     required = markers.get(move)
-    if required and not any(marker in normalized for marker in required):
+    # A frozen uncertainty critique can be an objection without a stock connector.
+    # This only recognizes explicit, claim-aligned uncertainty; it is not a semantic judge.
+    uncertainty_objection = (
+        flexible and move == "object"
+        and body_confirmation_states(frozen_claim) == {"unconfirmed"}
+        and body_confirmation_states(normalized) == {"unconfirmed"}
+        and dialogue_matches_claim(normalized, frozen_claim)
+        and not re.search(r"(?:賛成|賛同|同意|支持)(?:です|だ|します|しています|できます)", normalized)
+    )
+    named_counterproposal = (
+        flexible and move == "counterproposal" and bool(frozen_claim) and bool(target_claim)
+        and frozen_claim != target_claim
+        and dialogue_selects_competing_claim(normalized, [frozen_claim])
+        and not dialogue_selects_competing_claim(normalized, [target_claim])
+        and similarity(normalized, frozen_claim) > similarity(normalized, target_claim) + 0.02
+        and dialogue_is_aligned(normalized, frozen_claim, [target_claim])
+    )
+    if required and not any(marker in normalized for marker in required) and not uncertainty_objection and not named_counterproposal:
         return None, f"utterance does not express dialogue move: {move}"
     if move == "object" and not flexible and not any(
         marker in normalized
@@ -1750,6 +1790,28 @@ def validate_dialogue_move(
 
 def is_mechanical_utterance(utterance: str) -> bool:
     return any(phrase in utterance for phrase in MECHANICAL_UTTERANCE_PHRASES)
+
+
+def validate_renderer_record(utterance: object, record: dict, *, flexible: bool) -> tuple[str | None, str | None]:
+    move = record.get("validation_move")
+    if move:
+        normalized, reason = validate_dialogue_move(utterance, move, record["label"], flexible=flexible,
+                                                   target_claim=record.get("target_label") or "")
+    else:
+        normalized, reason = validate_dialogue_utterance(utterance)
+    if normalized is None:
+        return None, reason
+    competitors = record.get("competitor_labels", [])
+    if not dialogue_is_aligned(normalized, record["label"], competitors):
+        return None, "renderer utterance does not match the frozen claim"
+    if dialogue_selects_competing_claim(normalized, competitors):
+        return None, "renderer utterance selects a competing frozen claim"
+    if not dialogue_numbers_are_grounded(normalized, record["payload"]):
+        return None, "renderer utterance invents an ungrounded number"
+    target = record.get("target_label")
+    if target and move in {"object", "agree", "counterproposal", "improve"} and not reaction_is_aligned(normalized, record["label"], target, move):
+        return None, "renderer utterance follows the target instead of its own claim"
+    return normalized, None
 
 
 def reaction_is_aligned(utterance: str, own_label: str, target_label: str, action: str) -> bool:
@@ -1815,6 +1877,10 @@ def dialogue_fallback(statement: str) -> str:
         "",
         statement,
     )
+    # An inline citation can be the noun's grammatical subject, not a footer.
+    visible = re.sub(r"(?:\[\s*D\d{2,}(?:\s*[,、]\s*D\d{2,})*\s*\]|(?<![A-Za-z0-9_])D\d{2,})\s*の(結果|データ)", r"その\1", visible)
+    visible = re.sub(r"\[\s*D\d{2,}(?:\s*[,、]\s*D\d{2,})*\s*\]\s*(?=(?:の|で|に|を|が|は))", "資料", visible)
+    visible = re.sub(r"(?<![A-Za-z0-9_])D\d{2,}\s*(?=(?:の|で|に|を|が|は))", "資料", visible)
     visible = re.sub(r"\[?D\d{2,}\]?", "", visible).strip(" 、,。.[]")
     return f"{visible}。"
 
@@ -2079,7 +2145,7 @@ def event_run_metrics(run: dict) -> dict:
         for event in events
     )
     dialogue_v3_utterances = sum(
-        event.get("utterance_origin") in {"model_renderer_v3", "model_renderer_v3_sanitized"}
+        event.get("utterance_origin") in {"model_renderer_v3", "model_renderer_v3_sanitized", "model_renderer_v3_repair"}
         for event in events
     )
     reaction_events = [event for event in events if event.get("action") in {"object", "agree_extend"}]
@@ -2761,7 +2827,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
             return
         grouped: dict[tuple[str, int], list[dict]] = {}
         group_counts: dict[str, int] = {}
-        batch_limit = 1 if shared_renderer_adapter or adapter_map else 3
+        # One speaker per forward pass: a renderer must not see another persona's prose.
+        batch_limit = 1
         for record in records:
             base = record["persona_id"] if adapter_map else "shared"
             key = (base, group_counts.get(base, 0) // batch_limit)
@@ -2809,53 +2876,37 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 target = record["target"]
                 candidate = restore_claim_label(values.get(record["id"]), record["label"])
                 move = record.get("validation_move")
-                if move:
-                    utterance, warning = validate_dialogue_move(candidate, move, record["label"], flexible=flexible)
-                else:
-                    utterance, warning = validate_dialogue_utterance(candidate)
-                if utterance is not None and not dialogue_is_aligned(
-                    utterance, record["label"], record.get("competitor_labels", [])
-                ):
-                    utterance, warning = None, "renderer utterance does not match the frozen claim"
-                if utterance is not None and dialogue_selects_competing_claim(
-                    utterance, record.get("competitor_labels", [])
-                ):
-                    utterance, warning = None, "renderer utterance selects a competing frozen claim"
-                if utterance is not None and not dialogue_numbers_are_grounded(
-                    utterance, record["payload"]
-                ):
-                    utterance, warning = None, "renderer utterance invents an ungrounded number"
-                target_label = record.get("target_label")
-                if (
-                    utterance is not None
-                    and target_label
-                    and move in {"object", "agree", "counterproposal", "improve"}
-                    and not reaction_is_aligned(utterance, record["label"], target_label, move)
-                ):
-                    utterance, warning = None, "renderer utterance follows the target instead of its own claim"
+                utterance, warning = validate_renderer_record(candidate, record, flexible=flexible)
                 sanitized = False
+                regenerated = False
                 if utterance is None and candidate is not None:
                     repaired = sanitize_dialogue_move(candidate, move or "", record["label"], flexible=flexible)
-                    if (
-                        repaired is not None
-                        and dialogue_is_aligned(
-                            repaired, record["label"], record.get("competitor_labels", [])
-                        )
-                        and not dialogue_selects_competing_claim(
-                            repaired, record.get("competitor_labels", [])
-                        )
-                        and dialogue_numbers_are_grounded(repaired, record["payload"])
-                    ):
-                        if not target_label or move not in {"object", "agree", "counterproposal", "improve"} or reaction_is_aligned(
-                            repaired, record["label"], target_label, move
-                        ):
+                    if repaired is not None:
+                        repaired, _ = validate_renderer_record(repaired, record, flexible=flexible)
+                        if repaired is not None:
                             utterance = repaired
                             sanitized = True
+                if utterance is None:
+                    original_warning = batch_warning or warning
+                    repair_item = {key: record["payload"][key] for key in ("phase", "move", "own_claim", "selected_claim", "evidence") if key in record["payload"]}
+                    repair_item.update(id=record["id"], speaker=persona_configs[record["persona_id"]]["name"],
+                                       speech_act=renderer_move_instruction(move, flexible=flexible))
+                    repair_system = renderer_system(None, flexible=flexible, source_grounded=True)
+                    repair_system += "自分のown_claimとmoveは確定済み。再評価せず、その立場を自然な発言として表現する。相手の案は追加しない。"
+                    repair_raw, repair_parsed = ask_json(repair_system, json.dumps({"items": [repair_item]}, ensure_ascii=False),
+                        min(args.max_tokens, 220), f"renderer-repair:{phase}:{record['id']}", deterministic=True)
+                    repair_values, repair_schema_warning = parse_renderer_utterances(repair_parsed, [record["id"]])
+                    repaired, repair_warning = validate_renderer_record(repair_values.get(record["id"]), record, flexible=flexible)
+                    target["renderer_repair"] = {"request": {"items": [repair_item]}, "raw": repair_raw,
+                        "original_warning": original_warning, "warning": repair_schema_warning or repair_warning}
+                    if repaired is not None and repair_schema_warning is None:
+                        utterance, warning = repaired, None
+                        regenerated = True
                 if utterance is None:
                     utterance = record["fallback"]
                     origin = record.get("fallback_origin", "statement_fallback")
                 else:
-                    origin = "model_renderer_v3_sanitized" if sanitized else "model_renderer_v3"
+                    origin = "model_renderer_v3_repair" if regenerated else "model_renderer_v3_sanitized" if sanitized else "model_renderer_v3"
                 target["utterance"] = utterance
                 target["utterance_origin"] = origin
                 target["utterance_warning"] = batch_warning or warning
@@ -2937,19 +2988,40 @@ def run_event_debate(args: argparse.Namespace) -> int:
             execution["decision_max_tokens"],
             f"independent:{persona['id']}",
         )
-        valid, rejected, warnings, seen_codes = [], [], [], set()
+        valid, rejected, warnings, seen_codes, statement_repairs = [], [], [], set(), []
         for claim in (parsed or {}).get("claims", []):
             normalized, reason = validate_coded_claim(claim, ledger)
             if normalized and normalized["code"] not in seen_codes:
                 normalized["origin"] = "model"
-                statement, statement_reason = validate_public_statement(claim.get("statement"), normalized["data_ids"])
+                frozen_label = catalog[normalized["code"]]["label"]
+                competitor_labels = [catalog[code]["label"] for code in catalog[normalized["code"]].get("contradicts", [])]
+                statement, statement_reason = validate_claim_statement(
+                    claim.get("statement"), normalized["data_ids"], frozen_label, competitor_labels
+                )
                 if statement is None:
-                    statement = sanitize_model_statement(claim.get("statement"), normalized["data_ids"])
+                    # Recompute only this persona's public reason from its frozen decision and data.
+                    # No peer prose or invalid reason is copied into the repair request.
+                    repair_payload = {
+                        "label": frozen_label, "allowed_data_ids": normalized["data_ids"],
+                        "data": [item for item in data_view if item["id"] in normalized["data_ids"]],
+                        "rule": '公開用の理由を240字以内の自然な日本語1文で述べる。選択・事実を変更せず、allowed_data_idsだけを引用する。JSONは{"statement":"説明と[D01]引用"}だけ。',
+                    }
+                    repair_raw, repair_parsed = ask_json(
+                        f"あなたは{persona['name']}。主張と根拠IDは確定済み。" + SOURCE_GROUNDING_RULE,
+                        json.dumps(repair_payload, ensure_ascii=False), min(execution["decision_max_tokens"], 240),
+                        f"independent-statement-repair:{persona['id']}:{normalized['code']}", deterministic=True,
+                    )
+                    repaired_text = repair_parsed.get("statement") if isinstance(repair_parsed, dict) and set(repair_parsed) == {"statement"} else None
+                    statement, repair_warning = validate_claim_statement(
+                        repaired_text, normalized["data_ids"], frozen_label, competitor_labels
+                    )
+                    statement_repairs.append({"code": normalized["code"], "request": repair_payload,
+                                              "raw": repair_raw, "warning": repair_warning})
                     if statement is None:
                         statement = label_statement(normalized["code"], normalized["data_ids"], ledger)
                         normalized["statement_origin"] = "label_fallback"
                     else:
-                        normalized["statement_origin"] = "model_sanitized"
+                        normalized["statement_origin"] = "model_repair"
                     warnings.append({"code": normalized["code"], "reason": statement_reason})
                 else:
                     normalized["statement_origin"] = "model"
@@ -2987,6 +3059,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
             "valid": valid,
             "rejected": rejected,
             "warnings": warnings,
+            "statement_repairs": statement_repairs,
             "adapter": None,
             "renderer_adapter": adapter_path,
             "dialogue_render_raw": dialogue_render_raw,
@@ -2994,7 +3067,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
         }
         print(f"\n[{persona['name']}] 採用={len(valid)} 失格={len(rejected)}", flush=True)
         for claim in valid:
-            origin = "モデル自然文" if claim["statement_origin"] == "model" else "ラベル補完"
+            origin = "モデル再計算" if claim["statement_origin"] == "model_repair" else "モデル自然文" if claim["statement_origin"] == "model" else "ラベル補完"
             print(f"  [{origin}/{claim['origin']}] {claim['statement']}", flush=True)
             print(f"    {claim['code']} <- {','.join(claim['data_ids'])}", flush=True)
         for item in rejected:
@@ -3029,6 +3102,7 @@ def run_event_debate(args: argparse.Namespace) -> int:
                 "target": event,
                 "label": event["label"],
                 "source_kind": catalog[event["code"]].get("kind"),
+                "competitor_labels": [catalog[code]["label"] for code in catalog[event["code"]].get("contradicts", [])],
                 "target_label": target_event["label"] if target_event else None,
                 "validation_move": move,
                 "fallback": move_fallback,
@@ -3173,9 +3247,15 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     data_ids = sorted(allowed_data)[:1]
                 else:
                     data_ids = list(dict.fromkeys(proposed_data))[:2]
-                statement, statement_reason = validate_public_statement(
+                selected_label = (
+                    catalog[choice]["label"]
+                    if choice in catalog
+                    else "両方を残す" if choice == "BOTH" else "判断を保留する"
+                )
+                competitor_labels = [catalog[code]["label"] for code in pair if code != choice and code in catalog]
+                statement, statement_reason = validate_claim_statement(
                     parsed.get("statement") if isinstance(parsed, dict) else None,
-                    data_ids,
+                    data_ids, selected_label, competitor_labels,
                 )
                 statement_repair_needed = statement is None
                 if statement is None:
@@ -3213,11 +3293,6 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     "revise"
                     if changed
                     else "maintain" if previous_choice == choice else "agree"
-                )
-                selected_label = (
-                    catalog[choice]["label"]
-                    if choice in catalog
-                    else "両方を残す" if choice == "BOTH" else "判断を保留する"
                 )
                 utterance = dialogue_fallback(statement)
                 utterance_origin = "statement_fallback"
@@ -3281,17 +3356,17 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         f"reconciliation-repair:{round_no}:{key}:{persona['id']}",
                     )
                     if statement_repair_needed:
-                        repaired, repair_statement_warning = validate_public_statement(
+                        repaired, repair_statement_warning = validate_claim_statement(
                             repair_parsed.get("statement") if isinstance(repair_parsed, dict) else None,
-                            data_ids,
+                            data_ids, selected_label, competitor_labels,
                         )
                         if repaired is not None:
                             statement = repaired
                             statement_origin = "model_repair"
                         else:
-                            sanitized = sanitize_model_statement(
+                            sanitized, _ = validate_claim_statement(
                                 repair_parsed.get("statement") if isinstance(repair_parsed, dict) else None,
-                                data_ids,
+                                data_ids, selected_label, competitor_labels,
                             )
                             if sanitized is not None:
                                 statement = sanitized
@@ -3873,7 +3948,7 @@ def parser() -> argparse.ArgumentParser:
     )
     event_debate.add_argument(
         "--renderer-adapter",
-        help="全人格を1バッチ描画する共有utterance renderer v3のMLX LoRA directory",
+        help="全人格でWeightを共有し、1発言ずつ独立描画するutterance renderer v3のMLX LoRA directory",
     )
     event_debate.add_argument(
         "--body-adapter",

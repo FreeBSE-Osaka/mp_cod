@@ -19,11 +19,12 @@ class CodModelTest(unittest.TestCase):
                    for code,label in [('P','少人数で試験を続ける'),('Q','試験を止めて再評価する')]]
         ledger = {'schema_version':1,'topic':'架空の前案表示','data':[{'id':'D01','text':'試行条件を比較する。'}],
                   'claim_catalog':catalog,'role_preferences':{p['id']:['P','Q']for p in roster}}
-        previous, count = [], 0
+        previous, count, renderer_sizes = [], 0, []
         def respond(**kwargs):
             nonlocal count
             payload=json.loads(kwargs['user'])
             if 'items' in payload:
+                renderer_sizes.append(len(payload['items']))
                 result={'utterances':[]}
                 for item in payload['items']:
                     claim=item.get('own_claim',item.get('selected_claim'))
@@ -45,6 +46,8 @@ class CodModelTest(unittest.TestCase):
             with patch.object(cod_model,'ask_ollama',side_effect=respond),redirect_stdout(io.StringIO()):
                 self.assertEqual(cod_model.run_event_debate(args),0)
         self.assertEqual(len(previous),2)
+        self.assertTrue(renderer_sizes)
+        self.assertEqual(set(renderer_sizes), {1})
         labels={row['code']:row['label']for row in catalog}
         for item in previous:
             self.assertEqual(item['previous_claim'],labels[item['previous_choice']])
@@ -61,6 +64,132 @@ class CodModelTest(unittest.TestCase):
         ordinary = "ただ、根拠はまだ不足しているので、効果を確認済みとは扱えません。"
         self.assertEqual(cod_model.dialogue_fallback(ordinary), ordinary)
         self.assertEqual(cod_model.sanitize_dialogue_move(ordinary, "object", flexible=True), ordinary)
+
+    def test_inline_citation_cleanup_preserves_the_grammatical_noun(self):
+        for statement in ("D03の参加時間制約を考慮し、必要時間との不足を確認します。",
+                          "[D03]の参加時間制約を考慮し、必要時間との不足を確認します。",
+                          "D03 の参加時間制約を考慮し、必要時間との不足を確認します。",
+                          "[D03] の参加時間制約を考慮し、必要時間との不足を確認します。"):
+            with self.subTest(statement=statement):
+                text = cod_model.dialogue_fallback(statement)
+                self.assertEqual(text, "資料の参加時間制約を考慮し、必要時間との不足を確認します。")
+                self.assertNotIn("D03", text)
+        self.assertEqual(cod_model.dialogue_fallback("[D02,D01]で示す仮回答と承認待ちを確認します。"),
+                         "資料で示す仮回答と承認待ちを確認します。")
+
+    def test_named_competitor_preference_is_not_hidden_by_shared_wording(self):
+        alternative = "45分参加可能という仮回答が揃う候補Aを優先候補として比較メモに載せ最終確認を残す"
+        wrong = "朝の候補 A を優先し、最終確認を残す判断を維持します。午後の条件付き検討は後回しにします。"
+        self.assertTrue(cod_model.dialogue_selects_competing_claim(wrong, [alternative]))
+        for legitimate in ("候補Aを優先するとは言えません。午後の候補Bを条件付きで検討します。",
+                           "候補Aを支持していましたが、今は候補Bを条件付きで検討します。",
+                           "候補Aには仮回答がありますが、午後の候補Bを条件付きで検討します。"):
+            with self.subTest(legitimate=legitimate):
+                self.assertFalse(cod_model.dialogue_selects_competing_claim(legitimate, [alternative]))
+
+    def test_named_counterproposal_does_not_need_a_stock_connector_but_cannot_follow_target(self):
+        own = '45分参加可能という仮回答が揃う候補Aを優先候補として比較メモに載せ最終確認を残す'
+        target = '朝午後の希望と最終承認がないため候補選択を保留し確認事項を整理する'
+        natural = '仮回答が揃う候補Aを優先して比較メモに載せ、最終確認を残す方針で進めます。'
+        self.assertEqual(cod_model.validate_dialogue_move(natural, 'counterproposal', own,
+                         flexible=True, target_claim=target), (natural, None))
+        self.assertIsNone(cod_model.validate_dialogue_move(natural, 'counterproposal', own, target_claim=target)[0])
+        self.assertIsNone(cod_model.validate_dialogue_move(natural, 'counterproposal', own,
+                          flexible=True, target_claim=own)[0])
+        wrong = '朝午後の希望が未確認で最終承認もないため、候補選択を保留し確認事項の整理を優先します。'
+        self.assertIsNone(cod_model.validate_dialogue_move(wrong, 'counterproposal', own,
+                          flexible=True, target_claim=target)[0])
+
+    def test_initial_statement_repair_freezes_decision_and_excludes_peer_prose(self):
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        import io
+        roster = cod_model.load_domains()['general']['personas'][:2]
+        label = '少人数で試験導入を続ける'
+        ledger = {'schema_version': 1, 'topic': '架空の引用修復',
+                  'data': [{'id': 'D01', 'text': '少人数の試験導入を続ける案がある。'},
+                           {'id': 'D02', 'text': '別案は今回の根拠に選ばれていない。'}],
+                  'claim_catalog': [{'code': 'P', 'kind': 'proposal', 'label': label,
+                                     'supported_by': ['D01'], 'contradicts': []}],
+                  'role_preferences': {p['id']: ['P'] for p in roster}}
+        repair_requests = []
+        def respond(**kwargs):
+            payload = json.loads(kwargs['user'])
+            if 'claim_catalog' in payload:
+                result = {'claims': [{'code': 'P', 'data_ids': ['D01'], 'confidence': 75,
+                                      'statement': '他者の説明をコピーした誤った理由です。[D02]'}]}
+            else:
+                repair_requests.append(payload)
+                result = {'statement': label + '案を支持します。根拠は[D01]です。'}
+            return result, {'_raw_content': json.dumps(result, ensure_ascii=False)}
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'ledger.json'; source.write_text(json.dumps(ledger))
+            output = Path(directory) / 'runs'
+            args = cod_model.parser().parse_args(['event-debate', '--domain', 'general', '--backend', 'ollama',
+                '--ledger', str(source), '--out', str(output), '--reconcile-rounds', '0', '--no-renderer'])
+            with patch.object(cod_model, 'ask_ollama', side_effect=respond), redirect_stdout(io.StringIO()):
+                self.assertEqual(cod_model.run_event_debate(args), 0)
+            run = json.loads(next(output.glob('*.json')).read_text())
+            for group in run['independent'].values():
+                self.assertEqual(group['valid'][0]['code'], 'P')
+                self.assertEqual(group['valid'][0]['data_ids'], ['D01'])
+                self.assertEqual(group['valid'][0]['confidence'], 75)
+                self.assertEqual(group['valid'][0]['statement_origin'], 'model_repair')
+                self.assertTrue(group['statement_repairs'][0]['raw'])
+        self.assertEqual(len(repair_requests), 2)
+        for request in repair_requests:
+            self.assertEqual(request['allowed_data_ids'], ['D01'])
+            self.assertEqual([row['id'] for row in request['data']], ['D01'])
+            self.assertNotIn('コピーした', json.dumps(request, ensure_ascii=False))
+
+    def test_renderer_retry_uses_own_only_input_and_keeps_actual_repair_raw(self):
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        import io
+        roster = cod_model.load_domains()['general']['personas'][:2]
+        labels = {'P': '候補Aを優先して少人数で試験を続ける', 'Q': '候補Bを優先して全面導入する'}
+        ledger = {'schema_version': 1, 'topic': '架空の会話修復',
+                  'data': [{'id': 'D01', 'text': '少人数試験と全面導入の案がある。'}],
+                  'claim_catalog': [{'code': code, 'kind': 'proposal', 'label': label,
+                      'supported_by': ['D01'], 'contradicts': ['Q' if code=='P' else 'P']}
+                      for code,label in labels.items()],
+                  'role_preferences': {p['id']: ['P','Q'] for p in roster}}
+        calls, initial = [], 0
+        def respond(**kwargs):
+            nonlocal initial
+            payload = json.loads(kwargs['user'])
+            if 'claim_catalog' in payload:
+                code = 'P' if initial==0 else 'Q'; initial += 1
+                result = {'claims': [{'code': code, 'data_ids': ['D01'], 'confidence': 75,
+                                     'statement': labels[code]+'案を支持します。根拠は[D01]です。'}]}
+            else:
+                item = payload['items'][0]
+                is_repair = 'candidate_reason' not in item
+                calls.append((is_repair,item))
+                own = item['own_claim']
+                other = labels['Q' if own==labels['P'] else 'P']
+                text = cod_model.compose_dialogue_body(own+'。', own, item['move'], flexible=True) if is_repair else other+'。'
+                result = {'utterances': [{'id': item['id'], 'utterance': text}]}
+            return result, {'_raw_content': json.dumps(result, ensure_ascii=False)}
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)/'ledger.json';source.write_text(json.dumps(ledger))
+            output = Path(directory)/'runs'
+            args = cod_model.parser().parse_args(['event-debate','--domain','general','--backend','ollama',
+                '--ledger',str(source),'--out',str(output),'--prompt-profile','source_grounded','--reconcile-rounds','0'])
+            with patch.object(cod_model,'ask_ollama',side_effect=respond),redirect_stdout(io.StringIO()):
+                self.assertEqual(cod_model.run_event_debate(args),0)
+            run = json.loads(next(output.glob('*.json')).read_text())
+            for event in run['events']:
+                self.assertEqual(event['utterance_origin'],'model_renderer_v3_repair')
+                self.assertEqual(event['data_ids'],['D01'])
+                self.assertTrue(event['renderer_repair']['raw'])
+                self.assertTrue(event['renderer_repair']['original_warning'])
+        self.assertEqual(sum(is_repair for is_repair,_ in calls),2)
+        for is_repair,item in calls:
+            if is_repair:
+                self.assertNotIn('candidate_reason',item)
+                self.assertNotIn('perspective',item)
+                self.assertNotIn('target_claim',item)
 
     def test_source_grounding_diagnostic_has_paired_states_and_all_general_personas(self):
         payload = json.loads((Path(__file__).parent / "data/general_source_grounding_v1/fresh_cases.json").read_text())
@@ -1085,6 +1214,24 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(events[1]["statement_origin"], "label_fallback")
         self.assertEqual(events[1]["utterance"], "out。")
         self.assertEqual(events[1]["utterance_origin"], "statement_fallback")
+
+    def test_flexible_uncertainty_objection_requires_frozen_state_and_claim(self):
+        claim = "工具の返却方式変更による紛失の減少は未確認"
+        natural = "工具の返却方式変更による紛失の減少は、まだ確認できていません。"
+        self.assertEqual(cod_model.validate_dialogue_move(natural, "object", claim, flexible=True),
+                         (natural, None))
+        self.assertIsNone(cod_model.validate_dialogue_move(natural, "object", claim)[0])
+        for text, own_claim in (
+            (natural, "工具の返却方式を種類別に変更する"),
+            ("工具の返却方式変更による紛失の減少は未確認ではありません。", claim),
+            ("工具の返却方式変更による紛失の減少は、検証済みです。", claim),
+            ("工具の返却方式変更による紛失の減少は未確認ですが、効果は確認済みです。", claim),
+            ("工具の返却方式変更による紛失の減少は未確認ですが、その案には賛成です。", claim),
+            ("工具の返却方式変更による紛失の減少は未確認ですが、その案を支持します。", claim),
+            ("営業予測の増加率については、まだ確認できていません。", claim),
+        ):
+            with self.subTest(text=text, own_claim=own_claim):
+                self.assertIsNone(cod_model.validate_dialogue_move(text, "object", own_claim, flexible=True)[0])
 
     def test_agreement_can_target_older_claim(self):
         ledger = {

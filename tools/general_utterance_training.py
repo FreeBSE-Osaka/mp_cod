@@ -102,7 +102,8 @@ def example(case, *, misleading=False):
 
 def checks(text, case):
     normalized, reason = cod.validate_dialogue_move(text, case["move"], case["claim"],
-                                                   flexible=case.get('renderer_profile') != 'structured_plain')
+                                                   flexible=case.get('renderer_profile') != 'structured_plain',
+                                                   target_claim=case.get('target') or '')
     return {"utterance": normalized, "syntax_move": normalized is not None,
         "aligned": bool(normalized) and cod.dialogue_is_aligned(normalized, case["claim"], []),
         "grounded": bool(normalized) and cod.dialogue_numbers_are_grounded(normalized, item(case)),
