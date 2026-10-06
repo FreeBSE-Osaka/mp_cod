@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "synthetic_secretary_assistant_armtest",
+  "evaluation_only": true,
+  "topic": "架空の会議調整。秘書へ候補、異論、不足確認を返す。実際の予定検索、招待送信、予約、ユーザーへの連絡は依頼されていない。",
+  "data": [
+    {"id": "D01", "text": "架空案件の会議は45分、必須参加者は3人。日時の最終決定と招待送信はまだ承認されていない。"},
+    {"id": "D02", "text": "候補Aは同じ日の10:00〜10:45 JST。3人全員から、この枠で参加可能という仮の回答がある。これはカレンダーの空きを検索した結果ではない。"},
+    {"id": "D03", "text": "候補Bは同じ日の15:00 JST開始。3人中1人は15:30 JSTまでしか参加できず、残り2人は15:45 JSTまで参加できる。"},
+    {"id": "D04", "text": "候補Aは01:00〜01:45 UTC、候補Bの15:00 JST開始は06:00 UTCに相当する。別の開催日や参加者の所在は指定されていない。"},
+    {"id": "D05", "text": "会議を30分に短縮しても議題を終えられるかは未確認。必須参加者を減らしてよいという許可もない。"},
+    {"id": "D06", "text": "利用者が朝と午後のどちらを好むかは未確認。どちらの候補も招待を送っておらず、会議室やオンライン会議URLも予約・作成していない。"},
+    {"id": "D07", "text": "秘書への納品は比較メモと必要な確認事項まで。確認依頼を送信する行為も、この架空試験の範囲外である。"}
+  ],
+  "claim_catalog": [
+    {"code": "PREPARE_A", "kind": "proposal", "label": "45分参加可能という仮回答が揃う候補Aを優先候補として比較メモに載せ最終確認を残す", "supported_by": ["D01", "D02", "D06", "D07"], "contradicts": ["CONDITIONAL_B", "HOLD_SELECTION"]},
+    {"code": "CONDITIONAL_B", "kind": "proposal", "label": "午後を選ぶ場合は30分化の実現可能性と承認を先に確認する条件付き候補Bを検討する", "supported_by": ["D01", "D03", "D05", "D06", "D07"], "contradicts": ["PREPARE_A", "HOLD_SELECTION"]},
+    {"code": "HOLD_SELECTION", "kind": "condition", "label": "朝午後の希望と最終承認がないため候補選択を保留し確認事項を整理する", "supported_by": ["D01", "D06", "D07"], "contradicts": ["PREPARE_A", "CONDITIONAL_B"]},
+    {"code": "B_DURATION_GAP", "kind": "critique", "label": "候補Bでは1人の参加可能時間が必要45分より15分不足する点を残す", "supported_by": ["D01", "D03", "D05"], "contradicts": []},
+    {"code": "TIMEZONE_LABELS", "kind": "improvement", "label": "候補Aを10時JSTと01時UTCで併記して時刻の取り違えを避ける", "supported_by": ["D02", "D04"], "contradicts": []},
+    {"code": "NOT_CALENDAR_VERIFIED", "kind": "observation", "label": "候補Aの参加可能回答を実カレンダーの空き確認済みとは扱わない", "supported_by": ["D02"], "contradicts": []},
+    {"code": "NO_BOOKING_COMPLETED", "kind": "observation", "label": "候補や提案を招待送信済みや予約完了へ変えず未実行として報告する", "supported_by": ["D01", "D06", "D07"], "contradicts": []},
+    {"code": "MISSING_PREFERENCES", "kind": "condition", "label": "利用者の朝午後の希望と30分化の可否を不足情報として秘書へ引き継ぐ", "supported_by": ["D05", "D06", "D07"], "contradicts": []}
+  ],
+  "role_preferences": {
+    "hypothesis_builder": ["PREPARE_A", "CONDITIONAL_B", "MISSING_PREFERENCES"],
+    "falsifier": ["B_DURATION_GAP", "NOT_CALENDAR_VERIFIED", "CONDITIONAL_B", "PREPARE_A"],
+    "empirical_auditor": ["NOT_CALENDAR_VERIFIED", "TIMEZONE_LABELS", "B_DURATION_GAP", "PREPARE_A"],
+    "pragmatic_operator": ["PREPARE_A", "NO_BOOKING_COMPLETED", "MISSING_PREFERENCES"],
+    "user_advocate": ["MISSING_PREFERENCES", "HOLD_SELECTION", "CONDITIONAL_B", "PREPARE_A"],
+    "resource_planner": ["B_DURATION_GAP", "PREPARE_A", "CONDITIONAL_B"],
+    "long_horizon_reviewer": ["NO_BOOKING_COMPLETED", "HOLD_SELECTION", "PREPARE_A"],
+    "integrative_designer": ["TIMEZONE_LABELS", "MISSING_PREFERENCES", "PREPARE_A", "CONDITIONAL_B"]
+  }
+}

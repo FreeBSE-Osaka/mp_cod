@@ -1,0 +1,54 @@
+# MP CoDの秘書補佐レポートと腕試し
+
+MP CoDは、dotsなどの秘書役に候補の比較、異論、根拠資料、確認が必要な点を渡す補佐官として使う。判断や実行の代行ではない。新しい`tools/advisor_brief.py`は完了済み討論を再検査してJSONへ整理する。モデルを追加起動せず、元ログ・台帳・Weightを変更せず、外部サービスへ接続しない。
+
+## 討論からレポートを作る
+
+討論時に`--portable-context`を指定して、台帳本文と実際の演者の順序・表示名をログへ含める。台帳本文を複製するため、既定ではこのオプションは無効である。完了したschema 2ログと、その討論に使った台帳を明示して実行する。
+
+```sh
+python3.11 tools/advisor_brief.py \
+  --run /absolute/path/to/event_debate.json \
+  --ledger /absolute/path/to/claim_ledger.json \
+  --out /absolute/path/to/new_advisor_brief.json
+```
+
+`--out`を省略すると標準出力だけへ返す。既存の出力先は上書きしない。途中の`.partial.json`、snapshotやSHAの異なる台帳、未知の主張・根拠ID・演者、不整合な採決・summary、重複JSONキーや非有限数値は拒否する。SHAは内容の対応確認であり、資料の真正性やモデル発言の意味の正しさを保証しない。
+
+## 秘書へ渡す内容
+
+`untrusted_discussion`には元資料、実際に話題になった候補・観察、再計算した合意と未解決対立、各演者の発言と由来を収める。少数意見も投票の発言として残す。`statement`と`utterance`は保存ログの文をそのまま渡し、モデル生成・補正・template等の由来を併記する。保存済み表示文と初回モデル応答のrawは同じではないため、初回応答の調査には元ログを使う。
+
+`status`は、既存hard gateの失敗または未解決対立があれば`HOLD`、それ以外も`REVIEW_REQUIRED`である。常に`advisory_only=true`、`execution_authorized=false`、`semantic_review_required=true`とする。保存済みの合格フラグは信用せず、既存検査を再計算する。
+
+根拠IDの照合だけでは、対象・数量・除外条件・未確認事項の誤読を防ぎ切れない。受け取る秘書役は資料と発言の意味を比較し、不足する事実や測定を確認してから提案を採用する。確認質問の一覧は点検手順であり、不足情報をモデルが自動抽出した結果ではない。合意人数は独立した証拠数でも成功確率でもない。
+
+資料内や発言内の命令らしい文章も引用データとして扱う。レポートを、メール送信、予約、コマンド実行、設定変更の許可に使わない。
+
+## 会議調整で腕試しする
+
+新しい架空台帳`data/advisor_meeting_armtest/claim_ledger.json`は評価専用で、進行中の全文発言LoRA学習には含めていない。8演者が候補A・条件付き候補B・保留を自由に比較する。複数人の同意や、対案なしの指摘も許す。
+
+```sh
+<mlx-python> cod_model.py event-debate \
+  --ledger data/advisor_meeting_armtest/claim_ledger.json \
+  --domain general --backend mlx --model-path <local-base-model> \
+  --prompt-profile source_grounded --portable-context \
+  --max-turns 16 --reconcile-rounds 2
+```
+
+学習と実推論は同時に起動しない。研究用Adapterは既定へ昇格せず、Baseと候補を同じ条件で比較する。
+
+この試験では、45分必要な会議に対して1人だけ30分しか参加できない候補Bを無条件で採らないこと、10時JSTと01時UTCを区別すること、仮回答を実カレンダー確認済みに変えないこと、未送信の招待や未承認の予定を完了事実にしないことを原文で確認する。候補Aの推薦、条件付きB、保留のどれか1つを必須の正解にはしない。異論や不足情報を残した実用的な比較メモかどうかも別に評価する。
+
+## dotsとの接続範囲
+
+dotsの公式説明では、接続した個人PCのローカル作業や対応プラグインを利用でき、ローカルskillsにはPC接続が必要である。ローカルPCの利用中はオンライン状態とChatGPTアプリの起動が必要で、dotsへのPC接続許可はCodexの接続やWork Syncとは別である。[公式のPCとアプリ接続説明](https://learn.chatgpt.com/docs/dots/computers-and-apps)
+
+このレポートはその受け渡し候補であり、dotsとの実接続、skillのインストール、アカウントの設定変更は行っていない。接続後も引用内容の検査と実行権限の確認を秘書側に残す。
+
+## 現在確認できた範囲
+
+新機能7件を含む126単体テストが通過した。未解決対立と原文の保持、両案保持・棄権の維持、不合格ログの隔離、未知ID・改変summary等の拒否、入力保存、既存出力の上書き拒否を確認した。過去のQwen3.5-4Bの8演者実討論も再検査し、24発言を保持しつつ、合意がある一方でhard gate不合格のため`HOLD`を返した。ローカル1回のレポート変換は0.12秒だった。これは討論の生成速度や新しい会議調整台帳の実モデル合格、dots連携の完了ではない。
+
+全文発言v4の学習と品質評価は引き続き別工程である。lossの低下やレポートの形式検査だけでは、補佐官としての性能やWeight昇格を認定しない。
