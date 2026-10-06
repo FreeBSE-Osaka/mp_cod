@@ -10,10 +10,30 @@ import sys
 
 import cod_model as cod
 from tools.general_utterance_training import cases,checks,example,item,profile_case,score,valid,PROFILES,build,balanced_training_cases
-from tools.general_body_training import train,assistant_only_loss
+from tools.general_body_training import train,assistant_only_loss,exact_length_batches
 
 
 class FullUtteranceTrainingTest(unittest.TestCase):
+    def test_exact_padding_preserves_real_tokens_lengths_and_native_arguments(self):
+        class Batch:
+            def __init__(self):self.rows=[[10,11,20,21,22]+[0]*28,[30,31,32]+[0]*30]
+            def __getitem__(self,key):return [row[:key[1].stop]for row in self.rows]
+        class Lengths:
+            def __getitem__(self,key):return [5,3]
+        batch,lengths=Batch(),Lengths()
+        calls=[]
+        def iterator(*values,**kwargs):
+            calls.append((values,kwargs));yield batch,lengths
+        mx=ModuleType('mlx.core');mx.max=lambda values:SimpleNamespace(item=lambda:max(values))
+        package=ModuleType('mlx');package.core=mx
+        native=ModuleType('mlx_lm.tuner.trainer');native.iterate_batches=iterator
+        with patch.dict(sys.modules,{'mlx':package,'mlx.core':mx,'mlx_lm.tuner.trainer':native}):
+            result=list(exact_length_batches('dataset',batch_size=2,max_seq_length=768,loop=True))
+        self.assertEqual(result[0][0],[[10,11,20,21,22],[30,31,32,0,0]])
+        self.assertIs(result[0][1],lengths)
+        self.assertEqual(calls,[(('dataset',),{'batch_size':2,'max_seq_length':768,'loop':True})])
+        self.assertEqual(len(batch.rows[0]),33)
+
     def test_balanced_corpus_covers_each_role_move_and_all_training_topics(self):
         corpus=cases(Path(__file__).parent/'data/general_utterance_qwen35_v2/curated.json')
         selected=balanced_training_cases(corpus)
@@ -75,6 +95,10 @@ class FullUtteranceTrainingTest(unittest.TestCase):
         original_argv = sys.argv
         def native_train(*values,**kwargs):
             self.assertIs(kwargs['loss'],assistant_only_loss)
+            if args.exact_training_padding:
+                self.assertIs(kwargs['iterate_batches'],exact_length_batches)
+            else:
+                self.assertNotIn('iterate_batches',kwargs)
         def native_main():
             calls.append(list(sys.argv))
             self.assertNotIn('--resume-adapter-file', sys.argv)
@@ -85,13 +109,15 @@ class FullUtteranceTrainingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             args = SimpleNamespace(out=root/'new', model=root/'model', data=root/'data',
-                                   config=root/'config.yaml', parent_adapter=None)
+                                   config=root/'config.yaml', parent_adapter=None,exact_training_padding=True)
             with patch.dict(sys.modules, {'mlx_lm': package}):
+                train(args)
+                args.exact_training_padding=False
                 train(args)
                 args.parent_adapter = root/'missing.safetensors'
                 with self.assertRaisesRegex(ValueError, 'existing weights file'):
                     train(args)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
         self.assertIs(native.load, original_load)
         self.assertIs(native.train,native_train)
         self.assertIs(sys.argv, original_argv)

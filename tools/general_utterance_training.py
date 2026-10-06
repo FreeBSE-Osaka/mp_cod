@@ -238,6 +238,7 @@ def main():
         if name=='train':
             p.add_argument('--data',type=Path,required=True);p.add_argument('--config',type=Path,required=True);p.add_argument('--parent-adapter',type=Path)
             p.add_argument('--mlx-cache-limit-mib',type=int)
+            p.add_argument('--exact-training-padding',action='store_true')
         if name=='evaluate':
             p.add_argument('--adapter',type=Path);p.add_argument('--split',choices=('valid','test'),default='valid');p.add_argument('--check-adapter-isolation',action='store_true')
     args=parser.parse_args()

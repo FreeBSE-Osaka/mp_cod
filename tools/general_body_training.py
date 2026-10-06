@@ -292,6 +292,15 @@ def assistant_only_loss(model, batch, lengths):
     return default_loss(model, batch, lengths.at[:, 1].add(-1))
 
 
+def exact_length_batches(*values, **kwargs):
+    """Retain every real token; discard only the native batch's unused tail padding."""
+    import mlx.core as mx
+    from mlx_lm.tuner.trainer import iterate_batches
+    for batch, lengths in iterate_batches(*values, **kwargs):
+        maximum = int(mx.max(lengths[:, 1]).item())
+        yield batch[:, :maximum], lengths
+
+
 def train(args):
     """Reuse MLX-LM's trainer, matching its prompt mask to our non-thinking inference."""
     if args.out.exists() and any(args.out.iterdir()):
@@ -314,6 +323,8 @@ def train(args):
 
     def train_assistant_targets(*values, **kwargs):
         kwargs['loss'] = assistant_only_loss
+        if getattr(args, 'exact_training_padding', False):
+            kwargs['iterate_batches'] = exact_length_batches
         return original_train(*values, **kwargs)
 
     try:
@@ -426,6 +437,8 @@ def main():
                            help="Resume these LoRA weights; omit to initialize a new Adapter from Base")
             p.add_argument("--mlx-cache-limit-mib", type=int,
                            help="Training-only MLX allocator cache cap; 0 disables unused-memory caching")
+            p.add_argument("--exact-training-padding", action="store_true",
+                           help="Remove only unused batch-tail padding; never truncate real input or targets")
     args = parser.parse_args()
     return guarded_job(args, {"build": build, "evaluate": evaluate, "rescore": rescore, "train": train}[args.command])
 
