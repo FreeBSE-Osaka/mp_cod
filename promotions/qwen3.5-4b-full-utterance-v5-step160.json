@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "status": "research_hold",
+  "model": "Qwen3.5-4B-4bit",
+  "adapter_scope": "full utterance renderer only; Base decisions are not trained",
+  "selected_step": 160,
+  "weights_sha256": "2360dfda61f58be4a2243af0dbfaec628d9322635341884a539b99c2ee1364b1",
+  "config_sha256": "092429aa17850d4655c6eab7a9247792de20e92957b890a7ce81d3f35c278a63",
+  "adapter_bytes": 754632,
+  "plan_sha256": "fe5b6533ec0ed94589800c2e362fbe0bbedfb76df83f9becdfd9a85ae84e4fe0",
+  "evaluation_sha256": "76a582dcf04cf90aea69c6ad3babd5de1c74004321a6207c8bb809d87926c22d",
+  "training": {
+    "completed_native_steps": 320,
+    "gold_target_tokens": 18197,
+    "exit_code": 0,
+    "fixed_candidates": [80, 160, 240, 320]
+  },
+  "development": {
+    "total": 48,
+    "strict_schema": 46,
+    "direct_valid": 29,
+    "study_valid": 20,
+    "base_study_valid": 18,
+    "parent_study_valid": 25,
+    "lost_base_cases": 5,
+    "lost_parent_cases": 8,
+    "counterproposal_direct": "0/6",
+    "object_direct": "4/6"
+  },
+  "hold_reasons": [
+    "study_valid does not exceed the frozen parent score of 25/48",
+    "five Base-passing and eight parent-passing development inputs regress",
+    "counterproposal direct gate is 0/6, below the frozen minimum of 4/6",
+    "no whole-General semantic, naturalness, isolation or paired-runtime success has been established"
+  ],
+  "fresh72_model_outputs_generated": false,
+  "promotion_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "whole_general_goal_complete": false,
+  "documentation": "docs/qwen35_full_utterance_own_only_v5_20261006.md"
+}

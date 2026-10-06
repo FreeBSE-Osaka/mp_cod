@@ -31,6 +31,18 @@ def speech_body(text):
     return text
 
 
+def repeated_sentences(text):
+    if not isinstance(text,str):return []
+    seen={}
+    # ponytail: exact long sentences only; paraphrases and intentional emphasis need review.
+    for sentence in re.split(r'[。！？!?]+',speech_body(text)):
+        key=normalize(sentence)
+        if len(key)>=12:
+            entry=seen.setdefault(key,{'sentence':sentence.strip(),'occurrences':0})
+            entry['occurrences']+=1
+    return [entry for entry in seen.values()if entry['occurrences']>1]
+
+
 def audit(run):
     if not isinstance(run,dict) or not isinstance(run.get('events'),list):
         raise ValueError('expected an event-debate run with an events array')
@@ -57,6 +69,8 @@ def audit(run):
                  'overlap':round(surface_overlap(speech_body(row['utterance']),row['label']),4)}
                 for row in records if row['label'] and isinstance(row['utterance'],str)
                 and surface_overlap(speech_body(row['utterance']),row['label'])>=0.8]
+    within_repetitions=[{'id':row['id'],'persona':row['persona'],'origin':row['origin'],'repeated_sentences':repeats}
+                        for row in records if (repeats:=repeated_sentences(row['utterance']))]
     compared,utterance_pairs,reason_pairs=0,[],[]
     # ponytail: quadratic per-stage audit; bucket by stance if very long transcripts need it.
     for left,right in itertools.combinations(records,2):
@@ -78,9 +92,10 @@ def audit(run):
         'statement_origin_counts':dict(Counter(row['statement_origin']for row in records)),
         'same_stance_pairs_audited':compared,'same_stance_surface_pairs':utterance_pairs,
         'same_stance_base_reason_pairs':reason_pairs,'label_like_utterances':label_like,
+        'within_utterance_repetitions':within_repetitions,
         'missing_speaker_or_stance':sum(not row['persona']or not row['stance']for row in records),
         'diagnostic_only':True,'changes_existing_gates':False,'copying_proved':False,
-        'policy':'Agreement and shared evidence are legitimate. High textual overlap or label-like speech prompts review; it is not proof of copying or factual correctness.'}
+        'policy':'Agreement and shared evidence are legitimate. High textual overlap, label-like speech or repeated long sentences prompt review; they are not proof of copying or factual correctness and do not reject intentional emphasis.'}
 
 
 def main():

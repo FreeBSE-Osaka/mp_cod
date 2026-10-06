@@ -141,6 +141,141 @@ class CodModelTest(unittest.TestCase):
             self.assertEqual(request['allowed_data_ids'], ['D01'])
             self.assertEqual([row['id'] for row in request['data']], ['D01'])
             self.assertNotIn('コピーした', json.dumps(request, ensure_ascii=False))
+            self.assertEqual(set(request['response_contract']['properties']),{'statement'})
+            self.assertIn('裸の文字列を返さない',request['rule'])
+        self.assertEqual([request['perspective'] for request in repair_requests],
+                         [cod_model.persona_perspective(persona) for persona in roster])
+
+    def test_conditional_named_counterproposal_can_recommend_consideration_without_stock_prefix(self):
+        own='午後を選ぶ場合は30分化の実現可能性と承認を先に確認する条件付き候補Bを検討する'
+        target='45分参加可能という仮回答が揃う候補Aを優先候補として比較メモに載せ最終確認を残す'
+        texts=(
+            '午後を選ぶなら、30 分化の実現可能性と承認を先に確認する条件付き候補 B を検討すべきです。',
+            '午後を選ぶなら、まず30分化の実現可能性と承認を条件付き候補Bとして検討すべきです。',
+        )
+        for text in texts:
+            with self.subTest(text=text):
+                self.assertEqual(cod_model.validate_dialogue_move(text,'counterproposal',own,
+                                 flexible=True,target_claim=target),(text,None))
+                self.assertIsNone(cod_model.validate_dialogue_move(text,'counterproposal',own,
+                                  target_claim=target)[0])
+                self.assertIsNone(cod_model.validate_dialogue_move(text,'counterproposal',own,
+                                  flexible=True,target_claim=own)[0])
+
+    def test_conditional_consideration_does_not_accept_denial_past_target_or_unconditional_words(self):
+        own='午後を選ぶ場合は30分化の実現可能性と承認を先に確認する条件付き候補Bを検討する'
+        target='45分参加可能という仮回答が揃う候補Aを優先候補として比較メモに載せ最終確認を残す'
+        texts=(
+            '午後なら、条件付き候補Bを検討すべきとは言えません。',
+            '条件付き候補Bを検討すべきでしたが、今は候補Aを優先して最終確認を残します。',
+            '午後なら、条件付き候補Bを検討すべきですが、候補Aを優先して最終確認を残します。',
+            '候補Bを無条件で検討すべきです。',
+            '候補Bを検討すべきです。',
+        )
+        for text in texts:
+            with self.subTest(text=text):
+                self.assertIsNone(cod_model.validate_dialogue_move(text,'counterproposal',own,
+                                  flexible=True,target_claim=target)[0])
+
+    def test_reconciliation_reason_repair_has_own_view_and_schema_without_completed_example(self):
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        import io
+        roster = cod_model.load_domains()['general']['personas'][:2]
+        labels = {'P':'少人数で試験を続ける','Q':'試験を止めて再評価する'}
+        ledger = {'schema_version':1,'topic':'架空の理由再生成',
+                  'data':[{'id':'D01','text':'少人数試験と再評価を比較する。'},
+                          {'id':'D02','text':'今回の選択済み資料ではない。'}],
+                  'claim_catalog':[{'code':code,'label':label,'kind':'proposal',
+                      'supported_by':['D01'],'contradicts':['Q' if code=='P' else 'P']}
+                      for code,label in labels.items()],
+                  'role_preferences':{p['id']:['P','Q'] for p in roster}}
+        count, requests = 0, []
+        invalid = 'FAILED_AND_PEER_SENTINELの説明を流用します。[D02]'
+        def respond(**kwargs):
+            nonlocal count
+            payload = json.loads(kwargs['user'])
+            if 'claim_catalog' in payload:
+                code = 'P' if count==0 else 'Q';count+=1
+                result = {'claims':[{'code':code,'data_ids':['D01'],'confidence':75,
+                                    'statement':labels[code]+'案を支持します。根拠は[D01]です。'}]}
+            elif 'label' in payload:
+                requests.append(payload)
+                result = {'statement':payload['label']+'ために比較します。根拠は[D01]です。',
+                          'change_reason':'根拠[D01]を再確認して判断を変更しました。' if payload['changed'] else ''}
+            else:
+                side=payload['left'] if payload['left']['label']==labels['P'] else payload['right']
+                result = {'choice':side['code'],'data_ids':['D01'],'statement':invalid,'change_reason':invalid}
+            return result, {'_raw_content':json.dumps(result,ensure_ascii=False)}
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)/'ledger.json';source.write_text(json.dumps(ledger))
+            output=Path(directory)/'runs'
+            args=cod_model.parser().parse_args(['event-debate','--domain','general','--backend','ollama',
+                '--ledger',str(source),'--out',str(output),'--no-renderer','--reconcile-rounds','1'])
+            with patch.object(cod_model,'ask_ollama',side_effect=respond),redirect_stdout(io.StringIO()):
+                self.assertEqual(cod_model.run_event_debate(args),0)
+            run=json.loads(next(output.glob('event_debate_*.json')).read_text())
+        self.assertEqual(len(requests),2)
+        self.assertEqual([request['changed'] for request in requests],[False,True])
+        for persona, request in zip(roster,requests):
+            self.assertEqual(request['perspective'],cod_model.persona_perspective(persona))
+            self.assertEqual(request['allowed_data_ids'],['D01'])
+            self.assertEqual([row['id'] for row in request['data']],['D01'])
+            self.assertNotIn('format_example',request)
+            self.assertNotIn('FAILED_AND_PEER_SENTINEL',json.dumps(request))
+            self.assertEqual(set(request['response_contract']['properties']),{'statement','change_reason'})
+            vote=run['reconciliation'][0]['votes']['P|Q'][persona['id']]
+            self.assertEqual(vote['choice'],request['choice'])
+            self.assertEqual(request['label'],labels[vote['choice']])
+            self.assertEqual(vote['data_ids'],['D01'])
+            self.assertEqual(vote['statement_origin'],'model_repair')
+            self.assertEqual(vote['repair_request'],request)
+            self.assertTrue(vote['repair_raw'])
+
+    def test_reconciliation_reason_repair_rejects_null_and_extra_fields_without_crashing(self):
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        import io
+        roster=cod_model.load_domains()['general']['personas'][:2]
+        labels={'P':'少人数で試験を続ける','Q':'試験を止めて再評価する'}
+        ledger={'schema_version':1,'topic':'架空の修復契約',
+                'data':[{'id':'D01','text':'少人数試験と再評価を比較する。'},
+                        {'id':'D02','text':'今回の選択済み資料ではない。'}],
+                'claim_catalog':[{'code':code,'label':label,'kind':'proposal','supported_by':['D01'],
+                                  'contradicts':['Q' if code=='P' else 'P']}for code,label in labels.items()],
+                'role_preferences':{p['id']:['P','Q']for p in roster}}
+        for malformed in ('not_object','null_reason','extra_choice','unchanged_nonempty'):
+            with self.subTest(malformed=malformed),tempfile.TemporaryDirectory() as directory:
+                count=0
+                def respond(**kwargs):
+                    nonlocal count
+                    payload=json.loads(kwargs['user'])
+                    if 'claim_catalog' in payload:
+                        code='P' if count==0 else 'Q';count+=1
+                        result={'claims':[{'code':code,'data_ids':['D01'],'confidence':75,
+                                         'statement':labels[code]+'案を支持します。根拠は[D01]です。'}]}
+                    elif 'allowed_data_ids' in payload:
+                        result={'statement':payload['label']+'案を支持します。根拠は[D01]です。','change_reason':''}
+                        if malformed=='not_object':result=None
+                        elif malformed=='null_reason':result['change_reason']=None
+                        elif malformed=='extra_choice':result['choice']='Q'
+                        else:result['change_reason']='判断は変わっていませんが理由を書きました。[D01]'
+                    else:
+                        result={'choice':payload['own_previous_choice'],'data_ids':['D01'],'statement':'根拠外の説明です。[D02]',
+                                'change_reason':'根拠外の変更理由です。[D02]'}
+                    return result,{'_raw_content':json.dumps(result,ensure_ascii=False)}
+                source=Path(directory)/'ledger.json';source.write_text(json.dumps(ledger))
+                output=Path(directory)/'runs'
+                args=cod_model.parser().parse_args(['event-debate','--domain','general','--backend','ollama',
+                    '--ledger',str(source),'--out',str(output),'--no-renderer','--reconcile-rounds','1'])
+                with patch.object(cod_model,'ask_ollama',side_effect=respond),redirect_stdout(io.StringIO()):
+                    self.assertEqual(cod_model.run_event_debate(args),0)
+                run=json.loads(next(output.glob('event_debate_*.json')).read_text())
+                for vote in run['reconciliation'][0]['votes']['P|Q'].values():
+                    self.assertTrue(vote['repair_schema_warning'])
+                    self.assertEqual(vote['statement_origin'],'label_fallback')
+                    self.assertEqual(vote['data_ids'],['D01'])
+                    self.assertEqual(vote['choice'],vote['repair_request']['choice'])
 
     def test_renderer_retry_uses_own_only_input_and_keeps_actual_repair_raw(self):
         from unittest.mock import patch

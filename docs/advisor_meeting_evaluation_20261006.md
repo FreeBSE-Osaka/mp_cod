@@ -73,6 +73,45 @@ MP CoDが秘書へ渡す比較メモを、架空の会議調整台帳と物理Ma
 
 空白を挟んだ`D03 の参加時間`も名詞保持の対象に追加した。既存の`その結果`という補正文言は維持する。
 
+## 保存原文の意味と理由の反復
+
+再生成込みの同じrunを追加推論なしで点検すると、形式検査だけでは確認できない問題が残った。以下は原文中の特定箇所の点検で、全36発言の意味が合格したという評価ではない。
+
+| 箇所 | 原文の問題 | 台帳との対応 |
+| --- | --- | --- |
+| 条件付きBとAの比較における批判的設計者 | 「30 分短縮の可否」と述べた | D05は30分**に**短縮する案。45分から30分を引くこととは異なる |
+| C11の長期影響評価者 | 「必須参加者も揃っていない」と付け足した | 選択済みのD01・D06・D07は未承認・未実行を示すが、参加者不在は示さない。D02には3人の仮参加可能回答がある |
+| 条件付きBと保留の比較における実行設計者 | 同じ希望未確認と保留の文を1発言で2回繰り返した | 立場は許されるが、自然な説明や新しい理由にはならない |
+| 条件付きBとAの比較におけるA支持の6演者 | 再生成した公開理由が6人とも同文だった | 6人とも`model_repair`で、空白を除くと修復promptの`format_example`に埋めた完成文と一致した |
+
+既存の`tools/discussion_quality.py`は同じ立場の59組を点検し、公開会話の高類似1組、公開理由の完全一致15組、ラベルに近い発言6件を記録した。理由の15組は上記6人の全組合せである。同意と共通の根拠は正当であり、類似度だけで他者の文章のコピーを立証したり、同意を失格にしたりしない。
+
+すり合わせ理由の再生成では、選択したlabelを完成文として示す`format_example`が同文出力の誘因と考えられる。実行メタデータには6回の別々の修復呼び出しがあるが、そのrequest本文は保存されていないため、完成例との対応は保存ソースの構成と照合した。別々のmodel callや`model_repair`の由来は、独立した理由の証拠には代わらない。完成文の復唱を誘わず、本人の評価観点と選択済み資料から理由を作る修正を、凍結中のGeneral v5比較とは分離して検証する必要がある。
+
+原runと既存のhard gateは変更せず、診断を`discussion_quality_review.json`、上記4点と原文の対応を`semantic_review_selected_issues.json`へ保存した。点検記録は新しい学習正解へ転用しない。runのSHA256は`0db3d04b6e0b2ae34358079474eccbf8bf4de126cc6de08db5e649c5b20fafc3`で、指摘文と6人の理由が保存原文に一致することを確認した。
+
+同じ診断toolへ`within_utterance_repetitions`を追加し、1発言内で長い文が繰り返される箇所を報告する。句読点や空白を除いた12文字以上の文の完全一致だけを対象とし、短い「はい」の反復、異なる条件文、異なる演者の正当な同意はこの項目で失格にしない。意図した強調かどうかは別途点検する。同じ実runで実行設計者の重複1件を検出し、結果を新しい`discussion_quality_repeat_review.json`へ保存した。元の診断とrawは保持し、診断2件の追加を含む全144単体テストが通過した。
+
+## 本人の観点から理由を再生成する修正
+
+General v5の固定比較が終了した後、初期説明とすり合わせ説明の修復入力へ、本人の世界観・効用・損失を追加した。これらは評価観点であり追加証拠ではない。凍結した選択と根拠IDは変更せず、他者の発言や失敗文を再入力しない。完成したlabel文を埋める例は、文字列のキーを指定するJSON契約へ置き換えた。すり合わせの`repair_request`と`repair_schema_warning`も保存する。
+
+最初に、同文だった既知の6人の凍結選択だけを、同じQwen3.5-4B Baseで直接生成した。理由は1種類から6種類へ分かれ、旧完成例の復唱は0件になったが、1人の`change_reason`が`null`だったため完全JSONは5/6だった。変更なしの場合は空文字を明示し、契約に空文字の条件を追加した再試験は完全JSON6/6、引用・選択・数字の共通検査6/6、旧完成例の復唱0件、異なる理由6種類となった。MLXピークは3.326GBだった。
+
+これは既知の6要求だけの直接生成で、未学習テーマの転移、全8人討論、独立した証拠の増加、意味や自然さの全面的な合格を示さない。原文には「仮回答の確定」や「両候補の比較」といった表現もあり、仮回答と承認の区別、候補A優先という凍結選択の核心が伝わるかは点検が残る。同じ意見や共通の根拠を持つこと自体は正当であり、文章の種類数を正確性へ換算しない。
+
+修復JSONがobjectではない、キーが不足または余分、値が文字列でない、変更なしなのに理由を書く場合は拒否する。解析できない応答でもクラッシュせず、凍結したlabelの補完を残す。正当な見解変更の理由は別に検査する。これらと本人の観点・入力分離を含む全146単体テストが通過した。v5の元rawと選定は変更せず、再生成はBaseだけで行い、Weightの改善とは区別する。
+
+同じ台帳・Base・12 event・2 round上限・最大600 tokens・temperature0・seed20261006で、修正後の8人試験を別rootへ実行し、827.478秒・89呼び出し・終了コード0で完走した。公開説明と会話は各34/36がモデル由来で、前回の説明36/36・会話35/36から後退した。hard gateと補佐レポートはHOLDだった。8人の初期コード・根拠ID・confidenceは前回と一致したが、公開用の説明と描画の品質は別問題として残った。
+
+同じ立場の59組の点検では、公開理由の高類似15組と会話の高類似1組は0になった。一方、1発言内の反復1件と、ラベルに近い発言7件が残った。見解変更は0件で、変更理由率1.0を実変更の成功とは数えない。反復の減少を、事実の正しさや全体成功へ換算しない。
+
+初期理由の修復には、裸の文字列、崩れたJSON、長い反復文の途中切れが4件あった。短い1文と1キーobjectの形を明示し、同じ既知4要求を別の直接生成で試すと完全JSONは4/4、共通の引用・選択・数字検査は3/4だった。数の検査に落ちた文は「4件の資料」という入力件数への言及で、単純な字面の数字検査と意味の正しさが一致するとは限らない。別の文では1人の終了時刻を15:30ではなく15:45と述べ、30分化を30分短縮と表現していた。検査合格だけではこれらを防ぎ切れていない。
+
+C09とC10の条件付きBの再生成文は、「検討すべき」を対案の意思として扱わない発話行為検査で拒否されていた。自由討論で、名前付きの自分の別案、明示した条件、検討を勧める表現、主張一致、相手への選択反転がない場合に限り、この表現も許可する。否定・過去の支持・相手の優先・条件なしの検討、structuredモードへの適用を拒否する対照テストを追加した。
+
+同じ保存raw2件は新guardを通ったが、元runの文や由来、hard gate、v5の選定は書き換えていない。これは`conditional_counterproposal_guard_review.json`による保存rawの再検査で、新しい8人実走やモデル学習の向上ではない。追加後の全148テストが通過した。意味の保持と、修正後の全体実走を確認する工程は残る。
+
 ## 文脈を分離した数値batch処理
 
 速度対策として、MLX-LMの既存`batch_generate`を、2つの独立したtoken列と別状態で試した。1つの会話文へ複数人格を混ぜる方式ではない。train splitの3例だけを使い、未学習72入力は開かない。
@@ -115,10 +154,30 @@ prefill stepを256へ揃え、batch1を対照として再実生成すると、ba
   baseline.log
   base/event_debate_20261006_191011_343951.json
   advisor_brief.json
+  discussion_quality_review.json
+  discussion_quality_repeat_review.json
+  semantic_review_selected_issues.json
 /Volumes/data4/cod_model_weight/evaluations/advisor-renderer-repair_20261006
   smoke.json
 /Volumes/data4/cod_model_weight/evaluations/advisor-numerical-batch_20261006_matched
   smoke.json
+/Volumes/data4/cod_model_weight/evaluations/advisor-reason-repair_20261006
+  six_frozen_repairs.json
+  six_frozen_repairs_contract_v2.json
+  cod_model_probe_v1.py
+  probe_v1.py
+  repository_tests_146_final.log
+/Volumes/data4/cod_model_weight/evaluations/advisor-meeting_20261006_guard_v4
+  plan.json
+  source_snapshot
+  baseline.log
+  base
+  advisor_brief.json
+  discussion_quality.json
+  conditional_counterproposal_guard_review.json
+/Volumes/data4/cod_model_weight/evaluations/advisor-initial-repair_20261006
+  four_initial_repairs.json
+  repository_tests_148.log
 ```
 
 元run SHA256は`f45f20ad8f0ae09fc714b5bf6de24e20291e4546bf0060c40b3c585392f3e0d6`。完了したrunだけを[補佐レポート変換](advisor_brief_20261006.md)へ渡し、初回応答の調査にはrun内のrawを使う。Base・LoRA Weightと機器の生ログはGitへ含めない。

@@ -35,5 +35,25 @@ class DiscussionQualityTest(unittest.TestCase):
         self.assertFalse(result['same_stance_surface_pairs'])
         self.assertEqual(result['origin_counts']['template_fallback'],1)
 
+    def test_repeated_long_sentence_is_visible_without_changing_run_or_gates(self):
+        run={'events':[{'claim_id':'C1','persona_id':'a','code':'P','label':'選択を保留する',
+              'utterance':'その案に賛成です。朝午後の希望と最終承認がないため、候補選択を保留し確認事項を整理する。朝午後の希望と最終承認がないため候補選択を保留し確認事項を整理する。',
+              'utterance_origin':'model_renderer_v3_sanitized'}],
+             'metrics':{'hard_gate_pass':True}}
+        before=copy.deepcopy(run);result=audit(run)
+        self.assertEqual(run,before)
+        self.assertFalse(result['changes_existing_gates'])
+        self.assertFalse(result['copying_proved'])
+        repetitions=result['within_utterance_repetitions']
+        self.assertEqual(len(repetitions),1)
+        self.assertEqual(repetitions[0]['id'],'C1')
+        self.assertEqual(repetitions[0]['repeated_sentences'][0]['occurrences'],2)
+
+    def test_short_emphasis_different_conditions_and_missing_text_are_not_repeat_flags(self):
+        texts=['はい。はい。','雨が降る場合は傘を持参します。雨が降らない場合は傘を持参しません。',None]
+        result=audit({'events':[{'claim_id':str(i),'persona_id':'a','code':'P','utterance':text}
+                               for i,text in enumerate(texts)]})
+        self.assertFalse(result['within_utterance_repetitions'])
+
 
 if __name__=='__main__':unittest.main()

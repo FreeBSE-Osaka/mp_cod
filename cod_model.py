@@ -1223,11 +1223,15 @@ def decision_system_prompt(system: str, profile: str, phase: str) -> str:
     return system
 
 
+def persona_perspective(persona: dict) -> dict:
+    return {key: persona[key] for key in ("worldview", "utility", "loss")}
+
+
 def source_renderer_context(record: dict, persona: dict, profile: str) -> dict:
     if profile != "source_grounded":
         return {}
     return {
-        "perspective": {key: persona[key] for key in ("worldview", "utility", "loss")},
+        "perspective": persona_perspective(persona),
         "candidate_reason": record["target"].get("statement", ""),
         "candidate_reason_origin": record["target"].get("statement_origin", "unknown"),
     }
@@ -1359,6 +1363,27 @@ def _restricted_action_stems(label: str) -> set[str]:
     return restricted
 
 
+def named_claim_aliases(label: str) -> list[str]:
+    return re.findall(r"(?:候補|プラン|案)[A-Z][A-Z0-9]*",
+                      re.sub(r"\s+", "", unicodedata.normalize("NFKC", label)))
+
+
+def dialogue_proposes_conditional_consideration(utterance: str, label: str) -> bool:
+    compact = re.sub(r"\s+", "", unicodedata.normalize("NFKC", utterance))
+    if not any(cue in label for cue in ("条件", "場合", "なら")) or not any(
+        cue in compact for cue in ("条件付き", "条件として", "条件に", "場合", "なら")
+    ):
+        return False
+    # ponytail: explicit named consideration only; unnamed alternatives and complex scope need review.
+    for alias in named_claim_aliases(label):
+        pattern = re.escape(alias) + r"(?:の案)?(?:を|として)検討(?:すべき|したい|しましょう|します)"
+        for match in re.finditer(pattern, compact):
+            past = compact[match.end():].startswith(("でした", "だと思っていました", "と考えていました"))
+            if not past and not _restriction_near(compact, match.start(), match.end()):
+                return True
+    return False
+
+
 def dialogue_selects_competing_claim(utterance: str, competitors: list[str]) -> bool:
     compact = re.sub(r"\s+", "", unicodedata.normalize("NFKC", utterance))
     for label in competitors:
@@ -1366,8 +1391,7 @@ def dialogue_selects_competing_claim(utterance: str, competitors: list[str]) -> 
             continue
         # Named alternatives need not be repeated as a long catalog label.
         # ponytail: explicit candidate/plan names only; unnamed semantic reversals still need review.
-        aliases = re.findall(r"(?:候補|プラン|案)[A-Z][A-Z0-9]*", re.sub(r"\s+", "", unicodedata.normalize("NFKC", label)))
-        for alias in aliases:
+        for alias in named_claim_aliases(label):
             for match in re.finditer(re.escape(alias) + r"(?:の案)?(?:を|に)(?:優先|選択|採用|支持|推薦|賛同|賛成)", compact):
                 past = compact[match.end():].startswith(("していました", "していた", "しましたが", "したが"))
                 if not past and not _restriction_near(compact, match.start(), match.end()):
@@ -1773,7 +1797,8 @@ def validate_dialogue_move(
     named_counterproposal = (
         flexible and move == "counterproposal" and bool(frozen_claim) and bool(target_claim)
         and frozen_claim != target_claim
-        and dialogue_selects_competing_claim(normalized, [frozen_claim])
+        and (dialogue_selects_competing_claim(normalized, [frozen_claim])
+             or dialogue_proposes_conditional_consideration(normalized, frozen_claim))
         and not dialogue_selects_competing_claim(normalized, [target_claim])
         and similarity(normalized, frozen_claim) > similarity(normalized, target_claim) + 0.02
         and dialogue_is_aligned(normalized, frozen_claim, [target_claim])
@@ -3004,7 +3029,11 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     repair_payload = {
                         "label": frozen_label, "allowed_data_ids": normalized["data_ids"],
                         "data": [item for item in data_view if item["id"] in normalized["data_ids"]],
-                        "rule": '公開用の理由を240字以内の自然な日本語1文で述べる。選択・事実を変更せず、allowed_data_idsだけを引用する。JSONは{"statement":"説明と[D01]引用"}だけ。',
+                        "perspective": persona_perspective(persona),
+                        "rule": '公開用の理由を120字以内の自然な日本語1文で述べる。選択・事実を変更せず、allowed_data_idsだけを引用する。perspectiveは評価観点で追加証拠ではない。選択を支える資料の具体的事実を1つ取り上げ、同じ内容を繰り返さない。最上位はstatementだけをキーに持つJSON objectで、配列や裸の文字列を返さない。形は{"statement":"資料で裏付けられる本人の理由と選択済みD番号の引用"}。例の文言はコピーせず実際の理由を生成する。',
+                        "response_contract": {"type": "object", "additionalProperties": False,
+                                              "required": ["statement"],
+                                              "properties": {"statement": {"type": "string", "minLength": 8, "maxLength": 240}}},
                     }
                     repair_raw, repair_parsed = ask_json(
                         f"あなたは{persona['name']}。主張と根拠IDは確定済み。" + SOURCE_GROUNDING_RULE,
@@ -3314,6 +3343,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     else:
                         change_reason_origin = "model"
                 repair_raw = None
+                repair_request = None
+                repair_schema_warning = None
                 repair_statement_warning = None
                 repair_change_reason_warning = None
                 repair_utterance_warning = None
@@ -3326,35 +3357,45 @@ def run_event_debate(args: argparse.Namespace) -> int:
                         f"あなたは{persona['name']}。選択は{choice}で確定済み。再評価は禁止。"
                         "渡されたD番号だけで公開用自然文を修復し、指定JSONだけを返す。"
                     )
-                    repair_user = json.dumps(
-                        {
+                    repair_request = {
                             "choice": choice,
                             "label": repair_label,
                             "allowed_data_ids": data_ids,
                             "data": [item for item in data_view if item["id"] in data_ids],
+                            "perspective": persona_perspective(persona),
                             "previous_choice": previous_choice,
                             "changed": changed,
                             "dialogue_move": dialogue_move,
                             "rule": (
-                                "statementはlabelを自然な日本語1文にし、allowed_data_idsだけを[D01]形式で引用する。"
+                                "statementは240字以内の自然な日本語1文で、allowed_data_idsだけを[D01]形式で引用する。"
+                                "perspectiveは本人の評価観点で追加証拠ではない。"
+                                "labelの言い換えだけでなく、資料のどの事実が確定済みの選択を支えるか本人の観点から説明する。"
                                 "change_reasonはchanged=trueの時だけ、前回から変えた理由とallowed_data_idsを引用する。"
+                                "changed=falseの時はchange_reasonを必ず空文字にし、nullにしない。両キーを必ず含める。"
                                 "JSONキーはstatement,change_reasonだけ。"
                             ),
-                            "format_example": {
-                                "statement": f"{repair_label}と判断します。根拠は[{data_ids[0]}]です。",
-                                "change_reason": (
-                                    f"前回より[{data_ids[0]}]を重視して選択を変更しました。" if changed else ""
-                                ),
+                            "response_contract": {
+                                "type": "object", "additionalProperties": False,
+                                "required": ["statement", "change_reason"],
+                                "properties": {"statement": {"type": "string"},
+                                               "change_reason": {"type": "string", **({"const": ""} if not changed else {})}},
                             },
-                        },
-                        ensure_ascii=False,
-                    )
+                        }
+                    repair_user = json.dumps(repair_request, ensure_ascii=False)
                     repair_raw, repair_parsed = ask_json(
                         repair_system,
                         repair_user,
                         min(execution["decision_max_tokens"], 240),
                         f"reconciliation-repair:{round_no}:{key}:{persona['id']}",
                     )
+                    if (
+                        not isinstance(repair_parsed, dict)
+                        or set(repair_parsed) != {"statement", "change_reason"}
+                        or not all(isinstance(value, str) for value in repair_parsed.values())
+                        or (not changed and repair_parsed["change_reason"] != "")
+                    ):
+                        repair_schema_warning = "repair JSON must contain only string statement/change_reason; unchanged reason must be empty"
+                        repair_parsed = {}
                     if statement_repair_needed:
                         repaired, repair_statement_warning = validate_claim_statement(
                             repair_parsed.get("statement") if isinstance(repair_parsed, dict) else None,
@@ -3406,6 +3447,8 @@ def run_event_debate(args: argparse.Namespace) -> int:
                     "change_reason_warning": change_reason_warning,
                     "raw": raw,
                     "repair_raw": repair_raw,
+                    "repair_request": repair_request,
+                    "repair_schema_warning": repair_schema_warning,
                     "repair_statement_warning": repair_statement_warning,
                     "repair_utterance_warning": repair_utterance_warning,
                     "repair_change_reason_warning": repair_change_reason_warning,
