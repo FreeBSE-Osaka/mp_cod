@@ -1,6 +1,6 @@
 # Generalの教師教材候補と学習前の点検
 
-2026年10月7日、既存のQwen3.8 27Bモデルから、Generalの8演者・8発話行為に対応する教師教材候補64件を生成した。資料と意味の点検、現行検査、768-token制約を合わせて満たす候補は26件で、64組の教材一式はまだ完成していない。追加学習、SFT採用、既定Weightの置換、Weight公開は行っていない。
+2026年10月7日、既存のQwen3.8 27Bモデルから、Generalの8演者・8発話行為に対応する教師教材候補64件を生成した。元の26件を保持し、残る38件を資料レビューに基づいて修正して、全64組の研究用教材を準備した。元の320学習入力へ128入力を追加した448例は、全文と終端を保持して768 tokens以内に収まる。標準paddingの短時間学習はMetalのメモリ不足で失敗したが、教師文を含む末尾だけに語彙出力を計算する方式は16 stepを正常終了した。ただしOSメモリの余裕が薄いため、本学習は未開始である。Generalは研究HOLDで、既定Weightの置換やWeight公開は行っていない。
 
 ## 学習用入力だけを教師へ渡す
 
@@ -12,7 +12,7 @@
 
 ## 生成結果と検査の区別
 
-64件の生成jobは3284.329秒、終了コード0で完了し、全応答がstopで終了した。終了後のモデル常駐一覧が空であることを確認した。元出力はすべて未承認のまま保存した。
+64件の生成jobは3284.329秒、終了コード0で完了し、全応答がstopで終了した。終了後のモデル常駐一覧が空であることを確認した。生成時の未承認原文と点数は保持し、後述の教材採用は別記録とした。
 
 | 確認項目 | 件数 |
 | --- | --- |
@@ -32,15 +32,31 @@
 
 Qwen3.5-4Bの既存トークナイザーと、学習時のChatDataset・assistant-only maskを使ってCPUで数えた。モデルをロードした計算や学習ではない。入力と教師のJSON出力を合わせて63件は768 tokens以内、1件は777 tokensだった。
 
-JSONの外側の余分な空白を標準化する別監査でも、その1件は777 tokensのままだった。IDと発言本文が変わらないことを確認し、原文は保持した。収まるように発言を切り詰めたり、無断で最大長を上げたりしていない。長い候補は短く忠実に再生成する必要がある。
+JSONの外側の余分な空白を標準化する別監査でも、その1件は777 tokensのままだった。IDと発言本文が変わらないことを確認し、原文は保持した。その候補は、条件と未確認状態を保つ別の編集修正文へ差し替える研究教材とした。原文の切り詰めや最大長の引き上げは行っていない。
 
-## 採用前条件と不足する組
+## 原文の不足と修正教材
 
-64件の原文と4つのレビュー記録を、rawとrequestのSHAで照合した。資料の意味、現行の固定検査、768-token制約をすべて満たす候補は26件、演者・発話行為の組も26個だった。残る38組は再生成または検査との不一致の解決が必要であり、26件だけで教師教材の完成とはしない。
+64件の原文と4つのレビュー記録を、rawとrequestのSHAで照合した。資料の意味、現行の固定検査、768-token制約をすべて満たす原文は26件、演者・発話行為の組も26個だった。残る38組を補う前に、独立した再生成指示を6入力で試したが、固定資料検査の合格は3/6に留まり、上限や未確認条件を落とすため一括適用しなかった。
 
-現在の`training_adoption_allowed`と`promotion_allowed`はfalseである。26件もまだSFTへ出力していない。元の学習・評価教材、元の教師出力、元の点数、旧Weight、Generalの研究HOLDは維持している。
+38件はCodexが資料と凍結主張を確認して編集修正した。独立教師生成ではないため、`source_review_editor_correction`という来歴を持たせ、保持した26原文の`teacher_raw_retained`と区別する。全64件は既存検査を通り、元入力と本人限定修復入力の128表現は最大758 tokensだった。この確認は教材の適合性であり、未学習入力でのモデル性能ではない。
 
-次の工程では、資料の上限・対象・未確認状態を明示し、失敗文や他演者の文章をコピーしない入力で未完成の組を再生成する。再生成後も全64組の意味と長さを点検する。学習を始める場合は、固定された開発評価と未学習入力、Base・親の非回帰、Adapter切り離し、全8人討論での意味保持を別に確認する。
+研究用SFTは元320入力をバイト単位で保持して128入力を追記し、448入力にした。各演者・発話行為の組は7表現ずつで、開発48入力と最終72入力は元ファイルとバイト単位で一致する。元候補の未承認metadataは書き換えず、`adoption_review.json`と新教材manifestへ研究学習の許可を記録した。製品への昇格許可はfalseのままである。
+
+## メモリを抑える学習検証
+
+CPUの実Tokenizer・native iterator・assistant-only lossの確認では、448入力の教師token数は28,217で、EOSと末尾改行を保持する。標準paddingの入力形状は12種類で、実長ごとの209種類より少ない。ただし形状数だけではメモリ削減を証明できない。
+
+標準padding、batch1、4層・rank4、cache上限0、勾配checkpointの16-step試験は、最初の学習報告前にMetal OOMで終了した。MLXピークは17.058GB、OSの観測physical footprintピークは約17.8GiBであり、別の指標である。終了コード1と対象プロセスの終了を確認し、448-step本学習へは進めなかった。
+
+別方式では、全文の文脈処理は維持し、既存lossで重みがゼロのプロンプト部分に語彙出力を作らない。固定した末尾160 tokensに、全train・validの教師位置が未使用paddingを含めて収まることをCPUで照合した。教師tokenの削除、文脈の短縮、モデル層の削除ではない。小さなCPUモデルの6比較で、従来lossと新方式のtoken数・loss・勾配を照合し、最大勾配差は約1.5e-8だった。
+
+最初の別方式試験は、CPU検証モジュールのimportがdefault deviceをCPUへ変える不具合により中止した。CPU設定を検証main内だけへ移したGPU試験は、実Qwenの同一入力でlossが両方式とも0.610329449、教師token数が両方58であることを確認した。これは1入力のloss比較であり、実Qwen全体の勾配のビット一致を検証したものではない。
+
+GPU試験は16 step、1,052教師tokensを処理し、Adapter保存とプロセス終了まで終了コード0で完了した。所要422.271秒、MLXピーク16.640GB、OSの観測physical footprintピーク約19.3GiBだった。最終train loss0.899、検証2 batchのloss0.939は、発言品質の合格判定ではない。最適化は外付けの研究コードだけで、共通製品経路は変更していない。
+
+本学習の起動条件は、短時間試験が正常終了し、観測physical footprintピーク18GiB以下であることとした。20GiBの実行停止線まで2GiBの余裕を残すため、今回の19.3GiBでは448-step学習を起動しない。次はこのプロセス内だけでコンパイルを無効にする独立試験を検討し、コンパイル由来の保持とGPU allocationを分けて測る。OS全体のwired設定や他アプリは変更しない。
+
+全学習へ進む場合も、固定した開発候補112・224・336・448から事前の非回帰規則で選ぶ。未学習72入力を候補選びに使わず、Base・親の個別合格の保持、旧生成検査、Adapter切り離し、全8人討論での意味保持を別に確認する。短時間学習の成功だけでWeightを昇格させない。
 
 ## 再現記録
 
@@ -59,6 +75,25 @@ JSONの外側の余分な空白を標準化する別監査でも、その1件は
   manual_review_batch03.json
   manual_review_batch04.json
   review_complete.json
+  repairs/curated_candidates_v1.json
+  repairs/curated_token_audit_v1.json
+
+/Volumes/data4/cod_model_weight/evaluations/general-utterance-qwen35-4b-v6_20261007
+  plan.json
+  adoption_review.json
+  token_and_coverage_audit.json
+  smoke16_memory.json
+  tail_projection_cpu_check_v2.json
+  tail_projection_plan_v2.json
+  smoke16_tail160_gpu_loss_equivalence.json
+  smoke16_tail160_gpu_progress.json
+  smoke16_tail160_gpu_training.json
+  smoke16_tail160_gpu_memory.json
+
+/Volumes/data4/cod_model_weight/datasets/general-utterance-qwen35-4b-v6/mlx_curated_epoch
+  train.jsonl
+  valid.jsonl
+  test.jsonl
 ```
 
 教師原文のSHA256は`f01d65c2b5fe517c06cafa7d87eefee35ee6ffea4a287ce955f169c4bc741855`、全件レビューのSHA256は`e68ec132fdae52590aceeb42f0596e9bec92b0b40b95abfdee081d7a8e168622`。生成・点検scriptと生データは外付けへ保存し、公開するのは検証範囲の説明だけである。
