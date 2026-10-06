@@ -287,6 +287,8 @@ Generalの実験指定`--prompt-profile source_grounded`では、否定・未確
 
 全文発言v3は、同じ教材・学習率・32ステップの新規LoRAと継続を完走し、4候補を同じ48入力で比較しました。固定選定の継続32は事実保持がBase16/48→20/48でしたが、Base合格の6入力が落ち、対案・異議も固定直接検査0/6のため **研究HOLD** です。未学習72入力のモデル出力は生成していません。学習配分25/64組の偏りと、末尾padding1 tokenをlossへ含める境界を診断し、共有学習器はEOSを残してpaddingだけを除外するよう修正しました。117テスト、小さなCPUモデル、実Qwenの修正後1ステップを確認しました。Qwenでは正解49 tokensだけを学習し保存まで成功しましたが、発言品質の改善とは区別します。学習器は`--parent-adapter`省略でBaseから新規開始でき、容量監視と例外時の復元も維持します。[初期化比較の全結果](docs/qwen35_full_utterance_initialization_v3_20261006.md)、[非昇格記録](promotions/qwen3.5-4b-full-utterance-v3-resumed-step32.json)を参照してください。
 
+全文発言v4は、`build --balanced-pairs --profiles source_grounded flexible_plain structured_plain`で演者×発話行為64組を均等にする構成です。理由付き・柔軟plain・旧形式・誤った候補理由の4表現を各64件、計256件にして、正しいloss境界で1巡する実学習を開始しました。10学習題材と評価分割は維持し、既存の生成評価・validatorは変更していません。118テストと入力376表現の監査は通過していますが、Weightの品質・昇格はまだ未確認です。[均等学習の条件と実観測](docs/qwen35_full_utterance_balanced_v4_20261006.md)を参照してください。
+
 Natural specialist v5ではQwen3-14B teacherから実行役event-agreeの直接合格自然文を3件得ましたが、親step160からの専用継続はholdout 1/3のまま、Base specialistは0/3でした。move別few-shotもobjectへ賛同例が混入したためruntimeへ採用せず、全結果を [General Dialogue natural specialist v5実験記録](docs/general_dialogue_weight_v5_20260904.md) に残しています。
 
 Natural specialists v6では12の異なるtopicから仮説object 12件・実行event-agree 13件を集め、人格・phase・move別LoRAとrepair LoRAを評価しました。数値創作を拒否するgrounding guardは採用しましたが、全Weightが未学習holdoutで親同等以下だったため非昇格です。全target、評価、SHA、停止理由は [General Dialogue natural specialists v6実験記録](docs/general_dialogue_weight_v6_20260904.md) にあります。

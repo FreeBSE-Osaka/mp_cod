@@ -9,11 +9,47 @@ import io
 import sys
 
 import cod_model as cod
-from tools.general_utterance_training import cases,checks,example,item,profile_case,score,valid,PROFILES,build
+from tools.general_utterance_training import cases,checks,example,item,profile_case,score,valid,PROFILES,build,balanced_training_cases
 from tools.general_body_training import train,assistant_only_loss
 
 
 class FullUtteranceTrainingTest(unittest.TestCase):
+    def test_balanced_corpus_covers_each_role_move_and_all_training_topics(self):
+        corpus=cases(Path(__file__).parent/'data/general_utterance_qwen35_v2/curated.json')
+        selected=balanced_training_cases(corpus)
+        training=[row for row in selected if row['split']=='train']
+        self.assertEqual(len(training),64)
+        self.assertEqual(len({(row['speaker'],row['move'])for row in training}),64)
+        self.assertEqual(len({row['topic']for row in training}),10)
+        self.assertEqual([row for row in selected if row['split']!='train'],
+                         [row for row in corpus if row['split']!='train'])
+        self.assertEqual(selected,balanced_training_cases(corpus))
+        with self.assertRaisesRegex(ValueError,'every General persona/move'):
+            balanced_training_cases([row for row in corpus if row['move']!='revise'])
+        with tempfile.TemporaryDirectory()as directory,redirect_stdout(io.StringIO()):
+            root=Path(directory)
+            args=SimpleNamespace(out=root/'balanced',curated=Path(__file__).parent/'data/general_utterance_qwen35_v2/curated.json',
+                                 profiles=PROFILES,rehearsal=None,balanced_pairs=True)
+            build(args)
+            rows=[json.loads(line)for line in (args.out/'train.jsonl').read_text().splitlines()]
+            counts={}
+            modes={}
+            for row in rows:
+                payload=json.loads(row['messages'][1]['content'])['items'][0]
+                key=payload['speaker'],payload['move']
+                counts[key]=counts.get(key,0)+1
+                mode=('source_misleading'if 'どの条件でも同じ' in payload.get('candidate_reason','')
+                      else 'source_clean'if 'candidate_reason' in payload
+                      else 'flexible_plain'if payload['id']=='I01'else 'structured_plain')
+                modes[mode]=modes.get(mode,0)+1
+            self.assertEqual(len(rows),256)
+            self.assertEqual(set(counts.values()),{4})
+            self.assertEqual(len(counts),64)
+            self.assertEqual(modes,{mode:64 for mode in
+                ('source_clean','source_misleading','flexible_plain','structured_plain')})
+            args.out=root/'bad';args.rehearsal=args.curated
+            with self.assertRaisesRegex(ValueError,'no extra rehearsal'):build(args)
+
     def test_loss_bound_excludes_padding_and_retains_all_assistant_positions(self):
         class Lengths:
             def __init__(self):

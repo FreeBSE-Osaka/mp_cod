@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.11
 """Full-utterance corpus and direct-generation checks using the runtime validators."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import random
@@ -34,6 +35,24 @@ def cases(path):
 
 
 PROFILES = ('source_grounded', 'flexible_plain', 'structured_plain')
+
+
+def balanced_training_cases(corpus):
+    """Select one authored training example for every General speaker/move pair."""
+    groups={}
+    for case in corpus:
+        if case['split']=='train':
+            groups.setdefault((case['persona']['id'],case['move']),[]).append(case)
+    moves={'propose',*cod.FLEXIBLE_MOVE_PREFIXES}
+    expected={(persona['id'],move)for persona in cod.load_domains()['general']['personas']for move in moves}
+    if set(groups)!=expected:
+        raise ValueError('balanced corpus requires every General persona/move pair')
+    chosen=[min(rows,key=lambda case:hashlib.sha256(('balanced-v1:'+case['case']).encode()).hexdigest())
+            for rows in groups.values()]
+    if {case['topic']for case in chosen}!={case['topic']for case in corpus if case['split']=='train'}:
+        raise ValueError('balanced selection would remove a training topic')
+    selected={case['case']for case in chosen}
+    return [case for case in corpus if case['split']!='train' or case['case']in selected]
 
 
 def profile_case(case, profile):
@@ -122,6 +141,11 @@ def build(args):
     profiles=getattr(args,'profiles',('source_grounded',))
     if len(set(profiles))!=len(profiles):
         raise ValueError('duplicate renderer profile')
+    balanced=getattr(args,'balanced_pairs',False)
+    if balanced:
+        if set(profiles)!=set(PROFILES) or getattr(args,'rehearsal',None):
+            raise ValueError('balanced pairs require all three profiles and no extra rehearsal')
+        original=balanced_training_cases(original)
     corpus=[profile_case(case,profile) for case in original for profile in profiles]
     for case in corpus:
         gold=score(json.dumps({'utterances':[{'id':case['id'],'utterance':case['utterance']}]},ensure_ascii=False),case)
@@ -154,6 +178,7 @@ def build(args):
         'profiles':list(profiles),'rehearsal_train_cases':len(rehearsal),
         'systems':{profile:example(profile_case(original[0],profile))['messages'][0]['content'] for profile in profiles},
         'rehearsal_sha256':sha(args.rehearsal) if getattr(args,'rehearsal',None) else None,
+        'balanced_pairs':balanced,'selected_train_cases':[case['case']for case in original if case['split']=='train'],
         'scope':'full utterance only; Base decisions never trained','misleading_candidate_rehearsal':True,'promotion_allowed':False})
     print(json.dumps(counts))
 
@@ -206,7 +231,10 @@ def main():
         p.add_argument('--min-free-gib',type=float,default=20);p.add_argument('--resource-check-seconds',type=float,default=2)
         if name!='build':p.add_argument('--model',type=Path,required=True)
         if name!='train':p.add_argument('--profiles',nargs='+',choices=PROFILES,default=['source_grounded'])
-        if name=='build':p.add_argument('--rehearsal',type=Path)
+        if name=='build':
+            p.add_argument('--rehearsal',type=Path)
+            p.add_argument('--balanced-pairs',action='store_true',
+                           help='One train case per General persona/move, with four equal input representations')
         if name=='train':
             p.add_argument('--data',type=Path,required=True);p.add_argument('--config',type=Path,required=True);p.add_argument('--parent-adapter',type=Path)
             p.add_argument('--mlx-cache-limit-mib',type=int)
