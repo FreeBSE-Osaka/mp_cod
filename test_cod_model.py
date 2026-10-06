@@ -1350,6 +1350,32 @@ class CodModelTest(unittest.TestCase):
         self.assertEqual(events[1]["utterance"], "out。")
         self.assertEqual(events[1]["utterance_origin"], "statement_fallback")
 
+    def test_number_grounding_does_not_use_generated_reason_ids_or_protocol_limits(self):
+        payload={'own_claim':'試行の効果は未確認','evidence':['費用も効果もまだ測っていない。'],
+                 'candidate_reason':'効果が99%改善した。根拠はD75。','statement':'利益は88円だった。',
+                 'perspective':{'utility':'効用を77%上げたい'},'speaker':'第66号の評価者',
+                 'id':'C120','confidence':88,'response_contract':{'maxLength':240},
+                 'data':[{'id':'D75','text':'未測定という資料D75を参照する。','confidence':55}]}
+        for text in ('効果は99%改善しました。','利益は88円です。','効用は77%増えました。',
+                     '66人が参加します。','120人を確認しました。','240人を確認しました。',
+                     '75人を確認しました。','55人を確認しました。'):
+            with self.subTest(text=text):
+                self.assertFalse(cod_model.dialogue_numbers_are_grounded(text,payload))
+        self.assertTrue(cod_model.dialogue_numbers_are_grounded('効果はまだ測定していません。',payload))
+        for malformed in ('効果は99%改善した', ['効果は99%改善した'], None):
+            with self.subTest(malformed=malformed):
+                self.assertFalse(cod_model.dialogue_numbers_are_grounded('効果は99%改善しました。',malformed))
+
+    def test_number_grounding_retains_literal_claims_and_nested_source_text_only(self):
+        payload={'selected_claim':'費用は18%減った','previous_claim':'以前は試料5台を比較した',
+                 'target_claim':'試行を30分以内に終える','alternatives':[{'code':'PLAN999','label':'47分まで試す'}],
+                 'data':[{'id':'D75','text':'対象は240件、処理上限は180件である。'}]}
+        self.assertTrue(cod_model.dialogue_numbers_are_grounded('１８パーセントの費用削減を確認します。',payload))
+        self.assertTrue(cod_model.dialogue_numbers_are_grounded('5台の比較を踏まえ、30分と47分の案を整理します。',payload))
+        self.assertTrue(cod_model.dialogue_numbers_are_grounded('対象240件と上限180件を確認します。',payload))
+        self.assertFalse(cod_model.dialogue_numbers_are_grounded('999件を処理します。',payload))
+        self.assertFalse(cod_model.dialogue_numbers_are_grounded('75人を確認します。',payload))
+
     def test_flexible_uncertainty_objection_requires_frozen_state_and_claim(self):
         claim = "工具の返却方式変更による紛失の減少は未確認"
         natural = "工具の返却方式変更による紛失の減少は、まだ確認できていません。"

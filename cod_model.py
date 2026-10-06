@@ -1877,7 +1877,20 @@ def dialogue_numbers_are_grounded(utterance: str, payload: dict) -> bool:
     numbers = lambda value: set(
         re.findall(r"\d+(?:\.\d+)?", unicodedata.normalize("NFKC", value))
     )
-    source = json.dumps(payload, ensure_ascii=False)
+    def source_texts(value):
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, (list, tuple)):
+            return [text for item in value for text in source_texts(item)]
+        if isinstance(value, dict):
+            source_keys = {"claim", "label", "own_claim", "selected_claim", "target_claim", "previous_claim",
+                           "alternatives", "evidence", "data", "text"}
+            return [text for key, item in value.items() if key in source_keys for text in source_texts(item)]
+        return []
+    # Reasons, persona prose, IDs and protocol limits are not evidence for a generated number.
+    # ponytail: literal source numbers only; quantity/subject binding and derived arithmetic need separate review.
+    texts = source_texts(payload) if isinstance(payload, dict) else []
+    source = re.sub(r"(?<![A-Za-z0-9_])D\d{2,}(?![A-Za-z0-9_])", "", "\n".join(texts))
     # Preserve explicit ratio units: 18% is not 18割.
     ratios = lambda value: {
         (Fraction(number), "%" if unit == "パーセント" else unit)
