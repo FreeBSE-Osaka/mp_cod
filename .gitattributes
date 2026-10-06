@@ -1,0 +1,2 @@
+# Unified diff blank context lines require a single space; keep source checks unchanged.
+patches/backburner-a15/*.patch -whitespace
