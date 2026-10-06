@@ -6,6 +6,7 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 from contextlib import redirect_stdout
 import io
+import sys
 
 import cod_model as cod
 from tools.general_utterance_training import cases,checks,example,item,profile_case,score,valid,PROFILES,build
@@ -13,6 +14,29 @@ from tools.general_body_training import train
 
 
 class FullUtteranceTrainingTest(unittest.TestCase):
+    def test_fresh_training_omits_resume_and_restores_native_globals(self):
+        calls = []
+        original_load = lambda *a, **k: None
+        original_argv = sys.argv
+        def native_main():
+            calls.append(list(sys.argv))
+            self.assertNotIn('--resume-adapter-file', sys.argv)
+            self.assertIn('--mask-prompt', sys.argv)
+        native = SimpleNamespace(load=original_load, main=native_main)
+        package = ModuleType('mlx_lm'); package.lora = native
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = SimpleNamespace(out=root/'new', model=root/'model', data=root/'data',
+                                   config=root/'config.yaml', parent_adapter=None)
+            with patch.dict(sys.modules, {'mlx_lm': package}):
+                train(args)
+                args.parent_adapter = root/'missing.safetensors'
+                with self.assertRaisesRegex(ValueError, 'existing weights file'):
+                    train(args)
+        self.assertEqual(len(calls), 1)
+        self.assertIs(native.load, original_load)
+        self.assertIs(sys.argv, original_argv)
+
     def test_training_cache_cap_is_process_local_and_restored_on_failure(self):
         cache={'limit':12345,'calls':[]}
         def set_limit(value):
@@ -30,7 +54,10 @@ class FullUtteranceTrainingTest(unittest.TestCase):
                                  config=Path(directory)/'config.yaml',parent_adapter=parent,mlx_cache_limit_mib=0)
             with patch.dict('sys.modules',{'mlx':package,'mlx.core':mx,'mlx_lm':mlx_lm}),redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(RuntimeError,'native training failed'):train(args)
-        self.assertEqual(cache['calls'],[0,12345])
+                lora.main=lambda:None
+                with patch('builtins.print',side_effect=BrokenPipeError('report failed')):
+                    with self.assertRaisesRegex(BrokenPipeError,'report failed'):train(args)
+        self.assertEqual(cache['calls'],[0,12345,0,12345])
         self.assertEqual(cache['limit'],12345)
         self.assertIs(lora.load,original_load)
 

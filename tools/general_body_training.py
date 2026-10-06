@@ -290,7 +290,8 @@ def train(args):
     """Reuse MLX-LM's trainer, matching its prompt mask to our non-thinking inference."""
     if args.out.exists() and any(args.out.iterdir()):
         raise ValueError("training adapter output already contains files")
-    if not args.parent_adapter.is_file():
+    parent_adapter = getattr(args, 'parent_adapter', None)
+    if parent_adapter is not None and not parent_adapter.is_file():
         raise ValueError("parent adapter must be an existing weights file")
     from mlx_lm import lora
     cache_mib = getattr(args, 'mlx_cache_limit_mib', None)
@@ -309,15 +310,17 @@ def train(args):
         lora.load = load_body_model
         sys.argv = ["mlx_lm.lora", "--train", "--mask-prompt", "--model", str(args.model),
                     "--data", str(args.data), "--config", str(args.config),
-                    "--resume-adapter-file", str(args.parent_adapter), "--adapter-path", str(args.out)]
+                    "--adapter-path", str(args.out)]
+        if parent_adapter is not None:
+            sys.argv += ["--resume-adapter-file", str(parent_adapter)]
         lora.main()
     finally:
         lora.load, sys.argv = original_load, original_argv
         if cache_mib is not None:
+            mx.set_cache_limit(previous_cache)
             print(json.dumps({'mlx_cache_limit_mib': cache_mib, 'MLX_peak_memory_GB': mx.get_peak_memory()/1e9,
                               'MLX_active_memory_GB': mx.get_active_memory()/1e9,
                               'MLX_cache_memory_GB': mx.get_cache_memory()/1e9}), flush=True)
-            mx.set_cache_limit(previous_cache)
 
 
 def guarded_job(args, action):
@@ -408,7 +411,8 @@ def main():
             p.add_argument("--model", type=Path, required=True)
             p.add_argument("--data", type=Path, required=True)
             p.add_argument("--config", type=Path, required=True)
-            p.add_argument("--parent-adapter", type=Path, required=True)
+            p.add_argument("--parent-adapter", type=Path,
+                           help="Resume these LoRA weights; omit to initialize a new Adapter from Base")
             p.add_argument("--mlx-cache-limit-mib", type=int,
                            help="Training-only MLX allocator cache cap; 0 disables unused-memory caching")
     args = parser.parse_args()
