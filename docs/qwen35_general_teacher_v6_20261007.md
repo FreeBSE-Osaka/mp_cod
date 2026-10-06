@@ -1,6 +1,6 @@
 # Generalの教師教材候補と学習前の点検
 
-2026年10月7日、既存のQwen3.8 27Bモデルから、Generalの8演者・8発話行為に対応する教師教材候補64件を生成した。元の26件を保持し、残る38件を資料レビューに基づいて修正して、全64組の研究用教材を準備した。元の320学習入力へ128入力を追加した448例は、全文と終端を保持して768 tokens以内に収まる。標準paddingの短時間学習はMetalのメモリ不足で失敗したが、教師文を含む末尾だけに語彙出力を計算する方式は16 stepを正常終了した。ただしOSメモリの余裕が薄いため、本学習は未開始である。Generalは研究HOLDで、既定Weightの置換やWeight公開は行っていない。
+2026年10月7日、既存のQwen3.8 27Bモデルから、Generalの8演者・8発話行為に対応する教師教材候補64件を生成した。元の26件を保持し、残る38件を資料レビューに基づいて修正して、全64組の研究用教材を準備した。元の320学習入力へ128入力を追加した448例は、全文と終端を保持して768 tokens以内に収まる。教師文を含む末尾だけに語彙出力を計算し、学習プロセス内のコンパイルを無効にする方式が16 stepを正常終了した。OSメモリの起動条件を満たしたため、同じ設定で448-step本学習を開始した。学習品質は未検証で、Generalは研究HOLD、既定Weightの置換とWeight公開は行っていない。
 
 ## 学習用入力だけを教師へ渡す
 
@@ -54,9 +54,15 @@ CPUの実Tokenizer・native iterator・assistant-only lossの確認では、448�
 
 GPU試験は16 step、1,052教師tokensを処理し、Adapter保存とプロセス終了まで終了コード0で完了した。所要422.271秒、MLXピーク16.640GB、OSの観測physical footprintピーク約19.3GiBだった。最終train loss0.899、検証2 batchのloss0.939は、発言品質の合格判定ではない。最適化は外付けの研究コードだけで、共通製品経路は変更していない。
 
-本学習の起動条件は、短時間試験が正常終了し、観測physical footprintピーク18GiB以下であることとした。20GiBの実行停止線まで2GiBの余裕を残すため、今回の19.3GiBでは448-step学習を起動しない。次はこのプロセス内だけでコンパイルを無効にする独立試験を検討し、コンパイル由来の保持とGPU allocationを分けて測る。OS全体のwired設定や他アプリは変更しない。
+本学習の起動条件は、短時間試験が正常終了し、観測physical footprintピーク18GiB以下であることとした。20GiBの実行停止線まで2GiBの余裕を残すため、19.3GiBの候補では448-step学習を起動しないことを実際に確認した。
 
-全学習へ進む場合も、固定した開発候補112・224・336・448から事前の非回帰規則で選ぶ。未学習72入力を候補選びに使わず、Base・親の個別合格の保持、旧生成検査、Adapter切り離し、全8人討論での意味保持を別に確認する。短時間学習の成功だけでWeightを昇格させない。
+その後、同じ16入力の順序・親・学習設定で、学習プロセス内だけのコンパイルを無効にした。16 step、1,052教師tokens、保存・終了まで終了コード0で完了した。所要332.905秒、MLXピーク12.241GB、OSの観測physical footprintピーク11.773GiBで、18GiBの起動条件を満たした。前のコンパイル有効版の422.271秒・19.252GiBとの短時間比較であり、一般的な速度改善や長時間運用の保証ではない。OS全体のwired設定や他アプリは変更していない。
+
+コンパイル無効版でも、実Qwenの同一入力で従来lossと末尾投影lossはともに0.599083066、教師token数は58だった。ただしコンパイル有効版の0.610329449とは異なり、両モードの計算結果や更新Weightが完全同一とは主張しない。最終train lossも有効版0.898789・無効版0.904694で、どちらも発言品質の合格判定ではない。
+
+448-step本学習はコンパイル無効版で開始した。最初の16-step実報告は教師1,052 tokensで予定値と一致した。実行中もOSメモリ20GiB、内蔵と外付け双方の空き容量20GiBを監視し、対象workerだけを停止できるようにする。教材、4層・rank4、学習率、思考なし、全文の文脈と教師位置、候補の選定規則は変更していない。
+
+学習完了後は、固定した開発候補112・224・336・448から事前の非回帰規則で選ぶ。未学習72入力を候補選びに使わず、Base・親の個別合格の保持、旧生成検査、Adapter切り離し、全8人討論での意味保持を別に確認する。`evaluate_all_eager.py`は学習の終了記録を確認するまで評価を起動せず、`select_eager.py`は固定した48入力から選ぶ。短時間学習の成功だけでWeightを昇格させない。
 
 ## 再現記録
 
@@ -89,6 +95,14 @@ GPU試験は16 step、1,052教師tokensを処理し、Adapter保存とプロセ�
   smoke16_tail160_gpu_progress.json
   smoke16_tail160_gpu_training.json
   smoke16_tail160_gpu_memory.json
+  eager_plan.json
+  compiled_eager_pilot_comparison.json
+  smoke16_tail160_gpu_eager_training.json
+  smoke16_tail160_gpu_eager_memory.json
+  train448_tail160_gpu_eager_progress.json
+  train448_tail160_gpu_eager_memory.json
+  evaluate_all_eager.py
+  select_eager.py
 
 /Volumes/data4/cod_model_weight/datasets/general-utterance-qwen35-4b-v6/mlx_curated_epoch
   train.jsonl
