@@ -100,6 +100,68 @@ class CodModelTest(unittest.TestCase):
         self.assertIsNone(cod_model.validate_dialogue_move(wrong, 'counterproposal', own,
                           flexible=True, target_claim=target)[0])
 
+    def test_explicit_contrasting_counterproposal_needs_no_stock_connector(self):
+        examples = (
+            ('工具の返却を種類ごとに試す', '返却箱を一つにまとめる',
+             '返却箱を一つにまとめる案にはしません。工具の返却を種類ごとに試す案にします。返却方式の変更による紛失の減少は未確認です。'),
+            ('原本を保存して電子控えを試す', '原本を廃棄する',
+             '原本を廃棄する方針にしません。原本を保存して電子控えを試す方針を提案します。'),
+            ('人数を絞った試行を先に行う', '全員を同時に切り替える',
+             '私は全員を同時に切り替える案はしません。今回は人数を絞った試行を先に行う案にしたいです。試行の人数は絞ります。'),
+        )
+        for own, target, text in examples:
+            with self.subTest(own=own):
+                self.assertTrue(cod_model.dialogue_proposes_explicit_alternative(text, own, target))
+                self.assertEqual(cod_model.validate_dialogue_move(text, 'counterproposal', own,
+                                 flexible=True, target_claim=target), (text, None))
+                self.assertIsNone(cod_model.validate_dialogue_move(text, 'counterproposal', own,
+                                  target_claim=target)[0])
+                self.assertIsNone(cod_model.validate_dialogue_move(text, 'counterproposal', own,
+                                  flexible=True, target_claim=own)[0])
+
+    def test_explicit_contrast_rejects_quotes_history_questions_and_scope_changes(self):
+        own = '工具の返却を種類ごとに試す'
+        target = '返却箱を一つにまとめる'
+        rejection = target + '案にはしません。'
+        proposal = own + '案にします。'
+        texts = (
+            proposal,
+            rejection,
+            target + '案にします。' + proposal,
+            rejection + own + '案にはしません。',
+            rejection + own + '案にしました。',
+            rejection + own + '案にしますとは言えません。',
+            rejection + own + '案にしますと言われました。',
+            rejection + own + '案にしますか？',
+            target + '案にはしませんか？' + proposal,
+            '条件が変わるなら' + rejection + proposal,
+            '「' + rejection + proposal + '」と相手が述べました。',
+            rejection + proposal + own + '案は採用しません。',
+            rejection + proposal + target + '案にします。',
+            rejection + proposal + 'ただし、その案は採用しません。',
+            rejection + proposal + 'この方針は撤回します。',
+            rejection + proposal + '相手の判断を支持します。',
+            rejection + own + '案に同意します。',
+        )
+        for text in texts:
+            with self.subTest(text=text):
+                self.assertFalse(cod_model.dialogue_proposes_explicit_alternative(text, own, target))
+                self.assertIsNone(cod_model.validate_dialogue_move(text, 'counterproposal', own,
+                                  flexible=True, target_claim=target)[0])
+
+    def test_explicit_contrast_keeps_frozen_label_and_numeric_renderer_gates(self):
+        own = '工具の返却を種類ごとに試す'
+        target = '返却箱を一つにまとめる'
+        text = target + '案にはしません。' + own + '案にします。'
+        record = {'validation_move': 'counterproposal', 'label': own, 'target_label': target,
+                  'competitor_labels': [target], 'payload': {'own_claim': own, 'target_claim': target,
+                                                          'evidence': ['効果は未確認です。']}}
+        self.assertEqual(cod_model.validate_renderer_record(text, record, flexible=True), (text, None))
+        self.assertIsNone(cod_model.validate_renderer_record(text + '費用は9999円です。', record,
+                          flexible=True)[0])
+        self.assertIsNone(cod_model.validate_dialogue_move(text, 'counterproposal', '別の手順を全体に導入する',
+                          flexible=True, target_claim=target)[0])
+
     def test_initial_statement_repair_freezes_decision_and_excludes_peer_prose(self):
         from unittest.mock import patch
         from contextlib import redirect_stdout

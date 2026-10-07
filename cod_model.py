@@ -1411,6 +1411,27 @@ def dialogue_proposes_conditional_consideration(utterance: str, label: str) -> b
     return False
 
 
+def dialogue_proposes_explicit_alternative(utterance: str, own_label: str, target_label: str) -> bool:
+    compact = re.sub(r"\s+", "", unicodedata.normalize("NFKC", utterance))
+    own = re.sub(r"\s+", "", unicodedata.normalize("NFKC", own_label))
+    target = re.sub(r"\s+", "", unicodedata.normalize("NFKC", target_label))
+    if not own or not target or own == target or re.search(r'[「」『』"“”`]', compact):
+        return False
+    # ponytail: two unquoted exact-label assertions only; paraphrases and complex scope need review.
+    start = r"(?:^|[。！？!?；;])(?:私は|今回は|ここでは)?"
+    end = r"(?=[。！？!?；;]|$)"
+    positive = start + re.escape(own) + r"(?:という)?(?:案|方針)(?:にします|にしたいです|を提案します)" + end
+    negative = start + re.escape(target) + r"(?:という)?(?:案|方針)?(?:には|に|は)(?:しません|しない)" + end
+    affirm, reject = re.search(positive, compact), re.search(negative, compact)
+    if compact.count(own) != 1 or compact.count(target) != 1 or not affirm or not reject:
+        return False
+    remainder = compact
+    for match in sorted((affirm, reject), key=lambda item: item.start(), reverse=True):
+        remainder = remainder[:match.start()] + remainder[match.end():]
+    # Abstain if another decision is stated, including a pronoun-based cancellation.
+    return not re.search(r"賛成|賛同|同意|支持|採用|優先|選択|選び|実施|提案|方針|撤回|取り消|見送", remainder)
+
+
 def dialogue_selects_competing_claim(utterance: str, competitors: list[str]) -> bool:
     compact = re.sub(r"\s+", "", unicodedata.normalize("NFKC", utterance))
     for label in competitors:
@@ -1821,16 +1842,17 @@ def validate_dialogue_move(
         and dialogue_matches_claim(normalized, frozen_claim)
         and not re.search(r"(?:賛成|賛同|同意|支持)(?:です|だ|します|しています|できます)", normalized)
     )
-    named_counterproposal = (
+    natural_counterproposal = (
         flexible and move == "counterproposal" and bool(frozen_claim) and bool(target_claim)
         and frozen_claim != target_claim
         and (dialogue_selects_competing_claim(normalized, [frozen_claim])
-             or dialogue_proposes_conditional_consideration(normalized, frozen_claim))
+             or dialogue_proposes_conditional_consideration(normalized, frozen_claim)
+             or dialogue_proposes_explicit_alternative(normalized, frozen_claim, target_claim))
         and not dialogue_selects_competing_claim(normalized, [target_claim])
         and similarity(normalized, frozen_claim) > similarity(normalized, target_claim) + 0.02
         and dialogue_is_aligned(normalized, frozen_claim, [target_claim])
     )
-    if required and not any(marker in normalized for marker in required) and not uncertainty_objection and not named_counterproposal:
+    if required and not any(marker in normalized for marker in required) and not uncertainty_objection and not natural_counterproposal:
         return None, f"utterance does not express dialogue move: {move}"
     if move == "object" and not flexible and not any(
         marker in normalized

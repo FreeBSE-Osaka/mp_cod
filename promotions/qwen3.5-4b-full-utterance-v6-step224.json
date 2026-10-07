@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "status": "research_hold",
+  "model": "Qwen3.5-4B-4bit",
+  "adapter_scope": "full utterance renderer only; Base decisions are not trained",
+  "selected_step": 224,
+  "weights_sha256": "4b8f83bc666c0c0ecc46e49c0112485feede445c27f0e69da97dc74fb71a91ee",
+  "config_sha256": "c9ac87935977312eee6f5621d56d46d582ad7b4588c8831492c8c6d89ce71fed",
+  "adapter_bytes": 754632,
+  "plan_sha256": "ca76d9f09ee5282e078ec4b19d162f092c109a75a24ae2d5078ddbceaa409136",
+  "selection_sha256": "b125a1a4f8350db92a7f4583acb6e185e98e7e4619a89dc708bb737bf46091ed",
+  "evaluation_sha256": "d4b8f242cfac9437266cc40a7175d46f69503bccc35f893b063d9cc65bf78b4a",
+  "training": {
+    "completed_native_steps": 448,
+    "gold_target_tokens": 28217,
+    "exit_code": 0,
+    "fixed_candidates": [112, 224, 336, 448],
+    "full_context_and_target_tokens_preserved": true,
+    "compilation_disabled_in_training_worker": true,
+    "os_peak_observed_bytes": 13115515456
+  },
+  "frozen_development_evaluation": {
+    "total": 48,
+    "strict_schema": 46,
+    "direct_valid": 29,
+    "study_valid": 22,
+    "base_study_valid": 18,
+    "parent_study_valid": 25,
+    "lost_base_cases": 4,
+    "lost_parent_cases": 8,
+    "counterproposal_direct": "0/6",
+    "object_direct": "4/6"
+  },
+  "later_shared_guard_rescore": {
+    "mode": "saved raw only; explicit contrasting counterproposal recognition, not learning",
+    "direct_valid": 30,
+    "study_valid": 23,
+    "changed_inputs": 1,
+    "prior_passing_inputs_lost": 0,
+    "original_evaluation_and_selection_unchanged": true
+  },
+  "hold_reasons": [
+    "fixed study_valid does not exceed the frozen parent score of 25/48",
+    "four Base-passing and eight parent-passing development inputs regress",
+    "counterproposal direct gate remains below the frozen minimum of 4/6",
+    "repetition, stance inconsistency and missing source conditions remain",
+    "whole-General semantic, naturalness, isolation and paired-runtime success are unproven"
+  ],
+  "fresh72_model_outputs_generated": false,
+  "promotion_allowed": false,
+  "parent_replacement_allowed": false,
+  "automatic_publish_allowed": false,
+  "whole_general_goal_complete": false,
+  "documentation": "docs/qwen35_general_teacher_v6_20261007.md"
+}
